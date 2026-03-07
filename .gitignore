@@ -1,0 +1,11 @@
+# 本地私有配置（不入库）
+*.local
+
+# macOS
+.DS_Store
+
+# 编辑器临时文件
+*.swp
+*.swo
+*~
+*.bak
