@@ -49,6 +49,33 @@ defaults write com.apple.Safari ShowOverlayStatusBar -bool true
 # mkdir -p "$HOME/Pictures/Screenshots"
 # defaults write com.apple.screencapture location -string "$HOME/Pictures/Screenshots"
 
+# ── 完全磁盘访问权限 (Full Disk Access) ──────────────────────────
+# 无法通过脚本自动授权，只能检测并引导用户手动设置
+if ! cat ~/Library/Mail/V*/MailData/Signatures/*.plist &>/dev/null 2>&1 \
+  && ! ls ~/Library/Safari/Bookmarks.plist &>/dev/null 2>&1; then
+  echo ""
+  echo "⚠️  当前终端没有「完全磁盘访问权限」"
+  echo "   这会导致 brew uninstall --zap 无法完整清理应用残留"
+  echo "   同时终端也无法访问邮件、Safari 等受保护的用户数据目录"
+  echo ""
+  echo "   请在弹出的系统设置中，将你的终端添加到列表并开启开关："
+
+  # 检测当前终端应用
+  TERM_APP=""
+  if [[ "$TERM_PROGRAM" == "iTerm.app" ]]; then
+    TERM_APP="iTerm2"
+  elif [[ "$TERM_PROGRAM" == "Apple_Terminal" ]]; then
+    TERM_APP="Terminal"
+  elif [[ -n "$TERM_PROGRAM" ]]; then
+    TERM_APP="$TERM_PROGRAM"
+  fi
+  [[ -n "$TERM_APP" ]] && echo "   → 你当前使用的是: $TERM_APP"
+
+  echo ""
+  open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+  read -rp "   设置完成后按 Enter 继续..."
+fi
+
 # ── 重启相关服务使设置生效 ───────────────────────────────────────
 killall Finder 2>/dev/null || true
 # killall Dock 2>/dev/null || true

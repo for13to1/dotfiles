@@ -54,13 +54,18 @@ case "$OS" in
         fi
         ok "Homebrew 已就绪"
 
-        # 根据 Brewfile 安装所有软件
-        if [[ -f "$DOTFILES_DIR/_install/mac/Brewfile" ]]; then
-            info "正在根据 Brewfile 安装软件（可能需要较长时间）..."
-            brew bundle --file="$DOTFILES_DIR/_install/mac/Brewfile"
-            ok "Brewfile 中的软件安装完毕"
+        # 安装必备软件（完整清单见 Brewfile，可稍后按需手动安装）
+        if [[ -f "$DOTFILES_DIR/_install/mac/Brewfile.essential" ]]; then
+            # brew bundle 某些 cask 可能因网络、密码弹窗等原因失败，
+            # 不应阻断后续步骤（Oh My Zsh、Stow 等），失败的包可稍后手动重试
+            if brew bundle --file="$DOTFILES_DIR/_install/mac/Brewfile.essential" --no-lock; then
+                ok "必备软件安装完毕"
+            else
+                warn "部分软件安装失败，请稍后运行 brew bundle --file=_install/mac/Brewfile.essential 重试"
+            fi
+            info "💡 其余软件请参考 _install/mac/Brewfile 按需安装"
         else
-            warn "未找到 _install/mac/Brewfile，跳过软件安装"
+            warn "未找到 _install/mac/Brewfile.essential，跳过软件安装"
         fi
 
         # 执行 macOS 偏好设置脚本
