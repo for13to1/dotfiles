@@ -21,8 +21,20 @@ defaults write NSGlobalDomain AppleShowAllExtensions -bool true
 # 在状态栏显示完整路径
 defaults write com.apple.finder ShowPathbar -bool true
 
+# 在标签页而非新窗口中打开文件夹
+defaults write com.apple.finder FinderSpawnTab -bool true
+
 # 默认使用列表视图（icnv=图标, clmv=分栏, glyv=画廊, Nlsv=列表）
 # defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
+
+# ── Safari ───────────────────────────────────────────────────────
+# ⚠️ Safari 的 defaults 键值可能随 macOS 版本变化，建议手动验证
+
+# 关闭"下载后自动打开安全文件"
+defaults write com.apple.Safari AutoOpenSafeDownloads -bool false
+
+# 显示状态栏（鼠标悬停链接时可在底部看到链接地址）
+defaults write com.apple.Safari ShowOverlayStatusBar -bool true
 
 # ── 键盘 ─────────────────────────────────────────────────────────
 # 关闭长按弹出重音字符菜单（Vim 用户福音）

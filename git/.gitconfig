@@ -1,0 +1,16 @@
+[init]
+    defaultBranch = main
+
+[core]
+    ignorecase = false
+    quotepath = false
+    editor = vim
+
+[i18n]
+    commitEncoding = utf-8
+    logOutputEncoding = utf-8
+
+# 个人信息放在本地文件中，不纳入版本控制
+# 新机器上需创建 ~/.gitconfig.local 并填入 user.name 和 user.email
+[include]
+    path = ~/.gitconfig.local

@@ -26,6 +26,7 @@ brew "qrencode"
 brew "qt"
 brew "redis", restart_service: :changed
 brew "rename"
+brew "ripgrep"
 brew "rust"
 brew "scrcpy"
 brew "shellcheck"

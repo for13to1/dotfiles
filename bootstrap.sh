@@ -116,7 +116,25 @@ else
     ok "Oh My Zsh 已存在，跳过"
 fi
 
-# ── 4. 使用 Stow 挂载配置文件 ───────────────────────────────────
+# ── 4. 安装 Oh My Zsh 第三方插件 ─────────────────────────────────
+ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+
+declare -A OMZ_PLUGINS=(
+    ["zsh-autosuggestions"]="https://github.com/zsh-users/zsh-autosuggestions"
+    ["zsh-syntax-highlighting"]="https://github.com/zsh-users/zsh-syntax-highlighting"
+)
+
+for plugin in "${!OMZ_PLUGINS[@]}"; do
+    if [[ ! -d "$ZSH_CUSTOM/plugins/$plugin" ]]; then
+        info "正在安装 OMZ 插件: $plugin..."
+        git clone "${OMZ_PLUGINS[$plugin]}" "$ZSH_CUSTOM/plugins/$plugin"
+        ok "$plugin 安装完毕"
+    else
+        ok "$plugin 已存在，跳过"
+    fi
+done
+
+# ── 5. 使用 Stow 挂载配置文件 ───────────────────────────────────
 if ! command -v stow &>/dev/null; then
     error "stow 未安装！请先安装 stow 后重试。"
 fi
@@ -129,13 +147,36 @@ if [[ -f "$HOME/.zshrc" && ! -L "$HOME/.zshrc" ]]; then
     mv "$HOME/.zshrc" "$HOME/.zshrc.bak"
 fi
 
+# 备份已有的 .gitconfig，避免 stow 冲突
+if [[ -f "$HOME/.gitconfig" && ! -L "$HOME/.gitconfig" ]]; then
+    warn "发现已有的 ~/.gitconfig（非软链接），备份为 ~/.gitconfig.bak"
+    mv "$HOME/.gitconfig" "$HOME/.gitconfig.bak"
+fi
+
 cd "$DOTFILES_DIR"
-stow zsh
+stow zsh git vim codestyle
 
 ok "Stow 挂载完成"
 
-# ── 5. 完成 ─────────────────────────────────────────────────────
+# ── 6. Git 一次性初始化 ──────────────────────────────────────────
+# 清理可能残留的代理设置
+git config --global --unset http.proxy 2>/dev/null || true
+git config --global --unset https.proxy 2>/dev/null || true
+
+# 初始化 Git LFS
+if command -v git-lfs &>/dev/null; then
+    git lfs install
+    ok "Git LFS 已初始化"
+fi
+
+# ── 7. 完成 ─────────────────────────────────────────────────────
 echo ""
 ok "🎉 全部搞定！请重启终端（或执行 source ~/.zshrc）使配置生效。"
 echo ""
-info "提示：如果需要机器专属配置（API Key 等），请创建 ~/.zshrc.local"
+info "提示：请创建以下本地配置文件（不纳入版本控制）："
+info "  ~/.zshrc.local       — 机器专属环境变量、API Key 等"
+info "  ~/.gitconfig.local   — Git 用户名和邮箱，例如："
+info "    [user]"
+info "        name = for13to1"
+info "        email = for13to1@outlook.com"
+
