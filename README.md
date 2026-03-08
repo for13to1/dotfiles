@@ -7,6 +7,9 @@
 ```text
 dotfiles/
 ├── zsh/                     Stow 包：Zsh 配置
+├── git/                     Stow 包：Git 配置
+├── vim/                     Stow 包：Vim 配置
+├── codestyle/               Stow 包：.editorconfig + .clang-format
 ├── _install/
 │   └── mac/
 │       ├── Brewfile         Homebrew 软件清单
@@ -31,9 +34,26 @@ cd ~/dotfiles && bash bootstrap.sh
 脚本会自动完成以下工作：
 1. 安装 Homebrew（如果没装过）
 2. 根据 `Brewfile` 安装所有命令行工具和应用程序
-3. 安装 Oh My Zsh
+3. 安装 Oh My Zsh + 第三方插件
 4. 使用 `stow` 建立配置文件的软链接
-5. 应用 macOS 系统偏好设置
+5. 初始化 Git LFS
+6. 应用 macOS 系统偏好设置
+
+## 🔑 配置 SSH 密钥
+
+bootstrap 完成后，手动配置 SSH（用于 Git 推送和服务器登录）：
+
+```bash
+ssh-keygen -t ed25519 -C "for13to1@outlook.com"
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+
+# 复制公钥，粘贴到 GitHub → Settings → SSH and GPG Keys
+cat ~/.ssh/id_ed25519.pub
+
+# 验证连接
+ssh -T git@github.com
+```
 
 ## 🔄 日常维护
 
@@ -46,24 +66,27 @@ cd ~/dotfiles && git add -A && git commit -m "Update Brewfile" && git push
 
 ### 添加新的配置文件包
 
-以 Git 为例：
+以 tmux 为例：
 ```bash
-# 1. 在仓库中创建对应的 stow 包目录
-mkdir -p ~/dotfiles/git
-
-# 2. 把配置移入仓库（注意保持 home 目录下的相对路径）
-mv ~/.gitconfig ~/dotfiles/git/.gitconfig
-
-# 3. 用 stow 建立软链接
-cd ~/dotfiles && stow git
+mkdir -p ~/dotfiles/tmux
+mv ~/.tmux.conf ~/dotfiles/tmux/.tmux.conf
+cd ~/dotfiles && stow tmux
+# 然后更新 bootstrap.sh 中的 stow 命令
 ```
 
 ## 🖥️ 机器专属配置
 
-每台机器的私密信息（API Key、代理地址等）放在 `~/.zshrc.local`，该文件**不纳入版本控制**。
+每台机器独有的私密信息放在本地文件中，**不纳入版本控制**：
 
+**~/.zshrc.local**
 ```bash
-# ~/.zshrc.local 示例
 export OPENAI_API_KEY="sk-..."
 export HTTP_PROXY="http://127.0.0.1:7890"
+```
+
+**~/.gitconfig.local**
+```ini
+[user]
+    name = for13to1
+    email = for13to1@outlook.com
 ```

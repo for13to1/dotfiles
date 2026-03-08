@@ -87,7 +87,7 @@ case "$OS" in
             if [[ -f "$DOTFILES_DIR/_install/linux/pacman-list.txt" ]]; then
                 info "正在通过 pacman 安装软件..."
                 sudo pacman -Syu --noconfirm
-                sudo pacman -S --noconfirm --needed $(cat "$DOTFILES_DIR/_install/linux/pacman-list.txt")
+                xargs sudo pacman -S --noconfirm --needed < "$DOTFILES_DIR/_install/linux/pacman-list.txt"
                 ok "pacman 软件安装完毕"
             else
                 warn "未找到 _install/linux/pacman-list.txt，跳过软件安装"
@@ -179,4 +179,5 @@ info "  ~/.gitconfig.local   — Git 用户名和邮箱，例如："
 info "    [user]"
 info "        name = for13to1"
 info "        email = for13to1@outlook.com"
-
+info ""
+info "别忘了配置 SSH 密钥，详见 README.md"
