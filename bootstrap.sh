@@ -59,7 +59,7 @@ case "$OS" in
             # brew bundle 某些 cask 可能因网络、密码弹窗等原因失败，
             # 不应阻断后续步骤（Oh My Zsh、Stow 等），失败的包可稍后手动重试
             info "正在安装必备软件（Brewfile.essential）..."
-            if brew bundle --file="$DOTFILES_DIR/_install/mac/Brewfile.essential"; then
+            if brew bundle --verbose --file="$DOTFILES_DIR/_install/mac/Brewfile.essential"; then
                 ok "必备软件安装完毕"
             else
                 warn "部分软件安装失败，请稍后运行 brew bundle --file=_install/mac/Brewfile.essential 重试"
