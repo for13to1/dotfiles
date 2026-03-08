@@ -58,7 +58,8 @@ case "$OS" in
         if [[ -f "$DOTFILES_DIR/_install/mac/Brewfile.essential" ]]; then
             # brew bundle 某些 cask 可能因网络、密码弹窗等原因失败，
             # 不应阻断后续步骤（Oh My Zsh、Stow 等），失败的包可稍后手动重试
-            if brew bundle --file="$DOTFILES_DIR/_install/mac/Brewfile.essential" --no-lock; then
+            info "正在安装必备软件（Brewfile.essential）..."
+            if brew bundle --file="$DOTFILES_DIR/_install/mac/Brewfile.essential"; then
                 ok "必备软件安装完毕"
             else
                 warn "部分软件安装失败，请稍后运行 brew bundle --file=_install/mac/Brewfile.essential 重试"
@@ -122,22 +123,22 @@ else
 fi
 
 # ── 4. 安装 Oh My Zsh 第三方插件 ─────────────────────────────────
+# 注意：macOS 自带 bash 3.2 不支持 declare -A，使用普通数组代替
 ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
 
-declare -A OMZ_PLUGINS=(
-    ["zsh-autosuggestions"]="https://github.com/zsh-users/zsh-autosuggestions"
-    ["zsh-syntax-highlighting"]="https://github.com/zsh-users/zsh-syntax-highlighting"
-)
-
-for plugin in "${!OMZ_PLUGINS[@]}"; do
-    if [[ ! -d "$ZSH_CUSTOM/plugins/$plugin" ]]; then
-        info "正在安装 OMZ 插件: $plugin..."
-        git clone "${OMZ_PLUGINS[$plugin]}" "$ZSH_CUSTOM/plugins/$plugin"
-        ok "$plugin 安装完毕"
+omz_install_plugin() {
+    local name="$1" url="$2"
+    if [[ ! -d "$ZSH_CUSTOM/plugins/$name" ]]; then
+        info "正在安装 OMZ 插件: $name..."
+        git clone "$url" "$ZSH_CUSTOM/plugins/$name"
+        ok "$name 安装完毕"
     else
-        ok "$plugin 已存在，跳过"
+        ok "$name 已存在，跳过"
     fi
-done
+}
+
+omz_install_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions
+omz_install_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting
 
 # ── 5. 使用 Stow 挂载配置文件 ───────────────────────────────────
 if ! command -v stow &>/dev/null; then
