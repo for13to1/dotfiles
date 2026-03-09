@@ -18,26 +18,25 @@ dotfiles/
 └── README.md
 ```
 
-## 🚀 新机器配置
+## 🚀 新机配置
 
 ```bash
-# 1. 安装 Xcode Command Line Tools
-xcode-select --install
-
-# 2. 克隆仓库
+# 1. 克隆仓库
 git clone https://github.com/for13to1/dotfiles.git ~/dotfiles
 
-# 3. 一键安装
+# 2. 一键安装
 cd ~/dotfiles && bash bootstrap.sh
 ```
 
-脚本会自动完成以下工作：
-1. 安装 Homebrew（如果没装过）
-2. 根据 `Brewfile` 安装所有命令行工具和应用程序
-3. 安装 Oh My Zsh + 第三方插件
-4. 使用 `stow` 建立配置文件的软链接
-5. 初始化 Git LFS
-6. 应用 macOS 系统偏好设置
+脚本会自动/交互式完成以下工作：
+1. **环境检测**：自动安装 Xcode CLT (macOS) 和 Homebrew
+2. **软件安装**：根据 `Brewfile.essential` 安装必备工具（nvim, stow, git-lfs 等）
+3. **Shell 配置**：安装 Oh My Zsh + 常用插件，并自动切换默认 Shell
+4. **配置挂载**：使用 `stow` 建立 dotfiles 软链接，并自动处理已有冲突文件
+5. **编辑器初始化**：交互式选择并同步 Neovim/Vim 插件
+6. **Git 初始化**：初始化 LFS 并在缺失时交互式创建 `~/.gitconfig.local`
+7. **系统优化**：应用 macOS 系统偏好设置
+8. **安全检测**：检测 SSH 密钥是否存在并提供生成指引
 
 ## 🔑 配置 SSH 密钥
 
@@ -74,7 +73,7 @@ cd ~/dotfiles && stow tmux
 # 然后更新 bootstrap.sh 中的 stow 命令
 ```
 
-## 🖥️ 机器专属配置
+## 🖥️ 本地配置
 
 每台机器独有的私密信息放在本地文件中，**不纳入版本控制**：
 

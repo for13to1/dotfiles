@@ -10,7 +10,7 @@
     commitEncoding = utf-8
     logOutputEncoding = utf-8
 
-# 个人信息放在本地文件中，不纳入版本控制
-# 新机器上需创建 ~/.gitconfig.local 并填入 user.name 和 user.email
+# 引入本地定制配置（如用户名、邮箱等私密/差异化信息）
+# 该文件由 bootstrap.sh 交互式引导创建，且建议不纳入版本控制以防隐私泄露
 [include]
     path = ~/.gitconfig.local
