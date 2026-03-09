@@ -160,7 +160,7 @@ if [[ -f "$HOME/.gitconfig" && ! -L "$HOME/.gitconfig" ]]; then
 fi
 
 cd "$DOTFILES_DIR"
-stow zsh git vim codestyle
+stow zsh git vim nvim codestyle
 
 ok "Stow 挂载完成"
 
