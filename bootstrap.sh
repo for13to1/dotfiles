@@ -27,9 +27,9 @@ case "$OS" in
 
         # Xcode 开发工具检测：优先使用完整版 Xcode.app，否则退而安装精简版 CLT
         if [[ -d "/Applications/Xcode.app" ]]; then
-            # 完整版 Xcode 已安装，确保 xcode-select 指向它
-            if [[ "$(xcode-select -p 2>/dev/null)" != "/Applications/Xcode.app/Contents/Developer" ]]; then
-                info "检测到 Xcode.app，正在切换 xcode-select 路径..."
+            # 完整版 Xcode 已安装，测试 xcodebuild 是否可用
+            if ! xcodebuild -version &>/dev/null; then
+                info "检测到 Xcode.app 但当前路径未正确指向它，正在切换 xcode-select 路径..."
                 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
             fi
             ok "Xcode.app 已就绪"
@@ -164,7 +164,23 @@ stow zsh git vim codestyle
 
 ok "Stow 挂载完成"
 
-# ── 6. Git 一次性初始化 ──────────────────────────────────────────
+# ── 6. Vim 插件 ──────────────────────────────────────────────────
+# 安装 vim-plug（如果没装过）
+if [[ ! -f "$HOME/.vim/autoload/plug.vim" ]]; then
+    info "正在安装 vim-plug..."
+    curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
+        https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+    ok "vim-plug 安装完毕"
+else
+    ok "vim-plug 已存在，跳过"
+fi
+
+# 安装/更新 Vim 插件（静默模式）
+info "正在安装/更新 Vim 插件..."
+vim +PlugInstall +PlugUpdate +qall
+ok "Vim 插件就绪"
+
+# ── 7. Git 一次性初始化 ──────────────────────────────────────────
 # 清理可能残留的代理设置
 git config --global --unset http.proxy 2>/dev/null || true
 git config --global --unset https.proxy 2>/dev/null || true
@@ -175,7 +191,7 @@ if command -v git-lfs &>/dev/null; then
     ok "Git LFS 已初始化"
 fi
 
-# ── 7. 完成 ─────────────────────────────────────────────────────
+# ── 8. 完成 ─────────────────────────────────────────────────────
 echo ""
 ok "🎉 全部搞定！请重启终端（或执行 source ~/.zshrc）使配置生效。"
 echo ""

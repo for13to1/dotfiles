@@ -132,26 +132,27 @@ endif
 call plug#begin('~/.vim/plugged')
 
 " ── 文件与导航 ───────────────────────────────────────────────────
-Plug 'scrooloose/nerdtree', { 'on': 'NERDTreeToggle' }  " 文件树
+Plug 'tpope/vim-vinegar'                                 " 增强内置 netrw 文件浏览
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }     " 模糊搜索引擎
 Plug 'junegunn/fzf.vim'                                  " fzf 的 Vim 集成
 
 " ── 编辑增强 ─────────────────────────────────────────────────────
 Plug 'tpope/vim-surround'                                " 快速操作括号/引号
-Plug 'preservim/nerdcommenter'                           " 快速注释
+Plug 'tpope/vim-repeat'                                  " 让 . 支持插件操作
+Plug 'tpope/vim-commentary'                              " gcc 注释当前行
+Plug 'tpope/vim-sleuth'                                  " 自动检测缩进风格
 
 " ── Git ──────────────────────────────────────────────────────────
 Plug 'tpope/vim-fugitive'                                " Git 命令集成
 Plug 'airblade/vim-gitgutter'                            " 左侧栏显示 git diff
 
 " ── 语法与格式化 ─────────────────────────────────────────────────
-Plug 'dense-analysis/ale'                                " 异步语法检查 + Lint
-Plug 'Chiel92/vim-autoformat'                            " 一键格式化代码
+Plug 'dense-analysis/ale'                                " 异步 Lint
+Plug 'sbdchd/neoformat'                                  " 一键格式化代码
 Plug 'rust-lang/rust.vim'                                " Rust 语法支持
 
 " ── 外观 ─────────────────────────────────────────────────────────
-Plug 'vim-airline/vim-airline'                           " 状态栏美化
-Plug 'vim-airline/vim-airline-themes'                    " airline 主题包
+Plug 'itchyny/lightline.vim'                             " 轻量状态栏
 
 call plug#end()
 
@@ -159,9 +160,12 @@ call plug#end()
 " 插件配置
 " =============================================================================
 
-" ── NERDTree ─────────────────────────────────────────────────────
 let mapleader = ","
-nnoremap <silent> <leader>n :NERDTreeToggle<CR>
+
+" ── vim-vinegar ──────────────────────────────────────────────────
+" 按 - 打开当前文件所在目录（netrw），再按 - 返回上级
+" I 切换隐藏文件显示
+let g:netrw_liststyle = 3               " 树形视图
 
 " ── fzf.vim 快捷键 ──────────────────────────────────────────────
 " Ctrl+P 搜索文件（替代已过时的 ctrlp.vim）
@@ -178,3 +182,17 @@ let g:ale_sign_warning = '⚠'
 let g:ale_lint_on_text_changed = 'never'
 let g:ale_lint_on_insert_leave = 0
 let g:ale_lint_on_save = 1
+
+" ── Neoformat ────────────────────────────────────────────────────
+" 保存时自动格式化
+augroup fmt
+    autocmd!
+    autocmd BufWritePre * undojoin | Neoformat
+augroup END
+" 优先使用项目本地的 formatter 配置
+let g:neoformat_try_node_exe = 1
+
+" ── Lightline ────────────────────────────────────────────────────
+set laststatus=2                        " 始终显示状态栏
+set noshowmode                          " lightline 已显示模式，隐藏默认的
+let g:lightline = { 'colorscheme': 'wombat' }
