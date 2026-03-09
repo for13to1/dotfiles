@@ -122,6 +122,14 @@ else
     ok "Oh My Zsh 已存在，跳过"
 fi
 
+# 因为使用了 --unattended 模式安装 OMZ，会导致原生脚本跳过 chsh 切换 Shell 的步骤
+# 我们在这里手动检测并切换默认 Shell 为 zsh
+if [[ "$SHELL" != *"zsh"* ]] && command -v zsh &>/dev/null; then
+    info "检测到当前默认 Shell 不是 zsh，正在尝试为您切换..."
+    chsh -s "$(command -v zsh)" || warn "切换默认 Shell 失败，您可以稍后手动执行: chsh -s \$(which zsh)"
+    ok "已退出 chsh 流程"
+fi
+
 # ── 4. 安装 Oh My Zsh 第三方插件 ─────────────────────────────────
 # 注意：macOS 自带 bash 3.2 不支持 declare -A，使用普通数组代替
 ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
@@ -142,7 +150,7 @@ omz_install_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-synt
 
 # ── 5. 使用 Stow 挂载配置文件 ───────────────────────────────────
 if ! command -v stow &>/dev/null; then
-    error "stow 未安装！请先运行 brew install stow，然后重新执行本脚本。"
+    error "stow 未安装！请先通过包管理器安装 stow (brew/apt/pacman install stow)，然后重新执行本脚本。"
 fi
 
 info "正在使用 Stow 挂载配置文件..."
@@ -153,32 +161,58 @@ if [[ -f "$HOME/.zshrc" && ! -L "$HOME/.zshrc" ]]; then
     mv "$HOME/.zshrc" "$HOME/.zshrc.bak"
 fi
 
-# 备份已有的 .gitconfig，避免 stow 冲突
-if [[ -f "$HOME/.gitconfig" && ! -L "$HOME/.gitconfig" ]]; then
-    warn "发现已有的 ~/.gitconfig（非软链接），备份为 ~/.gitconfig.bak"
-    mv "$HOME/.gitconfig" "$HOME/.gitconfig.bak"
-fi
+# 备份已有的 .gitconfig 和 .vimrc，避免 stow 冲突
+for conflict_file in ".gitconfig" ".vimrc"; do
+    if [[ -f "$HOME/$conflict_file" && ! -L "$HOME/$conflict_file" ]]; then
+        warn "发现已有的 ~/$conflict_file（非软链接），备份为 ~/$conflict_file.bak"
+        mv "$HOME/$conflict_file" "$HOME/$conflict_file.bak"
+    fi
+done
 
 cd "$DOTFILES_DIR"
 stow zsh git vim nvim codestyle
 
 ok "Stow 挂载完成"
 
-# ── 6. Vim 插件 ──────────────────────────────────────────────────
-# 安装 vim-plug（如果没装过）
-if [[ ! -f "$HOME/.vim/autoload/plug.vim" ]]; then
-    info "正在安装 vim-plug..."
-    curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
-        https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-    ok "vim-plug 安装完毕"
-else
-    ok "vim-plug 已存在，跳过"
+# ── 6. 编辑器插件初始化 ──────────────────────────────────────
+echo ""
+info "📋 请选择要初始化的编辑器插件："
+echo "   1) Neovim (lazy.nvim) - [默认]"
+echo "   2) Vim (vim-plug)"
+echo "   3) 两者都要"
+echo "   4) 跳过"
+read -rp "请输入数字 [1-4]: " editor_choice
+
+# Neovim 插件 (lazy.nvim)
+if [[ "$editor_choice" == "1" || "$editor_choice" == "3" || -z "$editor_choice" ]]; then
+    if command -v nvim &>/dev/null; then
+        info "正在同步 Neovim 插件 (lazy.nvim)..."
+        # nvim --headless "+Lazy! sync" +qa 可能会因为某些插件编译失败返回非零值，
+        # 但通常不影响基础使用，所以加个 || true
+        nvim --headless "+Lazy! sync" +qa || warn "Neovim 插件同步过程中有报错，请稍后手动打开 nvim 查看"
+        ok "Neovim 插件就绪"
+    fi
 fi
 
-# 安装/更新 Vim 插件（静默模式）
-info "正在安装/更新 Vim 插件..."
-vim +PlugInstall +PlugUpdate +qall
-ok "Vim 插件就绪"
+# Vim 插件
+if [[ "$editor_choice" == "2" || "$editor_choice" == "3" ]]; then
+    # 安装 vim-plug（如果没装过）
+    if [[ ! -f "$HOME/.vim/autoload/plug.vim" ]]; then
+        info "正在安装 vim-plug..."
+        curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
+            https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+        ok "vim-plug 安装完毕"
+    else
+        ok "vim-plug 已存在，跳过"
+    fi
+
+    # 安装/更新 Vim 插件（静默模式）
+    if command -v vim &>/dev/null; then
+        info "正在安装/更新 Vim 插件..."
+        vim +PlugInstall +PlugUpdate +qall
+        ok "Vim 插件就绪"
+    fi
+fi
 
 # ── 7. Git 一次性初始化 ──────────────────────────────────────────
 # 清理可能残留的代理设置
@@ -191,15 +225,26 @@ if command -v git-lfs &>/dev/null; then
     ok "Git LFS 已初始化"
 fi
 
-# ── 8. 完成 ─────────────────────────────────────────────────────
+# ── 8. SSH 密钥检测 ──────────────────────────────────────────────
+if [[ ! -f "$HOME/.ssh/id_ed25519" && ! -f "$HOME/.ssh/id_rsa" ]]; then
+    warn "未发现 SSH 密钥（~/.ssh/id_ed25519 或 id_rsa）"
+    info "💡 建议运行以下命令生成：ssh-keygen -t ed25519 -C \"$(whoami)@$(hostname)\""
+fi
+
+# ── 9. 完成 ───────────────────────────────────────────────────────
 echo ""
 ok "🎉 全部搞定！请重启终端（或执行 source ~/.zshrc）使配置生效。"
 echo ""
-info "提示：请创建以下本地配置文件（不纳入版本控制）："
-info "  ~/.zshrc.local       — 机器专属环境变量、API Key 等"
-info "  ~/.gitconfig.local   — Git 用户名和邮箱，例如："
-info "    [user]"
-info "        name = for13to1"
-info "        email = for13to1@outlook.com"
-info ""
-info "别忘了配置 SSH 密钥，详见 README.md"
+info "提示：请确保已创建以下本地配置文件（不纳入版本控制）："
+if [[ ! -f "$HOME/.zshrc.local" ]]; then
+    info "  touch ~/.zshrc.local       — 机器专属环境变量、API Key 等"
+fi
+if [[ ! -f "$HOME/.gitconfig.local" ]]; then
+    info "  cat <<EOF > ~/.gitconfig.local"
+    info "  [user]"
+    info "      name = for13to1"
+    info "      email = for13to1@outlook.com"
+    info "  EOF"
+fi
+echo ""
+info "别忘了配置 SSH 密钥并添加至 GitHub，详见 README.md"
