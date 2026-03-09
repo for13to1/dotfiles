@@ -142,7 +142,7 @@ omz_install_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-synt
 
 # ── 5. 使用 Stow 挂载配置文件 ───────────────────────────────────
 if ! command -v stow &>/dev/null; then
-    error "stow 未安装！请先安装 stow 后重试。"
+    error "stow 未安装！请先运行 brew install stow，然后重新执行本脚本。"
 fi
 
 info "正在使用 Stow 挂载配置文件..."

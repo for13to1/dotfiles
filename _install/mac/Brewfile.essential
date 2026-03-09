@@ -1,5 +1,7 @@
-# 新机器必装 — 其余的参考 Brewfile 按需手动安装
+# 新机必装 — 其余的参考 Brewfile 按需手动安装
 
+brew "aria2"
+brew "cloc"
 brew "cmake"
 brew "colima", restart_service: :changed
 brew "docker"
@@ -12,6 +14,8 @@ brew "gemini-cli"
 brew "gh"
 brew "git-crypt"
 brew "git-lfs"
+brew "llama.cpp"
+brew "neovim"
 brew "redis", restart_service: :changed
 brew "rename"
 brew "ripgrep"
@@ -23,6 +27,7 @@ brew "stow"
 brew "subversion"
 brew "tmux"
 brew "tree"
+brew "uv"
 brew "wget"
 brew "xcodegen"
 brew "zoxide"
