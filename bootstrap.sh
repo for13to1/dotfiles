@@ -225,11 +225,41 @@ if command -v git-lfs &>/dev/null; then
     ok "Git LFS 已初始化"
 fi
 
-# ── 8. SSH 密钥检测 ──────────────────────────────────────────────
+# ── 8. SSH 基础设施与密钥检测 ──────────────────────────────────────
+info "正在检查 SSH 环境..."
+
+## 1. 基础设施：确保目录和基础文件存在
+mkdir -p "$HOME/.ssh"
+[[ ! -f "$HOME/.ssh/config" ]] && touch "$HOME/.ssh/config"
+
+## 2. 交互式密钥检测与生成
 if [[ ! -f "$HOME/.ssh/id_ed25519" && ! -f "$HOME/.ssh/id_rsa" ]]; then
-    warn "未发现 SSH 密钥（~/.ssh/id_ed25519 或 id_rsa）"
-    info "💡 建议运行以下命令生成：ssh-keygen -t ed25519 -C \"$(whoami)@$(hostname)\""
+    warn "未发现 SSH 密钥对"
+    read -rp "是否立即为您生成一个 ed25519 密钥？ [y/N]: " gen_key
+    if [[ "$gen_key" =~ ^[Yy]$ ]]; then
+        ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)" -f "$HOME/.ssh/id_ed25519" -N ""
+        ok "SSH 密钥已生成：~/.ssh/id_ed25519"
+    else
+        info "💡 您稍后可以手动执行：ssh-keygen -t ed25519 -C \"$(whoami)@$(hostname)\""
+    fi
+else
+    ok "SSH 密钥已就绪"
 fi
+
+## 3. 权限加固
+info "正在加固 SSH 目录及文件权限..."
+chmod 700 "$HOME/.ssh"
+# 私钥、config、授权列表以及指纹文件设置为 600
+find "$HOME/.ssh" -type f -name "id_*" ! -name "*.pub" -exec chmod 600 {} +
+[[ -f "$HOME/.ssh/config" ]] && chmod 600 "$HOME/.ssh/config"
+[[ -f "$HOME/.ssh/authorized_keys" ]] && chmod 600 "$HOME/.ssh/authorized_keys"
+[[ -f "$HOME/.ssh/known_hosts" ]] && chmod 600 "$HOME/.ssh/known_hosts"
+[[ -f "$HOME/.ssh/known_hosts.old" ]] && chmod 600 "$HOME/.ssh/known_hosts.old"
+
+# 公钥使用标准的 644
+find "$HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} +
+
+ok "SSH 环境配置完成"
 
 # ── 9. 完成 ───────────────────────────────────────────────────────
 echo ""
@@ -263,4 +293,6 @@ EOF
     fi
 fi
 echo ""
+echo ""
 info "别忘了配置 SSH 密钥并添加至 GitHub，详见 README.md"
+info "远程开发提示：可执行 'ssh-copy-id <user>@<host>' 将公钥分发至远程机器。"
