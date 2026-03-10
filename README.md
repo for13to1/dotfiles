@@ -29,21 +29,23 @@ cd ~/dotfiles && bash bootstrap.sh
 ```
 
 脚本会自动/交互式完成以下工作：
-1. **环境检测**：自动安装 Xcode CLT (macOS) 和 Homebrew
-2. **软件安装**：根据 `Brewfile.essential` 安装必备工具（nvim, stow, git-lfs 等）
-3. **Shell 配置**：安装 Oh My Zsh + 常用插件，并自动切换默认 Shell
-4. **配置挂载**：使用 `stow` 建立 dotfiles 软链接，并自动处理已有冲突文件
-5. **编辑器初始化**：交互式选择并同步 Neovim/Vim 插件
-6. **Git 初始化**：初始化 LFS 并在缺失时交互式创建 `~/.gitconfig.local`
-7. **系统优化**：应用 macOS 系统偏好设置
-8. **安全检测**：检测 SSH 密钥是否存在并提供生成指引
+1. **环境检测**：自动安装 Xcode CLT (macOS) 和 Homebrew，并确保硬依赖（zsh、stow）就绪
+2. **软件安装**：根据 `Brewfile.essential` 安装必备工具（nvim, git-lfs 等），应用 macOS 系统偏好设置
+3. **SSH 基础设施**：检测并交互式生成 SSH 密钥，加固目录/文件权限
+4. **Git 身份配置**：初始化 LFS，交互式创建 `~/.gitconfig.local`
+5. **Shell 配置**：安装 Oh My Zsh + 常用插件，并自动切换默认 Shell
+6. **配置挂载**：使用 `stow` 建立 dotfiles 软链接，并自动处理已有冲突文件
+7. **编辑器初始化**：交互式选择并同步 Neovim/Vim 插件
 
 ## 🔑 配置 SSH 密钥
 
-bootstrap 完成后，手动配置 SSH（用于 Git 推送和服务器登录）：
+bootstrap 已集成 SSH 密钥检测与生成。如需手动操作，可参考以下命令：
 
 ```bash
+# 生成密钥（脚本已自动处理，仅供参考）
 ssh-keygen -t ed25519 -C "for13to1@outlook.com"
+
+# 将私钥加入 SSH Agent（macOS Keychain 会自动处理，Linux 环境需要手动执行）
 eval "$(ssh-agent -s)"
 ssh-add ~/.ssh/id_ed25519
 
@@ -52,6 +54,9 @@ cat ~/.ssh/id_ed25519.pub
 
 # 验证连接
 ssh -T git@github.com
+
+# 分发公钥到远程机器
+ssh-copy-id <user>@<host>
 ```
 
 ## 🔄 日常维护
