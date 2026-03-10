@@ -43,7 +43,7 @@ case "$OS" in
             ok "Xcode Command Line Tools 已就绪"
         fi
 
-        # 安装 Homebrew（如果没装过）
+        # 安装 Homebrew （如果没装过）
         if ! command -v brew &>/dev/null; then
             info "正在安装 Homebrew..."
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -192,7 +192,7 @@ fi
 ## 3. Git 本地用户信息 (~/.gitconfig.local)
 if [[ ! -f "$HOME/.gitconfig.local" ]]; then
     echo ""
-    warn "未发现 ~/.gitconfig.local（用于存储 Git 用户名和邮箱）"
+    warn "未发现 ~/.gitconfig.local （用于存储 Git 用户名和邮箱）"
     read -rp "是否立即创建？ [y/N]: " create_local
     if [[ "$create_local" =~ ^[Yy]$ ]]; then
         read -rp "请输入 Git 用户名 (默认: for13to1): " git_name
@@ -246,11 +246,41 @@ omz_install_plugin() {
 omz_install_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions
 omz_install_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting
 
+## 4. 初始化 ~/.zshrc.local
+if [[ ! -f "$HOME/.zshrc.local" ]]; then
+    info "正在生成 ~/.zshrc.local 示例模板..."
+    cat <<'EOF' > "$HOME/.zshrc.local"
+# ~/.zshrc.local — 本地配置，不纳入版本控制，可按需修改
+
+# API Keys
+export OPENAI_API_KEY="sk-..."
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+
+export ANTHROPIC_API_KEY="sk-ant-..."
+export ANTHROPIC_BASE_URL="https://api.anthropic.com"
+
+export GEMINI_API_KEY="your-api-key"
+export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
+
+# 代理设置（取消注释前请确保本地代理已启动，否则会导致网络请求失败）
+# export proxy_addr="127.0.0.1:7890"
+# export http_proxy="http://$proxy_addr"
+# export https_proxy="http://$proxy_addr"
+# export all_proxy="socks5://$proxy_addr"
+# export HTTP_PROXY=$http_proxy
+# export HTTPS_PROXY=$https_proxy
+# export ALL_PROXY=$all_proxy
+export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
+export NO_PROXY=$no_proxy
+EOF
+    ok "~/.zshrc.local 示例模板已生成"
+fi
+
 # ── 6. 配置文件挂载 (Stow) ──────────────────────────────────────────
 info "正在使用 Stow 挂载配置文件..."
 
 if [[ -f "$HOME/.zshrc" && ! -L "$HOME/.zshrc" ]]; then
-    warn "发现已有的 ~/.zshrc（非软链接），备份为 ~/.zshrc.bak"
+    warn "发现已有的 ~/.zshrc （非软链接），备份为 ~/.zshrc.bak"
     mv "$HOME/.zshrc" "$HOME/.zshrc.bak"
 fi
 
@@ -265,9 +295,9 @@ cd "$DOTFILES_DIR"
 stow zsh git vim nvim codestyle
 ok "Stow 挂载完成"
 
-# ── 7. 编辑器插件初始化 ──────────────────────────────────────
+# ── 7. 编辑器插件同步 ──────────────────────────────────────
 echo ""
-info "📋 请选择要初始化的编辑器插件："
+info "📋 请选择要同步的编辑器插件："
 echo "   1) Neovim (lazy.nvim) - [默认]"
 echo "   2) Vim (vim-plug)"
 echo "   3) 两者都要"
@@ -303,13 +333,5 @@ fi
 
 # ── 8. 完成 ───────────────────────────────────────────────────────
 echo ""
-ok "🎉 全部搞定！请重启终端（或执行 source ~/.zshrc）使配置生效。"
-echo ""
-info "提示：请确保已创建以下本地配置文件（不纳入版本控制）："
-if [[ ! -f "$HOME/.zshrc.local" ]]; then
-    info "  touch ~/.zshrc.local       — 本地环境变量、API Key 等"
-fi
-echo ""
-info "别忘了在 GitHub 上添加你的 SSH 密钥，详见 README.md"
-info "远程开发提示：可执行 'ssh-copy-id <user>@<host>' 将公钥分发至远程机器。"
+ok "🎉 全部搞定！请重启终端（或执行 source ~/.zshrc ）使配置生效。"
 echo ""

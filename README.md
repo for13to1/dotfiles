@@ -9,6 +9,7 @@ dotfiles/
 ├── zsh/                     Stow 包：Zsh 配置
 ├── git/                     Stow 包：Git 配置
 ├── vim/                     Stow 包：Vim 配置
+├── nvim/                    Stow 包：Neovim 配置
 ├── codestyle/               Stow 包：.editorconfig + .clang-format
 ├── _install/
 │   └── mac/
@@ -29,13 +30,14 @@ cd ~/dotfiles && bash bootstrap.sh
 ```
 
 脚本会自动/交互式完成以下工作：
+
 1. **环境检测**：自动安装 Xcode CLT (macOS) 和 Homebrew，并确保硬依赖（zsh、stow）就绪
 2. **软件安装**：根据 `Brewfile.essential` 安装必备工具（nvim, git-lfs 等），应用 macOS 系统偏好设置
 3. **SSH 基础设施**：检测并交互式生成 SSH 密钥，加固目录/文件权限
 4. **Git 身份配置**：初始化 LFS，交互式创建 `~/.gitconfig.local`
 5. **Shell 配置**：安装 Oh My Zsh + 常用插件，并自动切换默认 Shell
 6. **配置挂载**：使用 `stow` 建立 dotfiles 软链接，并自动处理已有冲突文件
-7. **编辑器初始化**：交互式选择并同步 Neovim/Vim 插件
+7. **编辑器插件同步**：交互式选择并同步 Neovim/Vim 插件
 
 ## 🔑 配置 SSH 密钥
 
@@ -71,6 +73,7 @@ cd ~/dotfiles && git add -A && git commit -m "Update Brewfile" && git push
 ### 添加新的配置文件包
 
 以 tmux 为例：
+
 ```bash
 mkdir -p ~/dotfiles/tmux
 mv ~/.tmux.conf ~/dotfiles/tmux/.tmux.conf
@@ -80,20 +83,21 @@ cd ~/dotfiles && stow tmux
 
 ## 🖥️ 本地配置
 
-每台机器独有的私密信息放在本地文件中，**不纳入版本控制**：
+每台机器独有的私密信息放在本地文件中，**不纳入版本控制**
 
-**~/.zshrc.local**
+### `~/.zshrc.local`
+
 ```bash
 export OPENAI_API_KEY="sk-..."
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 
 export ANTHROPIC_API_KEY="sk-ant-..."
-export ANTHROPIC_BASE_URL="https://api.anthropic.com" 
+export ANTHROPIC_BASE_URL="https://api.anthropic.com"
 
 export GEMINI_API_KEY="your-api-key"
-export GEMINI_BASE_URL="https://generativelanguage.googleapis.com" 
+export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
 
-# 代理设置
+# 代理设置（取消注释前请确保本地代理已启动，否则会导致网络请求失败）
 export proxy_addr="127.0.0.1:7890"
 export http_proxy="http://$proxy_addr"
 export https_proxy="http://$proxy_addr"
@@ -107,7 +111,8 @@ export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
 export NO_PROXY=$no_proxy
 ```
 
-**~/.gitconfig.local**
+### `~/.gitconfig.local`
+
 ```ini
 [user]
     name = for13to1

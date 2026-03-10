@@ -63,7 +63,7 @@ require("lazy").setup({
 
   -- Syntax Highlighting
   { "nvim-treesitter/nvim-treesitter", build = ":TSUpdate", config = function()
-    require("nvim-treesitter.configs").setup({ ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" }, auto_install = true, highlight = { enable = true } })
+    require("nvim-treesitter").setup({ ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" }, auto_install = true })
   end },
 
   -- Git
@@ -85,11 +85,11 @@ require("lazy").setup({
       })
   end },
   { "neovim/nvim-lspconfig", config = function()
-      local lspconfig = require("lspconfig")
-      lspconfig.pylsp.setup({})
-      lspconfig.rust_analyzer.setup({})
-      lspconfig.ts_ls.setup({})
-      lspconfig.bashls.setup({})
+      local servers = { "pylsp", "rust_analyzer", "ts_ls", "bashls" }
+      for _, server in ipairs(servers) do
+        vim.lsp.config(server, {})
+      end
+      vim.lsp.enable(servers)
       -- Keymaps
       vim.keymap.set('n', 'gd', vim.lsp.buf.definition, {desc="Go to definition"})
       vim.keymap.set('n', 'K', vim.lsp.buf.hover, {desc="Hover info"})

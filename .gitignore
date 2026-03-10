@@ -9,3 +9,6 @@
 *.swo
 *~
 *.bak
+
+# Neovim 插件锁定文件（由 lazy.nvim 自动生成）
+lazy-lock.json

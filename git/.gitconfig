@@ -14,3 +14,9 @@
 # 该文件由 bootstrap.sh 交互式引导创建，且建议不纳入版本控制以防隐私泄露
 [include]
     path = ~/.gitconfig.local
+
+[filter "lfs"]
+    clean = git-lfs clean -- %f
+    smudge = git-lfs smudge -- %f
+    process = git-lfs filter-process
+    required = true
