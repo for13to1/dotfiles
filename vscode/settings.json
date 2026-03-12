@@ -1,0 +1,294 @@
+{
+    // ====================== 核心编辑器设置 ======================
+    // 字体大小（建议安装等宽字体如 Fira Code）
+    // "editor.fontSize": 20,
+    // "editor.fontFamily": "monospace, 'Hack Nerd Font Mono', Menlo, Monaco, 'Courier New'",
+    // 启用无障碍支持（针对屏幕阅读器）
+    "editor.accessibilitySupport": "on",
+    // 自动换行模式（"on" 表示始终换行）
+    "editor.wordWrap": "on",
+    // 代码建议默认选中第一项
+    "editor.suggestSelection": "first",
+    // 允许通过 Tab 键补全建议
+    "editor.tabCompletion": "on",
+    // 显示所有空白字符（如空格、制表符）
+    "editor.renderWhitespace": "all",
+    // 输入时自动格式化（如输入分号后自动格式化）
+    "editor.formatOnType": true,
+    // 保存文件时自动格式化
+    "editor.formatOnSave": true,
+    // 高亮当前作用域的括号对
+    "editor.guides.bracketPairs": "active",
+    // 为不同类型的括号分配独立颜色
+    "editor.bracketPairColorization.independentColorPoolPerBracketType": true,
+    // 编辑器标尺（用于对齐，此处为空表示不显示）
+    "editor.rulers": [],
+    // 禁用拖放文本到编辑器
+    "editor.dragAndDrop": false,
+    // 禁止从外部拖放文件到编辑器
+    "editor.dropIntoEditor.enabled": false,
+    // 显示内联建议工具栏
+    "editor.inlineSuggest.showToolbar": "onHover",
+    // ====================== 语言专属配置 ======================
+    "[markdown]": {
+        "editor.defaultFormatter": "DavidAnson.vscode-markdownlint"
+    },
+    "[json]": {
+        "editor.defaultFormatter": "vscode.json-language-features"
+    },
+    "[jsonc]": {
+        "editor.defaultFormatter": "vscode.json-language-features"
+    },
+    "[python]": {
+        "editor.formatOnType": true
+    },
+    // ------ C/C++ ------
+    "[c]": {
+        // "editor.defaultFormatter": "ms-vscode.cpptools"
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    },
+    "[cpp]": {
+        // 关闭基于单词的代码建议（提升 C++ 补全准确性）
+        "editor.wordBasedSuggestions": "off",
+        // 补全时直接替换文本（非插入模式）
+        "editor.suggest.insertMode": "replace",
+        // 启用语义高亮（需语言服务器支持）
+        "editor.semanticHighlighting.enabled": true,
+        // 指定 C++ 的默认格式化工具为 clangd
+        // "editor.defaultFormatter": "ms-vscode.cpptools"
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    },
+    // C/C++ 扩展的 IntelliSense 引擎模式
+    "C_Cpp.intelliSenseEngine": "default",
+    // C 语言标准设置为 C11
+    "C_Cpp.default.cStandard": "c11",
+    // C++ 语言标准设置为 C++17
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    "C_Cpp.vcFormat.newLine.beforeOpenBrace.namespace": "sameLine",
+    "C_Cpp.vcFormat.indent.accessSpecifiers": true,
+    "C_Cpp.vcFormat.indent.braces": true,
+    "C_Cpp.vcFormat.indent.caseContents": false,
+    "C_Cpp.vcFormat.newLine.beforeElse": false,
+    "C_Cpp.vcFormat.newLine.beforeOpenBrace.block": "sameLine",
+    "C_Cpp.vcFormat.newLine.beforeOpenBrace.function": "sameLine",
+    "C_Cpp.vcFormat.newLine.beforeOpenBrace.type": "sameLine",
+    "C_Cpp.vcFormat.space.insertAfterSemicolon": true,
+    "C_Cpp.formatting": "clangFormat",
+    "html.autoClosingTags": true,
+    "js/ts.autoClosingTags.enabled": true,
+    "python.condaPath": "${env:CONDA_ROOT}/bin/conda",
+    "python.defaultInterpreterPath": "${env:CONDA_ROOT}/envs/py3e/bin/python",
+    // ====================== 文件与工作区管理 ======================
+    // 自动保存策略：焦点离开编辑器时保存
+    "files.autoSave": "onFocusChange",
+    // 文件类型关联（全平台通用，路径分隔符自动处理）
+    "files.associations": {
+        "*.py": "python", // Python 文件
+        "*.yuv": "code-text-binary", // 二进制文件用文本模式打开
+        "*.rgb": "code-text-binary",
+        "*.raw": "code-text-binary"
+    },
+    // 自动猜测文件编码
+    "files.autoGuessEncoding": true,
+    // 保存时删除行尾空格
+    "files.trimTrailingWhitespace": true,
+    // 保存时自动添加文件末尾换行符
+    "files.insertFinalNewline": true,
+    // 保存时删除文件末尾多余空行
+    "files.trimFinalNewlines": true,
+    // 隐藏资源管理器中的指定文件/文件夹
+    "files.exclude": {
+        "**/.git": true, // 版本控制目录
+        "**/.svn": true,
+        "**/.hg": true,
+        "**/CVS": true,
+        "**/.DS_Store": true, // macOS 元数据文件
+        "**/tmp": true, // 临时文件夹
+        "**/node_modules": true, // Node.js 模块
+        "**/bower_components": true,
+        "**/dist": true // 构建输出目录
+    },
+    // 忽略文件变化监听（提升性能）
+    "files.watcherExclude": {
+        "**/.git/objects/**": true,
+        "**/.git/subtree-cache/**": true,
+        "**/node_modules/**": true,
+        "**/tmp/**": true,
+        "**/bower_components/**": true,
+        "**/dist/**": true
+    },
+    // 直接打开不受信任的文件（无警告提示，注意安全风险）
+    "security.workspace.trust.untrustedFiles": "prompt",
+    // 差异编辑器不忽略行尾空格
+    "diffEditor.ignoreTrimWhitespace": false,
+    "search.showLineNumbers": true,
+    "search.followSymlinks": false,
+    // ====================== 构建与调试（平台相关配置） ======================
+    // CMake 配置参数（依赖 vcpkg 工具链）
+    "cmake.configureSettings": {
+        // vcpkg 工具链文件路径（通过环境变量自动识别）
+        "CMAKE_TOOLCHAIN_FILE": "${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        // 目标平台架构（按平台自动选择）
+        "VCPKG_TARGET_TRIPLET": "${env:VCPKG_TARGET_TRIPLET}"
+    },
+    // 打开项目时不自动运行 CMake 配置
+    "cmake.configureOnOpen": false,
+    "cmake.showOptionsMovedNotification": false,
+    "cmake.pinnedCommands": [
+        "workbench.action.tasks.configureTaskRunner",
+        "workbench.action.tasks.runTask"
+    ],
+    // "cmake.additionalCompilerSearchDirs": [
+    //     "${env:MinGW64_DIR}/bin"
+    // ],
+    // cmake.generator
+    // cmake.configureEnvironment
+    // cmake.buildEnvironment
+    // cmake.environment
+    // 启用 vcpkg 集成（需先安装 vcpkg）
+    "vcpkg.general.enable": true,
+    "vcpkg.general.vcpkgPath": "${env:VCPKG_ROOT}",
+    // ====================== 终端与 Shell ======================
+    // 终端字体大小（全平台相同，建议安装等宽字体）
+    // "terminal.integrated.fontSize": 16,
+    // "terminal.integrated.fontFamily": "'MesloLGS NF', 'Hack Nerd Font Mono', monospace",
+    // Windows 终端编码设置（解决中文乱码问题）
+    "terminal.integrated.env.windows": {
+        "LC_ALL": "zh_CN.UTF-8" // 强制使用 UTF-8 编码
+    },
+    "terminal.integrated.commandsToSkipShell": [
+        "matlab.interrupt"
+    ],
+    "terminal.integrated.inheritEnv": true,
+    // "terminal.integrated.tabFocusMode": false,
+    "terminal.integrated.detectLocale": "on",
+    "terminal.external.windowsExec": "wt.exe",
+    "terminal.external.osxExec": "iTerm2.app",
+    "terminal.external.linuxExec": "tilix",
+    // ------ Windows 终端配置 ------
+    "terminal.integrated.profiles.windows": {
+        "MSVC Prompt": {
+            "path": [
+                "${env:windir}\\Sysnative\\cmd.exe",
+                "${env:windir}\\System32\\cmd.exe"
+            ],
+            "args": [
+                "/k",
+                "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\Tools\\VsDevCmd.bat",
+                "-arch=x64",
+                "-host_arch=x64"
+            ],
+            "icon": "terminal-cmd"
+        },
+        "Conda Prompt": {
+            "path": [
+                "${env:windir}\\Sysnative\\cmd.exe",
+                "${env:windir}\\System32\\cmd.exe"
+            ],
+            "args": [
+                "/k",
+                "C:\\ProgramData\\miniconda3\\Scripts\\activate.bat"
+            ],
+            "icon": "terminal-cmd"
+        },
+        "Conda PowerShell": {
+            // "path": "powershell.exe",
+            "path": "pwsh.exe",
+            "args": [
+                "-ExecutionPolicy",
+                "ByPass", // 绕过执行策略限制
+                "-NoExit", // 执行后不退出
+                "-Command",
+                // "& 'C:\\ProgramData\\miniconda3\\shell\\condabin\\conda-hook.ps1'; conda activate 'C:\\ProgramData\\miniconda3' "
+                "& 'C:\\ProgramData\\miniconda3\\shell\\condabin\\conda-hook.ps1'; conda activate py3e "
+            ],
+            "icon": "terminal-cmd"
+        }
+    },
+    // ------ Linux 终端配置 ------
+    "terminal.integrated.profiles.linux": {
+        "Conda Bash": {
+            "path": "bash",
+            "args": [
+                "-c",
+                "conda activate py3e"
+            ]
+        }
+    },
+    // ------ macOS 终端配置 ------
+    "terminal.integrated.profiles.osx": {
+        "Conda Bash": {
+            "path": "zsh",
+            "args": [
+                "-i",
+                "-c",
+                "conda activate py3e"
+            ]
+        }
+    },
+    // 默认终端配置文件
+    "terminal.integrated.defaultProfile.windows": "Conda PowerShell",
+    "terminal.integrated.defaultProfile.linux": "bash",
+    "terminal.integrated.defaultProfile.osx": "zsh",
+    // ====================== 插件与工具集成 ======================
+    "jupyter.askForKernelRestart": false,
+    "git.openRepositoryInParentFolders": "always",
+    "gitlens.telemetry.enabled": false,
+    "notebook.lineNumbers": "on",
+    // "notebook.markup.fontSize": 17,
+    // ------ Hex 编辑器 ------
+    "hexeditor.columnWidth": 16, // 每列 16 字节
+    "hexeditor.showDecodedText": true, // 显示右侧文本预览
+    "hexeditor.defaultEndianness": "little", // 小端字节序
+    // 默认用 Hex Editor 打开二进制文件
+    "workbench.editor.defaultBinaryEditor": "hexEditor.hexedit",
+    // 文件类型关联规则
+    "workbench.editorAssociations": {
+        "{hexdiff}:/**/*.*": "hexEditor.hexedit", // 差异对比模式
+        "*.yuv": "hexEditor.hexedit", // 自定义二进制格式
+        "*.rgb": "hexEditor.hexedit",
+        "*.raw": "hexEditor.hexedit",
+        "*.pdf": "latex-workshop-pdf-hook" // PDF 用 LaTeX 插件打开
+    },
+    // ------ Clangd 配置 ------
+    // "clangd.path": "${env:LLVM_ROOT}/bin/clangd.exe",
+    // "clangd.path": "/usr/bin/clangd",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}/build", // 编译数据库路径
+        "--background-index", // 后台索引加速补全
+        "--completion-style=detailed", // 详细补全信息
+        "--header-insertion=never", // 禁止自动插入头文件
+        "--log=error", // 仅显示错误日志
+        "--clang-tidy", // 启用静态分析
+        "--clang-tidy-checks=performance-*,bugprone-*,modernize-*,-bugprone-narrowing-conversions", // 检查规则
+        "--all-scopes-completion", // 跨作用域补全
+        "--pch-storage=disk" // 预编译头存储方式
+    ],
+    // ====================== 外观与主题 ======================
+    // 图标主题（需安装 vscode-icons 插件）
+    // "workbench.colorTheme": "Visual Studio Dark",
+    "workbench.iconTheme": "vscode-icons",
+    // 不同步到云端的设置（如终端字体）
+    "settingsSync.ignoredSettings": [
+        "terminal.integrated.fontFamily"
+    ],
+    "extensions.ignoreRecommendations": true,
+    // ====================== 远程开发配置 ======================
+    "remote.autoForwardPortsSource": "hybrid",
+    // 指定远程 SSH 主机的操作系统类型
+    "remote.SSH.remotePlatform": {
+        "192.168.0.2": "linux"
+    },
+    "python.useEnvironmentsExtension": false,
+    "json.schemaDownload.trustedDomains": {
+        "https://developer.microsoft.com/json-schemas/": true,
+        "https://json-schema.org/": true,
+        "https://json.schemastore.org/": true,
+        "https://raw.githubusercontent.com/devcontainers/spec/": true,
+        "https://raw.githubusercontent.com/microsoft/vscode/": true,
+        "https://schemastore.azurewebsites.net/": true,
+        "https://www.schemastore.org/": true,
+        "https://raw.githubusercontent.com/DavidAnson/markdownlint/": true
+    }
+}

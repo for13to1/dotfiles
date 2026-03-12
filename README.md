@@ -11,6 +11,7 @@ dotfiles/
 ├── vim/                     Stow 包：Vim 配置
 ├── nvim/                    Stow 包：Neovim 配置
 ├── codestyle/               Stow 包：.editorconfig + .clang-format
+├── vscode/                  VSCode 配置备份
 ├── _install/
 │   └── mac/
 │       ├── Brewfile         Homebrew 软件清单

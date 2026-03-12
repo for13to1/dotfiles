@@ -49,6 +49,10 @@ set_default "$SAFARI_PLIST" AutoOpenSafeDownloads -bool false "关闭自动打�
 set_default "$SAFARI_PLIST" ShowOverlayStatusBar -bool true "显示状态栏" \
   || set_default com.apple.Safari ShowOverlayStatusBar -bool true "显示状态栏" || true
 
+# 在地址栏显示完整 URL
+set_default "$SAFARI_PLIST" ShowFullURLInSmartSearchField -bool true "显示完整网址" \
+  || set_default com.apple.Safari ShowFullURLInSmartSearchField -bool true "显示完整网址" || true
+
 # ── 键盘 ─────────────────────────────────────────────────────────
 # 关闭长按弹出重音字符菜单（Vim 用户福音）
 # set_default NSGlobalDomain ApplePressAndHoldEnabled -bool false "关闭长按重音菜单"

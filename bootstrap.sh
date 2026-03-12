@@ -295,7 +295,31 @@ cd "$DOTFILES_DIR"
 stow zsh git vim nvim codestyle
 ok "Stow 挂载完成"
 
-# ── 7. 编辑器插件同步 ──────────────────────────────────────
+# ── 7. VS Code 配置 ──────────────────────────────────────────────
+# echo ""
+# info "📋 是否部署 VS Code 个人配置？"
+# echo "   1) 是"
+# echo "   2) 否"
+# read -rp "请输入数字 [1-2]: " vscode_choice
+vscode_choice="2"
+
+if [[ "$vscode_choice" == "1" ]]; then
+    info "正在部署 VS Code 配置..."
+    if [[ "$OS" == "Darwin"* ]]; then
+        VSCODE_USER_DIR="$HOME/Library/Application Support/Code/User"
+    elif [[ "$OS" == "Linux"* ]]; then
+        VSCODE_USER_DIR="$HOME/.config/Code/User"
+    else
+        VSCODE_USER_DIR=""
+    fi
+
+    if [[ -n "$VSCODE_USER_DIR" ]]; then
+        mkdir -p "$VSCODE_USER_DIR"
+        ln -sf "$DOTFILES_DIR/vscode/settings.json" "$VSCODE_USER_DIR/settings.json" && ok "VS Code settings.json 已链接"
+    fi
+fi
+
+# ── 8. 编辑器插件同步 ──────────────────────────────────────
 echo ""
 info "📋 请选择要同步的编辑器插件："
 echo "   1) Neovim (lazy.nvim) - [默认]"
@@ -331,7 +355,7 @@ if [[ "$editor_choice" == "2" || "$editor_choice" == "3" ]]; then
     fi
 fi
 
-# ── 8. 完成 ───────────────────────────────────────────────────────
+# ── 9. 完成 ───────────────────────────────────────────────────────
 echo ""
 ok "🎉 全部搞定！请重启终端（或执行 source ~/.zshrc ）使配置生效。"
 echo ""
