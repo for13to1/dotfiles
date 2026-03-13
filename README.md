@@ -12,6 +12,7 @@ dotfiles/
 ├── nvim/                    Stow 包：Neovim 配置
 ├── codestyle/               Stow 包：.editorconfig + .clang-format
 ├── vscode/                  VSCode 配置备份
+├── skills/                  AI Agent Skills (Prompt & Workflow)
 ├── _install/
 │   └── mac/
 │       ├── Brewfile         Homebrew 软件清单
