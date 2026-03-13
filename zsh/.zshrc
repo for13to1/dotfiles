@@ -1,9 +1,20 @@
 # =============================================================================
-# 0. Shell Framework
+# 1. Foundation Framework
 # =============================================================================
 
+# Homebrew (macOS)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    if [[ -f /opt/homebrew/bin/brew ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
+
+    if command -v brew &>/dev/null; then
+        export HOMEBREW_NO_AUTO_UPDATE=1
+    fi
+fi
+
+# Oh My Zsh
 export ZSH="$HOME/.oh-my-zsh"
-export LANG=en_US.UTF-8
 CASE_SENSITIVE="true"
 ZSH_THEME="robbyrussell"
 plugins=(
@@ -21,11 +32,11 @@ plugins=(
 )
 source $ZSH/oh-my-zsh.sh
 
-
 # =============================================================================
-# 1. Environment Variables
+# 2. Environment Variables
 # =============================================================================
 
+export LANG=en_US.UTF-8
 export EDITOR=vim
 # export LD_LIBRARY_PATH="$OpenCV_DIR/lib/:$LD_LIBRARY_PATH"
 export PATH="$HOME/.local/bin:$PATH"
@@ -33,31 +44,57 @@ export PATH="$HOME/.local/bin:$PATH"
 # https://www.gnu.org/software/bash/manual/bash.html#Command-Search-and-Execution
 
 # =============================================================================
-# 2. Local Config
+# 3. Local Config
 # =============================================================================
 
 # API Key 等私密信息统统放在 ~/.zshrc.local 里，不纳入版本控制
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 
 # =============================================================================
-# 3. Runtime Managers
+# 4. Runtime Managers
 # =============================================================================
 
 # >>> lazy conda loading >>>
-export CONDA_ROOT="/opt/homebrew/Caskroom/miniforge/base"
-conda() {
-    unset -f conda
-    source "$CONDA_ROOT/etc/profile.d/conda.sh"
-    conda "$@"
-}
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS (Miniforge via Homebrew)
+    export CONDA_ROOT="/opt/homebrew/Caskroom/miniforge/base"
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    # Linux (Miniforge)
+    if [[ -d "$HOME/miniforge3" ]]; then
+        export CONDA_ROOT="$HOME/miniforge3"
+    elif [[ -d "/opt/miniforge3" ]]; then
+        export CONDA_ROOT="/opt/miniforge3"
+    fi
+fi
+
+if [[ -d "$CONDA_ROOT" ]]; then
+    conda() {
+        unset -f conda
+        source "$CONDA_ROOT/etc/profile.d/conda.sh"
+        conda "$@"
+    }
+fi
 # <<< lazy conda loading <<<
 
 # >>> fnm loading >>>
-eval "$(fnm env --use-on-cd --shell zsh)"
+if command -v fnm &>/dev/null; then
+    eval "$(fnm env --use-on-cd --shell zsh)"
+fi
 # <<< fnm loading <<<
 
+# >>> rustup (cargo) loading >>>
+# 只有当安装了 rustup 时才添加 bin 目录到 PATH
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
+# <<< rustup loading <<<
+
+# >>> zoxide (better cd) loading >>>
+if command -v zoxide &>/dev/null; then
+    eval "$(zoxide init zsh)"
+fi
+# <<< zoxide loading <<<
+
 # =============================================================================
-# 4. Aliases
+# 5. Aliases
 # =============================================================================
 
 alias vi="vim"
@@ -77,7 +114,7 @@ alias grn="grep --color=auto -rnw"
 alias gl1g='git log --oneline --graph --decorate --all'
 
 # =============================================================================
-# 5. Functions
+# 6. Functions
 # =============================================================================
 
 # sudo apt install qrencode
@@ -103,19 +140,19 @@ function base64_decode() { echo -n "$1" | base64 -d; }
 
 function csv_shape() {
     if [ "$#" -ne 1 ]; then echo "Usage: csv_shape <csv_file>"; return 1; fi
-    python -c "import sys, numpy as np; d=np.loadtxt(sys.argv[1], delimiter=','); print(d.shape)" "$1"
+    python3 -c "import sys, numpy as np; d=np.loadtxt(sys.argv[1], delimiter=','); print(d.shape)" "$1"
 }
 [[ -n "$BASH" ]] && export -f csv_shape
 
 function csv_create() {
     if [ "$#" -ne 3 ]; then echo "Usage: csv_create <rows> <cols> <filename>"; return 1; fi
-    python -c "import sys, numpy as np; np.random.seed(0); data = np.random.rand(int(sys.argv[1]), int(sys.argv[2])); np.savetxt(sys.argv[3], data, delimiter=',', fmt='%0.6f')" "$1" "$2" "$3"
+    python3 -c "import sys, numpy as np; np.random.seed(0); data = np.random.rand(int(sys.argv[1]), int(sys.argv[2])); np.savetxt(sys.argv[3], data, delimiter=',', fmt='%0.6f')" "$1" "$2" "$3"
     echo "CSV file '$3' created with $1 rows and $2 columns."
 }
 [[ -n "$BASH" ]] && export -f csv_create
 
 # =============================================================================
-# 6. Editor Integrations
+# 7. Editor Integrations
 # =============================================================================
 
 # >>> vscode python

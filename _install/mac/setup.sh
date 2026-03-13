@@ -4,6 +4,13 @@
 # 按需取消注释你想要的配置项
 #
 
+# ── 彩色输出 ──────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+info()  { echo -e "${BLUE}ℹ️  $*${NC}"; }
+ok()    { echo -e "${GREEN}✅ $*${NC}"; }
+warn()  { echo -e "${YELLOW}⚠️  $*${NC}"; }
+error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
+
 echo "正在应用 macOS 系统偏好设置..."
 
 # ── 辅助函数 ─────────────────────────────────────────────────────
@@ -94,7 +101,23 @@ if ! cat ~/Library/Mail/V*/MailData/Signatures/*.plist &>/dev/null 2>&1 \
 fi
 
 # ── 重启相关服务使设置生效 ───────────────────────────────────────
-killall Finder 2>/dev/null || true
-# killall Dock 2>/dev/null || true
+echo ""
+read -rp "是否立即重启 Finder 和 Safari 以使设置生效？ [y/N]: " restart_apps
+if [[ "$restart_apps" =~ ^[Yy]$ ]]; then
+    info "正在请求应用退出..."
+    # 使用 AppleScript 优雅退出，应用会尝试保存状态
+    osascript -e 'quit app "Safari"' 2>/dev/null || true
+    osascript -e 'quit app "Finder"' 2>/dev/null || true
+    
+    # 稍微等待应用退出
+    sleep 1
+    
+    # Finder 通常需要强制重启才能加载偏好设置
+    killall Finder 2>/dev/null || true
+    # killall Dock 2>/dev/null || true
+    ok "已请求重启"
+else
+    info "已跳过重启。您可以稍后手动重启这些应用，或重启系统使设置生效。"
+fi
 
 echo "macOS 偏好设置已应用。"

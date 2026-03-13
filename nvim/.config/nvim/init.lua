@@ -1,3 +1,9 @@
+-- Neovim version check (0.11+ is required for new LSP APIs)
+if vim.fn.has("nvim-0.11") == 0 then
+  vim.notify("Neovim 0.11+ is required for this configuration!", vim.log.levels.ERROR)
+  return
+end
+
 -- Bootstrap lazy.nvim (Plugin Manager)
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not vim.loop.fs_stat(lazypath) then

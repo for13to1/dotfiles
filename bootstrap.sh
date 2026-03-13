@@ -16,6 +16,11 @@ error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# 确保脚本目录直接位于 $HOME 下，否则 stow 软链接会把文件挂载到错误的位置
+if [[ "$(dirname "$DOTFILES_DIR")" != "$HOME" ]]; then
+    error "项目目录必须直接位于您的 Home 目录下（例如 ~/dotfiles）。\n当前路径为: $DOTFILES_DIR\n请将项目移动到 $HOME 目录下再运行。"
+fi
+
 # ── 1. 检测操作系统 ──────────────────────────────────────────────
 OS="$(uname -s)"
 info "检测到操作系统: $OS"
@@ -99,6 +104,10 @@ case "$OS" in
                 info "正在安装 stow..."
                 sudo apt install -y stow
             fi
+            if ! command -v make &>/dev/null; then
+                info "正在安装 make..."
+                sudo apt install -y make
+            fi
 
             if [[ -f "$DOTFILES_DIR/_install/linux/apt-list.txt" ]]; then
                 info "正在通过 apt 安装软件..."
@@ -118,6 +127,10 @@ case "$OS" in
             if ! command -v stow &>/dev/null; then
                 info "正在安装 stow..."
                 sudo pacman -S --noconfirm stow
+            fi
+            if ! command -v make &>/dev/null; then
+                info "正在安装 make..."
+                sudo pacman -S --noconfirm make
             fi
 
             if [[ -f "$DOTFILES_DIR/_install/linux/pacman-list.txt" ]]; then
@@ -165,13 +178,12 @@ fi
 ## 3. 权限加固
 info "正在加固 SSH 目录及文件权限..."
 chmod 700 "$HOME/.ssh"
-# 私钥、config、授权列表以及指纹文件设置为 600
-find "$HOME/.ssh" -type f -name "id_*" ! -name "*.pub" -exec chmod 600 {} +
-[[ -f "$HOME/.ssh/config" ]] && chmod 600 "$HOME/.ssh/config"
-[[ -f "$HOME/.ssh/authorized_keys" ]] && chmod 600 "$HOME/.ssh/authorized_keys"
-[[ -f "$HOME/.ssh/known_hosts" ]] && chmod 600 "$HOME/.ssh/known_hosts"
-[[ -f "$HOME/.ssh/known_hosts.old" ]] && chmod 600 "$HOME/.ssh/known_hosts.old"
-# 公钥使用标准的 644
+# 私钥与核心配置 (600)
+find "$HOME/.ssh" -type f \( -name "id_*" -o -name "*.pem" \) ! -name "*.pub" -exec chmod 600 {} +
+for f in config authorized_keys known_hosts known_hosts.old; do
+    [[ -f "$HOME/.ssh/$f" ]] && chmod 600 "$HOME/.ssh/$f"
+done
+# 公钥标准权限 (644)
 find "$HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} +
 
 ok "SSH 环境配置完成"
@@ -279,20 +291,57 @@ fi
 # ── 6. 配置文件挂载 (Stow) ──────────────────────────────────────────
 info "正在使用 Stow 挂载配置文件..."
 
-if [[ -f "$HOME/.zshrc" && ! -L "$HOME/.zshrc" ]]; then
-    warn "发现已有的 ~/.zshrc （非软链接），备份为 ~/.zshrc.bak"
-    mv "$HOME/.zshrc" "$HOME/.zshrc.bak"
+# 1. 确定模块列表（单一真值源 SSOT）
+if [[ -f "Makefile" ]]; then
+    # 增强解析：匹配 MODULES := ... 或 MODULES=...，处理前后空格
+    STOW_MODULES=$(grep -E '^\s*MODULES\s*(:|\+)?=' Makefile | cut -d'=' -f2- | xargs)
 fi
 
-for conflict_file in ".gitconfig" ".vimrc"; do
-    if [[ -f "$HOME/$conflict_file" && ! -L "$HOME/$conflict_file" ]]; then
-        warn "发现已有的 ~/$conflict_file（非软链接），备份为 ~/$conflict_file.bak"
-        mv "$HOME/$conflict_file" "$HOME/$conflict_file.bak"
+# 如果 Makefile 解析失败或模块为空，使用兜底列表
+if [[ -z "${STOW_MODULES:-}" ]]; then
+    warn "Makefile 中未发现有效的 MODULES 定义，正在尝试默认列表..."
+    STOW_MODULES="zsh git vim nvim codestyle agents"
+else
+    info "从 Makefile 加载模块: $STOW_MODULES"
+fi
+
+# 2. 动态备份冲突文件
+# 递归检查冲突：如果是 .config 或 .local 等通用容器则进入内部，否则备份整个条目
+backup_conflicts() {
+    local mod="$1"
+    local rel_path="$2"
+    # 定义“共享容器”目录：这些目录由多个应用共享，不能整体备份
+    # 包含 XDG 标准目录、SSH、GPG 以及 macOS 的应用配置目录
+    local container_regex='^(\.config|\.local|\.ssh|\.gnupg|Library|Library/Application Support)$'
+    local full_src="$mod${rel_path:+/$rel_path}"
+    local full_target="$HOME${rel_path:+/$rel_path}"
+
+    if [[ -z "$rel_path" || "$rel_path" =~ $container_regex ]]; then
+        # 如果是模块根目录或容器目录，继续向下查找真正的 Payload
+        if [[ -d "$full_src" ]]; then
+            find "$full_src" -mindepth 1 -maxdepth 1 | while read -r sub_src; do
+                backup_conflicts "$mod" "${sub_src#$mod/}"
+            done
+        fi
+    else
+        # 实际冲突项：检查并备份
+        if [[ -e "$full_target" && ! -L "$full_target" ]]; then
+            warn "发现已有的 ~/$rel_path （非软链接文件或目录），备份为 ~/$rel_path.bak"
+            [[ -e "$full_target.bak" ]] && rm -rf "$full_target.bak"
+            mv "$full_target" "$full_target.bak"
+        fi
+    fi
+}
+
+cd "$DOTFILES_DIR"
+for mod in $STOW_MODULES; do
+    if [[ -d "$mod" ]]; then
+        backup_conflicts "$mod" ""
     fi
 done
 
-cd "$DOTFILES_DIR"
-stow zsh git vim nvim codestyle
+# 3. 执行 Stow 挂载
+stow -R $STOW_MODULES
 ok "Stow 挂载完成"
 
 # ── 7. VS Code 配置 ──────────────────────────────────────────────
@@ -357,5 +406,5 @@ fi
 
 # ── 9. 完成 ───────────────────────────────────────────────────────
 echo ""
-ok "🎉 全部搞定！请重启终端（或执行 source ~/.zshrc ）使配置生效。"
+ok "🎉 全部搞定！请重启终端，或执行 source ~/.zshrc 使配置生效。"
 echo ""
