@@ -164,6 +164,16 @@ cd ~/dotfiles && git pull
 make sync  # 优雅地仅刷新 Makefile 中记录的核心模块
 ```
 
+### 增加工具环境依赖
+
+新增工具 PATH 时，使用条件判断包裹，如：
+
+```bash
+# >>> postgresql@18 loading >>>
+[[ -d "/opt/homebrew/opt/postgresql@18/bin" ]] && export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
+# <<< postgresql@18 loading <<<
+```
+
 ## 💡 最佳实践记录
 
 - **Git**: 始终优先通过 Homebrew 安装 Git，以解决 macOS 自带版本在某些网络环境下的 SSL 报错问题。

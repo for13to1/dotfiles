@@ -87,6 +87,10 @@ fi
 [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
 # <<< rustup loading <<<
 
+# >>> postgresql@18 loading >>>
+[[ -d "/opt/homebrew/opt/postgresql@18/bin" ]] && export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
+# <<< postgresql@18 loading <<<
+
 # >>> zoxide (better cd) loading >>>
 if command -v zoxide &>/dev/null; then
     eval "$(zoxide init zsh)"
