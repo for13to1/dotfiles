@@ -4,7 +4,6 @@
 [core]
     ignorecase = false
     quotepath = false
-    editor = vim
 
 [i18n]
     commitEncoding = utf-8

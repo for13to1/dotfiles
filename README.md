@@ -10,6 +10,9 @@ dotfiles/
 │   └── .agents/
 │       ├── skills/             # 专家技能
 │       └── workflows/          # 自动化流程
+├── codestyle/                  # Stow 包：代码风格规范
+│   ├── .clang-format
+│   └── .editorconfig
 ├── zsh/                        # Stow 包：Zsh 配置
 │   └── .zshrc
 ├── git/                        # Stow 包：Git 全局配置
@@ -20,9 +23,6 @@ dotfiles/
 │       └── lazy-lock.json
 ├── vim/                        # Stow 包：经典 Vim 基础配置
 │   └── .vimrc
-├── codestyle/                  # Stow 包：代码风格规范
-│   ├── .clang-format
-│   └── .editorconfig
 ├── vscode/                     # VSCode 配置备份
 │   └── settings.json
 ├── _install/                   # 平台预装与初始化脚本
@@ -177,8 +177,5 @@ make sync  # 优雅地仅刷新 Makefile 中记录的核心模块
 ## 💡 最佳实践记录
 
 - **Git**: 始终优先通过 Homebrew 安装 Git，以解决 macOS 自带版本在某些网络环境下的 SSL 报错问题。
-- **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为 `zsh/.zshrc` 已完全接管）：
-  ```bash
-  rustup-init -y --no-modify-path
-  ```
+- **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为 `zsh/.zshrc` 已完全接管）：`rustup-init -y --no-modify-path`
 - **Conda (Miniforge)**: **不用**运行 `conda init`，直接依赖 `lazy loading` 实现加速启动。

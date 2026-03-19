@@ -1,7 +1,7 @@
 # Dotfiles 管理方案
 # 记录需要被 Stow 挂载的核心模块
 
-MODULES := zsh git vim nvim codestyle agents
+MODULES := agents codestyle zsh git vim nvim
 
 .PHONY: sync help
 

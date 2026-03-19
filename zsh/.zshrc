@@ -37,7 +37,12 @@ source $ZSH/oh-my-zsh.sh
 # =============================================================================
 
 export LANG=en_US.UTF-8
-export EDITOR=vim
+if command -v nvim &>/dev/null; then
+    export EDITOR="nvim"
+else
+    export EDITOR="vim"
+fi
+export VISUAL="$EDITOR"
 # export LD_LIBRARY_PATH="$OpenCV_DIR/lib/:$LD_LIBRARY_PATH"
 export PATH="$HOME/.local/bin:$PATH"
 # PATH 列表中，靠前的路径优先级最高
