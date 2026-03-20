@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # _install/linux/setup.sh — Linux 系统级优化脚本
 
+set -euo pipefail
+
 # 可以在这里添加特定于 Linux 的配置，例如：
 # 1. 自动安装 fnm/rustup (如果 apt 没装)
 # 2. 系统别名、内核参数调整等

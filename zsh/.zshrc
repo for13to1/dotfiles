@@ -17,6 +17,8 @@ fi
 export ZSH="$HOME/.oh-my-zsh"
 CASE_SENSITIVE="true"
 ZSH_THEME="robbyrussell"
+
+# 动态构建插件列表：第三方插件需要检查是否存在
 plugins=(
     git
     sudo
@@ -27,10 +29,13 @@ plugins=(
     vscode
     copypath
     copybuffer
-    zsh-autosuggestions
-    zsh-syntax-highlighting
 )
-source $ZSH/oh-my-zsh.sh
+
+# 第三方插件：检查是否存在再添加
+[[ -d "$ZSH/custom/plugins/zsh-autosuggestions" ]] && plugins+=(zsh-autosuggestions)
+[[ -d "$ZSH/custom/plugins/zsh-syntax-highlighting" ]] && plugins+=(zsh-syntax-highlighting)
+
+source "$ZSH/oh-my-zsh.sh"
 
 # =============================================================================
 # 2. Environment Variables
@@ -139,26 +144,21 @@ function ytds() { yt-dlp -f bestvideo+bestaudio --write-subs --cookies-from-brow
 function grnh() {
     grep --color=auto -rnw "$1" /usr/include/*.h
 }
-[[ -n "$BASH" ]] && export -f grnh
 
 function base64_encode() { echo -n "$1" | base64; }
-[[ -n "$BASH" ]] && export -f base64_encode
 
 function base64_decode() { echo -n "$1" | base64 -d; }
-[[ -n "$BASH" ]] && export -f base64_decode
 
 function csv_shape() {
     if [ "$#" -ne 1 ]; then echo "Usage: csv_shape <csv_file>"; return 1; fi
     python3 -c "import sys, numpy as np; d=np.loadtxt(sys.argv[1], delimiter=','); print(d.shape)" "$1"
 }
-[[ -n "$BASH" ]] && export -f csv_shape
 
 function csv_create() {
     if [ "$#" -ne 3 ]; then echo "Usage: csv_create <rows> <cols> <filename>"; return 1; fi
     python3 -c "import sys, numpy as np; np.random.seed(0); data = np.random.rand(int(sys.argv[1]), int(sys.argv[2])); np.savetxt(sys.argv[3], data, delimiter=',', fmt='%0.6f')" "$1" "$2" "$3"
     echo "CSV file '$3' created with $1 rows and $2 columns."
 }
-[[ -n "$BASH" ]] && export -f csv_create
 
 # =============================================================================
 # 7. Editor Integrations

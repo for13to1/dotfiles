@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Homebrew installer for dotfiles
 #
 # Usage:

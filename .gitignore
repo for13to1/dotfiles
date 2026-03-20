@@ -2,10 +2,14 @@
 *.local
 
 # macOS
-.DS_Store
+**/.DS_Store
 
 # 编辑器临时文件
 *.swp
 *.swo
 *~
-*.bak
+**/*.bak
+
+# 日志与临时状态
+*.log
+.check_failed

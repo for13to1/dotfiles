@@ -78,14 +78,14 @@ export GEMINI_API_KEY="your-api-key"
 export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
 
 # 代理设置（取消注释前请确保本地代理已启动，否则会导致网络请求失败）
-export proxy_addr="127.0.0.1:7890"
-export http_proxy="http://$proxy_addr"
-export https_proxy="http://$proxy_addr"
-export all_proxy="socks5://$proxy_addr"
+# export proxy_addr="127.0.0.1:7890"
+# export http_proxy="http://$proxy_addr"
+# export https_proxy="http://$proxy_addr"
+# export all_proxy="socks5://$proxy_addr"
 ## 统一大小写（增强兼容性）
-export HTTP_PROXY=$http_proxy
-export HTTPS_PROXY=$https_proxy
-export ALL_PROXY=$all_proxy
+# export HTTP_PROXY=$http_proxy
+# export HTTPS_PROXY=$https_proxy
+# export ALL_PROXY=$all_proxy
 ## 必须项：排除本地流量，防止本地服务访问失败
 export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
 export NO_PROXY=$no_proxy

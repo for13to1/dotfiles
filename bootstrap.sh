@@ -93,7 +93,10 @@ case "$OS" in
         info "🐧 Linux 环境，开始配置..."
 
         if command -v apt &>/dev/null; then
-            sudo apt update
+            info "正在更新 apt 软件包索引..."
+            if ! sudo apt update; then
+                warn "apt update 失败，可能是网络问题，继续尝试安装已缓存的软件包..."
+            fi
 
             # 确保脚本硬依赖已安装（zsh + stow）
             if ! command -v zsh &>/dev/null; then
@@ -197,7 +200,7 @@ git config --global --unset https.proxy 2>/dev/null || true
 
 ## 2. 初始化 Git LFS
 if command -v git-lfs &>/dev/null; then
-    git lfs install
+    git lfs install --skip-repo
     ok "Git LFS 已初始化"
 fi
 
@@ -291,21 +294,34 @@ fi
 # ── 6. 配置文件挂载 (Stow) ──────────────────────────────────────────
 info "正在使用 Stow 挂载配置文件..."
 
-# 1. 确定模块列表（单一真值源 SSOT）
+## 1. 确定模块列表（单一真值源 SSOT）
 if [[ -f "Makefile" ]]; then
-    # 增强解析：匹配 MODULES := ... 或 MODULES=...，处理前后空格
-    STOW_MODULES=$(grep -E '^\s*MODULES\s*(:|\+)?=' Makefile | cut -d'=' -f2- | xargs)
+    # 增强解析：匹配 MODULES := ... 或 MODULES=...，处理续行和前后空格
+    # 使用 awk 处理多行定义（行尾有 \ 表示续行）
+    STOW_MODULES=$(awk '/^[[:space:]]*MODULES[[:space:]]*[:+]?=/ {
+        gsub(/^[[:space:]]*MODULES[[:space:]]*[:+]?=[[:space:]]*/, "");
+        line = $0;
+        # 处理续行
+        while (sub(/\\$/, "", line)) {
+            getline next_line;
+            line = line " " next_line;
+        }
+        # 移除注释并清理
+        gsub(/#.*$/, "", line);
+        gsub(/\\/, "", line);
+        print line;
+    }' Makefile | xargs)
 fi
 
 # 如果 Makefile 解析失败或模块为空，使用兜底列表
 if [[ -z "${STOW_MODULES:-}" ]]; then
     warn "Makefile 中未发现有效的 MODULES 定义，正在尝试默认列表..."
-    STOW_MODULES="zsh git vim nvim codestyle agents"
+    STOW_MODULES="agents codestyle zsh git vim nvim tmux"
 else
     info "从 Makefile 加载模块: $STOW_MODULES"
 fi
 
-# 2. 动态备份冲突文件
+## 2. 动态备份冲突文件
 # 递归检查冲突：如果是 .config 或 .local 等通用容器则进入内部，否则备份整个条目
 backup_conflicts() {
     local mod="$1"
@@ -319,9 +335,9 @@ backup_conflicts() {
     if [[ -z "$rel_path" || "$rel_path" =~ $container_regex ]]; then
         # 如果是模块根目录或容器目录，继续向下查找真正的 Payload
         if [[ -d "$full_src" ]]; then
-            find "$full_src" -mindepth 1 -maxdepth 1 | while read -r sub_src; do
+            while IFS= read -r -d '' sub_src; do
                 backup_conflicts "$mod" "${sub_src#$mod/}"
-            done
+            done < <(find "$full_src" -mindepth 1 -maxdepth 1 -print0)
         fi
     else
         # 实际冲突项：检查并备份
@@ -334,15 +350,19 @@ backup_conflicts() {
 }
 
 cd "$DOTFILES_DIR"
-for mod in $STOW_MODULES; do
-    if [[ -d "$mod" ]]; then
-        backup_conflicts "$mod" ""
-    fi
-done
 
-# 3. 执行 Stow 挂载
-stow -R $STOW_MODULES
-ok "Stow 挂载完成"
+## 3. 执行 Stow 挂载
+if [[ -z "${STOW_MODULES:-}" ]]; then
+    warn "没有需要挂载的模块，跳过 Stow"
+else
+    for mod in $STOW_MODULES; do
+        if [[ -d "$mod" ]]; then
+            backup_conflicts "$mod" ""
+        fi
+    done
+    stow -R $STOW_MODULES
+    ok "Stow 挂载完成"
+fi
 
 # ── 7. VS Code 配置 ──────────────────────────────────────────────
 # echo ""
