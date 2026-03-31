@@ -32,8 +32,22 @@ plugins=(
 )
 
 # 第三方插件：检查是否存在再添加
-[[ -d "$ZSH/custom/plugins/zsh-autosuggestions" ]] && plugins+=(zsh-autosuggestions)
-[[ -d "$ZSH/custom/plugins/zsh-syntax-highlighting" ]] && plugins+=(zsh-syntax-highlighting)
+local missing_plugins=()
+if [[ -d "$ZSH/custom/plugins/zsh-autosuggestions" ]]; then
+    plugins+=(zsh-autosuggestions)
+else
+    missing_plugins+=("zsh-autosuggestions")
+fi
+
+if [[ -d "$ZSH/custom/plugins/zsh-syntax-highlighting" ]]; then
+    plugins+=(zsh-syntax-highlighting)
+else
+    missing_plugins+=("zsh-syntax-highlighting")
+fi
+
+if (( ${#missing_plugins[@]} > 0 )); then
+    echo -e "\033[1;33m⚠️  提醒: 发现缺失插件 ${missing_plugins[*]}，请运行 bootstrap.sh 进行补全\033[0m"
+fi
 
 source "$ZSH/oh-my-zsh.sh"
 

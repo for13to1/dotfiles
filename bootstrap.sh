@@ -30,6 +30,17 @@ case "$OS" in
     Darwin*)
         info "🍎 macOS 环境，开始配置..."
 
+        # 针对国内网络环境，询问是否需要使用清华大学 (TUNA) 镜像源加速
+        echo ""
+        read -rp "🌍 是否需要启用清华大学 (TUNA) 镜像源来极速安装 Homebrew 和软件包？ [y/N]: " use_brew_mirror
+        if [[ "$use_brew_mirror" =~ ^[Yy]$ ]]; then
+            export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
+            export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
+            export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
+            export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
+            ok "已在此次装机流程中注入 TUNA 镜像源环境变量"
+        fi
+
         # Xcode 开发工具检测：优先使用完整版 Xcode.app，否则退而安装精简版 CLT
         if [[ -d "/Applications/Xcode.app" ]]; then
             # 完整版 Xcode 已安装，测试 xcodebuild 是否可用
@@ -70,7 +81,7 @@ case "$OS" in
             # brew bundle 某些 cask 可能因网络、密码弹窗等原因失败，
             # 不应阻断后续步骤（Oh My Zsh、Stow 等），失败的包可稍后手动重试
             info "正在更新 Homebrew 索引并安装必备软件..."
-            brew update
+            brew update || warn "Homebrew 索引更新未能全量完成（可能是部分第三方 Tap 连不上），尝试继续安装..."
             if brew bundle --verbose --file="$DOTFILES_DIR/_install/mac/Brewfile.essential"; then
                 ok "必备软件安装完毕"
             else
@@ -82,9 +93,9 @@ case "$OS" in
         fi
 
         # 执行 macOS 偏好设置脚本
-        if [[ -f "$DOTFILES_DIR/_install/mac/setup.sh" ]]; then
+        if [[ -f "$DOTFILES_DIR/_setup/mac/setup.sh" ]]; then
             info "正在应用 macOS 系统偏好设置..."
-            bash "$DOTFILES_DIR/_install/mac/setup.sh"
+            bash "$DOTFILES_DIR/_setup/mac/setup.sh"
             ok "macOS 偏好设置已应用"
         fi
         ;;
@@ -114,7 +125,7 @@ case "$OS" in
 
             if [[ -f "$DOTFILES_DIR/_install/linux/apt-list.txt" ]]; then
                 info "正在通过 apt 安装软件..."
-                xargs sudo apt install -y < "$DOTFILES_DIR/_install/linux/apt-list.txt"
+                grep -v '^[[:space:]]*#' "$DOTFILES_DIR/_install/linux/apt-list.txt" | grep -v '^[[:space:]]*$' | xargs sudo apt install -y
                 ok "apt 软件安装完毕"
             else
                 warn "未找到 _install/linux/apt-list.txt，跳过其他软件安装"
@@ -138,7 +149,7 @@ case "$OS" in
 
             if [[ -f "$DOTFILES_DIR/_install/linux/pacman-list.txt" ]]; then
                 info "正在通过 pacman 安装软件..."
-                xargs sudo pacman -S --noconfirm --needed < "$DOTFILES_DIR/_install/linux/pacman-list.txt"
+                grep -v '^[[:space:]]*#' "$DOTFILES_DIR/_install/linux/pacman-list.txt" | grep -v '^[[:space:]]*$' | xargs sudo pacman -S --noconfirm --needed
                 ok "pacman 软件安装完毕"
             else
                 warn "未找到 _install/linux/pacman-list.txt，跳过其他软件安装"
@@ -147,8 +158,8 @@ case "$OS" in
             warn "未识别的 Linux 包管理器，请手动安装 zsh 及所需软件"
         fi
 
-        if [[ -f "$DOTFILES_DIR/_install/linux/setup.sh" ]]; then
-            bash "$DOTFILES_DIR/_install/linux/setup.sh"
+        if [[ -f "$DOTFILES_DIR/_setup/linux/setup.sh" ]]; then
+            bash "$DOTFILES_DIR/_setup/linux/setup.sh"
         fi
         ;;
 
@@ -201,7 +212,9 @@ git config --global --unset https.proxy 2>/dev/null || true
 ## 2. 初始化 Git LFS
 if command -v git-lfs &>/dev/null; then
     git lfs install --skip-repo
-    ok "Git LFS 已初始化"
+    info "检测到 Git LFS，正在拉取真实数据文件..."
+    git -C "$DOTFILES_DIR" lfs pull || warn "Git LFS 目前无需要拉取的数据或遇到网络阻碍"
+    ok "Git LFS 初始化与同步完毕"
 fi
 
 ## 3. Git 本地用户信息 (~/.gitconfig.local)
@@ -242,7 +255,12 @@ fi
 ## 2. 切换默认 Shell
 if [[ "$SHELL" != *"zsh"* ]] && command -v zsh &>/dev/null; then
     info "检测到当前默认 Shell 不是 zsh，正在尝试为您切换..."
-    chsh -s "$(command -v zsh)" || warn "切换默认 Shell 失败，您可以稍后手动执行: chsh -s \$(which zsh)"
+    ZSH_PATH="$(command -v zsh)"
+    if ! grep -Fxq "$ZSH_PATH" /etc/shells; then
+        warn "Zsh 路径 ($ZSH_PATH) 不在 /etc/shells 中，正在添加..."
+        echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null
+    fi
+    chsh -s "$ZSH_PATH" || warn "切换默认 Shell 失败，您可以稍后手动执行: chsh -s $ZSH_PATH"
     ok "已退出 chsh 流程"
 fi
 
@@ -267,17 +285,9 @@ if [[ ! -f "$HOME/.zshrc.local" ]]; then
     cat <<'EOF' > "$HOME/.zshrc.local"
 # ~/.zshrc.local — 本地配置，不纳入版本控制，可按需修改
 
-# API Keys
-export OPENAI_API_KEY="sk-..."
-export OPENAI_BASE_URL="https://api.openai.com/v1"
-
-export ANTHROPIC_API_KEY="sk-ant-..."
-export ANTHROPIC_BASE_URL="https://api.anthropic.com"
-
-export GEMINI_API_KEY="your-api-key"
-export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
-
-# 代理设置（取消注释前请确保本地代理已启动，否则会导致网络请求失败）
+# ==========================================================
+# 网络代理设置（取消注释前请确保代理已启动）
+# ==========================================================
 # export proxy_addr="127.0.0.1:7890"
 # export http_proxy="http://$proxy_addr"
 # export https_proxy="http://$proxy_addr"
@@ -287,6 +297,27 @@ export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
 # export ALL_PROXY=$all_proxy
 export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
 export NO_PROXY=$no_proxy
+
+# ==========================================================
+# Homebrew 镜像源加速 (按需开启)
+# 还原方法：重新加上注释并重启终端，即可切回官方默认源
+# ==========================================================
+# export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
+# export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
+# export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
+# export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
+
+# ==========================================================
+# API Keys
+# ==========================================================
+export OPENAI_API_KEY="sk-..."
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+
+export ANTHROPIC_API_KEY="sk-ant-..."
+export ANTHROPIC_BASE_URL="https://api.anthropic.com"
+
+export GEMINI_API_KEY="your-api-key"
+export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
 EOF
     ok "~/.zshrc.local 示例模板已生成"
 fi
@@ -321,30 +352,35 @@ else
     info "从 Makefile 加载模块: $STOW_MODULES"
 fi
 
-## 2. 动态备份冲突文件
-# 递归检查冲突：如果是 .config 或 .local 等通用容器则进入内部，否则备份整个条目
+## 2. 动态备份冲突文件（完全贴合 Stow 的 Unfolding 逻辑）
 backup_conflicts() {
     local mod="$1"
     local rel_path="$2"
-    # 定义“共享容器”目录：这些目录由多个应用共享，不能整体备份
-    # 包含 XDG 标准目录、SSH、GPG 以及 macOS 的应用配置目录
-    local container_regex='^(\.config|\.local|\.ssh|\.gnupg|Library|Library/Application Support)$'
     local full_src="$mod${rel_path:+/$rel_path}"
     local full_target="$HOME${rel_path:+/$rel_path}"
 
-    if [[ -z "$rel_path" || "$rel_path" =~ $container_regex ]]; then
-        # 如果是模块根目录或容器目录，继续向下查找真正的 Payload
+    if [[ -z "$rel_path" ]]; then
+        # 模块根目录，直接遍历进入
         if [[ -d "$full_src" ]]; then
             while IFS= read -r -d '' sub_src; do
                 backup_conflicts "$mod" "${sub_src#$mod/}"
             done < <(find "$full_src" -mindepth 1 -maxdepth 1 -print0)
         fi
     else
-        # 实际冲突项：检查并备份
+        # 仅当目标存在、且不是软链时才需要考虑备份
         if [[ -e "$full_target" && ! -L "$full_target" ]]; then
-            warn "发现已有的 ~/$rel_path （非软链接文件或目录），备份为 ~/$rel_path.bak"
-            [[ -e "$full_target.bak" ]] && rm -rf "$full_target.bak"
-            mv "$full_target" "$full_target.bak"
+            if [[ -d "$full_src" && -d "$full_target" ]]; then
+                # 源和目标都是真实的目录：Stow 会自动展开 (Unfolding) 进入内部，
+                # 所以我们不能移走整个目录，而是跟着 Stow 一起递归进入
+                while IFS= read -r -d '' sub_src; do
+                    backup_conflicts "$mod" "${sub_src#$mod/}"
+                done < <(find "$full_src" -mindepth 1 -maxdepth 1 -print0)
+            else
+                # 冲突发生（目标是文件，或源是文件但目标是目录），直接备份目标
+                local timestamp=$(date +%Y%m%d_%H%M%S)
+                warn "发现冲突文件/目录 ~/$rel_path （非软链接），备份为 ~/$rel_path.bak.$timestamp"
+                mv "$full_target" "$full_target.bak.$timestamp"
+            fi
         fi
     fi
 }
@@ -360,7 +396,7 @@ else
             backup_conflicts "$mod" ""
         fi
     done
-    stow -R $STOW_MODULES
+    stow --no-folding -R $STOW_MODULES
     ok "Stow 挂载完成"
 fi
 
@@ -370,7 +406,7 @@ fi
 # echo "   1) 是"
 # echo "   2) 否"
 # read -rp "请输入数字 [1-2]: " vscode_choice
-vscode_choice="2"
+vscode_choice="2" # 架构哲学：VS Code 这种深埋在 GUI 沙盒目录下的配置，本项目只做备份收纳，不会在此硬性软链接部署。
 
 if [[ "$vscode_choice" == "1" ]]; then
     info "正在部署 VS Code 配置..."

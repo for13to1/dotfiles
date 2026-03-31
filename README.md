@@ -17,23 +17,26 @@ dotfiles/
 │   └── .zshrc
 ├── git/                        # Stow 包：Git 全局配置
 │   └── .gitconfig
-├── nvim/                       # Stow 包：Neovim 深度定制
+├── nvim/                       # Stow 包：Neovim 配置
 │   └── .config/nvim/
 │       ├── init.lua
 │       └── lazy-lock.json
-├── vim/                        # Stow 包：经典 Vim 基础配置
+├── vim/                        # Stow 包：Vim 配置
 │   └── .vimrc
 ├── vscode/                     # VSCode 配置备份
 │   └── settings.json
-├── _install/                   # 平台预装与初始化脚本
+├── _install/                   # 平台专属包管理器安装清单
 │   ├── mac/
 │   │   ├── Brewfile            # Homebrew 完整软件清单
-│   │   ├── Brewfile.essential  # Homebrew 必备软件清单
-│   │   └── setup.sh            # macOS 系统环境设置
+│   │   └── Brewfile.essential  # Homebrew 必备软件清单
 │   └── linux/
 │       ├── apt-list.txt        # Debian/Ubuntu 软件包清单
-│       ├── pacman-list.txt     # Arch Linux 软件包清单
-│       └── setup.sh            # Linux 系统环境设置
+│       └── pacman-list.txt     # Arch Linux 软件包清单
+├── _setup/                     # 系统底层偏好与权限初始化脚本
+│   ├── mac/
+│   │   └── setup.sh            # macOS 系统设置
+│   └── linux/
+│       └── setup.sh            # Linux 系统设置
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本
 ├── .gitignore
