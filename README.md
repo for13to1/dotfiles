@@ -70,7 +70,19 @@ cd ~/dotfiles && bash bootstrap.sh
 ### 1. `~/.zshrc.local` 示例
 
 ```bash
-# AI 厂商 API 密钥
+# 代理设置（取消注释前请确保本地代理已启动，否则会导致网络请求失败）
+# export proxy_addr="127.0.0.1:7890"
+# export http_proxy="http://$proxy_addr"
+# export https_proxy="http://$proxy_addr"
+# export all_proxy="socks5://$proxy_addr"
+# export HTTP_PROXY=$http_proxy
+# export HTTPS_PROXY=$https_proxy
+# export ALL_PROXY=$all_proxy
+## 必须项：排除本地流量，防止本地服务访问失败
+export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
+export NO_PROXY=$no_proxy
+
+# API Keys
 export OPENAI_API_KEY="sk-..."
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 
@@ -79,19 +91,6 @@ export ANTHROPIC_BASE_URL="https://api.anthropic.com"
 
 export GEMINI_API_KEY="your-api-key"
 export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
-
-# 代理设置（取消注释前请确保本地代理已启动，否则会导致网络请求失败）
-# export proxy_addr="127.0.0.1:7890"
-# export http_proxy="http://$proxy_addr"
-# export https_proxy="http://$proxy_addr"
-# export all_proxy="socks5://$proxy_addr"
-## 统一大小写（增强兼容性）
-# export HTTP_PROXY=$http_proxy
-# export HTTPS_PROXY=$https_proxy
-# export ALL_PROXY=$all_proxy
-## 必须项：排除本地流量，防止本地服务访问失败
-export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
-export NO_PROXY=$no_proxy
 ```
 
 ### 2. `~/.gitconfig.local` 示例

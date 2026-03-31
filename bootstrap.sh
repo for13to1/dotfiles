@@ -299,15 +299,6 @@ export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
 export NO_PROXY=$no_proxy
 
 # ==========================================================
-# Homebrew 镜像源加速 (按需开启)
-# 还原方法：重新加上注释并重启终端，即可切回官方默认源
-# ==========================================================
-# export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
-# export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
-# export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
-# export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
-
-# ==========================================================
 # API Keys
 # ==========================================================
 export OPENAI_API_KEY="sk-..."
