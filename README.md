@@ -14,7 +14,9 @@ dotfiles/
 │   ├── .clang-format
 │   └── .editorconfig
 ├── zsh/                        # Stow 包：Zsh 配置
-│   └── .zshrc
+│   ├── .zshrc
+│   └── .zsh.d/
+│       └── brew_mirror.sh      # Homebrew 镜像源切换
 ├── git/                        # Stow 包：Git 全局配置
 │   └── .gitconfig
 ├── nvim/                       # Stow 包：Neovim 配置
@@ -81,6 +83,11 @@ cd ~/dotfiles && bash bootstrap.sh
 ## 必须项：排除本地流量，防止本地服务访问失败
 export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
 export NO_PROXY=$no_proxy
+
+# Homebrew 镜像源切换 (函数定义见 ~/.zsh.d/brew_mirror.sh)
+brew_mirror ustc
+# 可选值: tuna | ustc | ali | reset
+# Linux 用户无需此段
 
 # API Keys
 export OPENAI_API_KEY="sk-..."

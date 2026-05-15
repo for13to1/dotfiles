@@ -4,13 +4,6 @@
 
 # Homebrew (macOS)
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # Homebrew 镜像源加速（按需开启）
-    # 还原方法：重新加上注释并重启终端，即可切回官方默认源
-    # export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
-    # export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
-    # export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
-    # export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
-
     if [[ -f /opt/homebrew/bin/brew ]]; then
         eval "$(/opt/homebrew/bin/brew shellenv)"
     fi
@@ -18,6 +11,9 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     if command -v brew &>/dev/null; then
         export HOMEBREW_NO_AUTO_UPDATE=1
     fi
+    # 加载 ~/.zsh.d/ 下的所有函数片段（stow 挂载自 zsh/.zsh.d/）
+    for _f in ~/.zsh.d/*.sh; do [[ -f "$_f" ]] && source "$_f"; done
+    unset _f
 fi
 
 # Oh My Zsh

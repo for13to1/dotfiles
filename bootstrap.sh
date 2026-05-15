@@ -30,15 +30,28 @@ case "$OS" in
     Darwin*)
         info "🍎 macOS 环境，开始配置..."
 
-        # 针对国内网络环境，询问是否需要使用清华大学 (TUNA) 镜像源加速
+        source "$DOTFILES_DIR/zsh/.zsh.d/brew_mirror.sh"
+
+        # 针对国内网络环境，询问是否需要使用镜像源加速
         echo ""
-        read -rp "🌍 是否需要启用清华大学 (TUNA) 镜像源来极速安装 Homebrew 和软件包？ [y/N]: " use_brew_mirror
-        if [[ "$use_brew_mirror" =~ ^[Yy]$ ]]; then
-            export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
-            export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
-            export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
-            export HOMEBREW_CORE_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git"
-            ok "已在此次装机流程中注入 TUNA 镜像源环境变量"
+        info "🌍 为了加速 Homebrew 安装，建议选择一个国内镜像源："
+        echo "   1) 清华大学 (TUNA) - [默认]"
+        echo "   2) 中国科大 (USTC)"
+        echo "   3) 阿里巴巴 (Aliyun)"
+        echo "   4) 跳过 (使用官方默认源)"
+        read -rp "请输入数字 [1-4]: " mirror_choice
+
+        SELECTED_MIRROR=""
+        case "$mirror_choice" in
+            1|"") SELECTED_MIRROR="tuna" ;;
+            2)    SELECTED_MIRROR="ustc" ;;
+            3)    SELECTED_MIRROR="ali"  ;;
+            *)    SELECTED_MIRROR=""     ;;
+        esac
+
+        if [[ -n "$SELECTED_MIRROR" ]]; then
+            brew_mirror "$SELECTED_MIRROR"
+            ok "已在此次装机流程中注入 $SELECTED_MIRROR 镜像源环境变量"
         fi
 
         # Xcode 开发工具检测：优先使用完整版 Xcode.app，否则退而安装精简版 CLT
@@ -282,7 +295,8 @@ omz_install_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-synt
 ## 4. 初始化 ~/.zshrc.local
 if [[ ! -f "$HOME/.zshrc.local" ]]; then
     info "正在生成 ~/.zshrc.local 示例模板..."
-    cat <<'EOF' > "$HOME/.zshrc.local"
+
+    cat <<'TEMPLATE_EOF' > "$HOME/.zshrc.local"
 # ~/.zshrc.local — 本地配置，不纳入版本控制，可按需修改
 
 # ==========================================================
@@ -297,6 +311,23 @@ if [[ ! -f "$HOME/.zshrc.local" ]]; then
 # export ALL_PROXY=$all_proxy
 export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
 export NO_PROXY=$no_proxy
+TEMPLATE_EOF
+
+    if [[ "$OS" == "Darwin"* ]]; then
+        cat <<'TEMPLATE_EOF' >> "$HOME/.zshrc.local"
+
+# ==========================================================
+# Homebrew 镜像源切换 (函数定义见 ~/.zsh.d/brew_mirror.sh)
+# ==========================================================
+TEMPLATE_EOF
+        if [[ -n "${SELECTED_MIRROR:-}" ]]; then
+            echo "brew_mirror $SELECTED_MIRROR" >> "$HOME/.zshrc.local"
+        else
+            echo "# brew_mirror ustc  # 取消注释以启用 USTC 镜像源" >> "$HOME/.zshrc.local"
+        fi
+    fi
+
+    cat <<'TEMPLATE_EOF' >> "$HOME/.zshrc.local"
 
 # ==========================================================
 # API Keys
@@ -309,7 +340,7 @@ export ANTHROPIC_BASE_URL="https://api.anthropic.com"
 
 export GEMINI_API_KEY="your-api-key"
 export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
-EOF
+TEMPLATE_EOF
     ok "~/.zshrc.local 示例模板已生成"
 fi
 
