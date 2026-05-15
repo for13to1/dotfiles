@@ -164,6 +164,19 @@ cd ~/dotfiles && stow tmux
 # 4. 持久化：将 'tmux' 添加到 Makefile 的 MODULES 变量中 (此列表也是 bootstrap.sh 的真值源)
 ```
 
+### Homebrew 镜像管理
+
+仓库内置了 `brew_mirror` 工具函数（定义于 `zsh/.zsh.d/brew_mirror.sh`），方便在不同镜像源之间快速切换：
+
+```bash
+brew_mirror              # 查看当前所有 Homebrew 相关的环境变量状态
+brew_mirror tuna         # 切换至 清华大学 (TUNA) 镜像源
+brew_mirror ustc         # 切换至 中国科大 (USTC) 镜像源
+brew_mirror ali          # 切换至 阿里巴巴 (Aliyun) 镜像源
+brew_mirror reset        # 重置为官方默认源 (unset 所有相关变量)
+brew_mirror -q <source>  # 静默模式（不打印成功提示），适合放在 .zshrc.local 中使用
+```
+
 ### 增量更新 dotfiles
 
 当你在远程或其他设备修改了配置，拉取更新后一键刷新：

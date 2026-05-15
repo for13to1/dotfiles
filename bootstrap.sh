@@ -32,9 +32,9 @@ case "$OS" in
 
         source "$DOTFILES_DIR/zsh/.zsh.d/brew_mirror.sh"
 
-        # 针对国内网络环境，询问是否需要使用镜像源加速
+        # 询问是否需要使用镜像源加速
         echo ""
-        info "🌍 为了加速 Homebrew 安装，建议选择一个国内镜像源："
+        info "🌍 Homebrew 镜像源选择："
         echo "   1) 清华大学 (TUNA) - [默认]"
         echo "   2) 中国科大 (USTC)"
         echo "   3) 阿里巴巴 (Aliyun)"
@@ -341,7 +341,7 @@ export ANTHROPIC_BASE_URL="https://api.anthropic.com"
 export GEMINI_API_KEY="your-api-key"
 export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
 TEMPLATE_EOF
-    ok "~/.zshrc.local 示例模板已生成"
+    ok "$HOME/.zshrc.local 示例模板已生成"
 fi
 
 # ── 6. 配置文件挂载 (Stow) ──────────────────────────────────────────
@@ -385,7 +385,7 @@ backup_conflicts() {
         # 模块根目录，直接遍历进入
         if [[ -d "$full_src" ]]; then
             while IFS= read -r -d '' sub_src; do
-                backup_conflicts "$mod" "${sub_src#$mod/}"
+                backup_conflicts "$mod" "${sub_src#"$mod"/}"
             done < <(find "$full_src" -mindepth 1 -maxdepth 1 -print0)
         fi
     else
@@ -395,11 +395,12 @@ backup_conflicts() {
                 # 源和目标都是真实的目录：Stow 会自动展开 (Unfolding) 进入内部，
                 # 所以我们不能移走整个目录，而是跟着 Stow 一起递归进入
                 while IFS= read -r -d '' sub_src; do
-                    backup_conflicts "$mod" "${sub_src#$mod/}"
+                    backup_conflicts "$mod" "${sub_src#"$mod"/}"
                 done < <(find "$full_src" -mindepth 1 -maxdepth 1 -print0)
             else
                 # 冲突发生（目标是文件，或源是文件但目标是目录），直接备份目标
-                local timestamp=$(date +%Y%m%d_%H%M%S)
+                local timestamp
+                timestamp=$(date +%Y%m%d_%H%M%S)
                 warn "发现冲突文件/目录 ~/$rel_path （非软链接），备份为 ~/$rel_path.bak.$timestamp"
                 mv "$full_target" "$full_target.bak.$timestamp"
             fi
