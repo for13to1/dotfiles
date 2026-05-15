@@ -321,9 +321,9 @@ TEMPLATE_EOF
 # ==========================================================
 TEMPLATE_EOF
         if [[ -n "${SELECTED_MIRROR:-}" ]]; then
-            echo "brew_mirror $SELECTED_MIRROR" >> "$HOME/.zshrc.local"
+            echo "brew_mirror -q $SELECTED_MIRROR" >> "$HOME/.zshrc.local"
         else
-            echo "# brew_mirror ustc  # 取消注释以启用 USTC 镜像源" >> "$HOME/.zshrc.local"
+            echo "# brew_mirror -q ustc  # 取消注释以启用 USTC 镜像源" >> "$HOME/.zshrc.local"
         fi
     fi
 

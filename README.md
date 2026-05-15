@@ -85,7 +85,7 @@ export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
 export NO_PROXY=$no_proxy
 
 # Homebrew 镜像源切换 (函数定义见 ~/.zsh.d/brew_mirror.sh)
-brew_mirror ustc
+brew_mirror -q ustc
 # 可选值: tuna | ustc | ali | reset
 # Linux 用户无需此段
 
