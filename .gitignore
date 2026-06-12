@@ -13,3 +13,9 @@
 # 日志与临时状态
 *.log
 .check_failed
+
+# Python 缓存
+__pycache__/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
