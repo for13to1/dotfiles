@@ -1,7 +1,7 @@
 """
 pdf2md-polish: Deterministic markdown post-processing for PDF-converted documents.
 
-Handles OCR cleanup, abbreviation-aware sentence splitting, equation wrapping,
+Handles OCR cleanup, abbreviation-aware sentence splitting,
 and one-sentence-per-line formatting. Run this BEFORE letting the LLM adjust
 heading hierarchy and handle ambiguous cases.
 
@@ -13,6 +13,7 @@ import argparse
 import json
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 # ── Sentinel placeholders for text protection ──────────────────────────────
@@ -135,7 +136,8 @@ ABBREVIATIONS.sort(key=len, reverse=True)
 # Compile single abbreviation matching pattern using word boundaries to prevent
 # false positives (e.g. "signal." matching "al.")
 _ABBR_PATTERN = re.compile(
-    r"\b(?:" + "|".join(re.escape(abbr) for abbr in ABBREVIATIONS) + ")", re.IGNORECASE
+    r"\b(?:" + "|".join(re.escape(abbr) for abbr in ABBREVIATIONS) + r")(?![a-zA-Z])",
+    re.IGNORECASE,
 )
 
 # Pattern for single uppercase letter initials: "A.", "B.", etc.
@@ -180,18 +182,22 @@ _LIGATURES = {
 }
 
 
-def cleanup_ocr(text: str) -> str:
-    """Fix common OCR ligatures and stray artifacts."""
+def cleanup_ligatures(text: str) -> str:
+    """Fix common OCR ligatures and broadly safe character artifacts."""
     for lig, repl in _LIGATURES.items():
         text = text.replace(lig, repl)
-    # Remove stray single backslashes that are not part of LaTeX commands,
-    # Markdown escapes, or common math/delimiter wrappers.
-    # We ensure we do not touch double backslashes (\\) which are valid in LaTeX/Markdown.
-    text = re.sub(r"(?<!\\)\\(?!\\)(?=[^a-zA-Z()\[\]$%#{}&_*+\-.!\`<>])", "", text)
     return text
 
 
-# (Equation wrapping removed)
+def cleanup_ocr(text: str) -> str:
+    """Fix common OCR ligatures and stray artifacts in prose-like text."""
+    text = cleanup_ligatures(text)
+    # Remove stray single backslashes that are not part of LaTeX commands,
+    # Markdown escapes, or common math/delimiter wrappers.
+    # We ensure we do not touch double backslashes (\\) which are valid in LaTeX/Markdown.
+    # Includes whitespace, single quote, and double quote in exclusion list to protect valid escapes (e.g. \ , \", \').
+    text = re.sub(r"(?<!\\)\\(?!\\)(?=[^a-zA-Z()\[\]$%#{}&_*+\-.!\`<>\"'\s])", "", text)
+    return text
 
 
 # ── Sentence splitting ──────────────────────────────────────────────────────
@@ -200,6 +206,7 @@ _SENT_END = re.compile(
     r"([。！？]['\"()\]\}”’）】」』〉》]*"
     r"|[!?.]+['\"()\]\}”’）】」』〉》]*(?=\s|$))"
 )
+_SENT_END_BOUNDARY = re.compile(r"[。！？]|[!?.]\s")
 
 
 _URL_EMAIL_RE = re.compile(
@@ -232,204 +239,7 @@ def _restore_urls(text: str, mapping: dict) -> str:
     return text
 
 
-_PREFIX_RE = re.compile(r"^(\s*(?:[-*+]\s+|\d+\.\s+|>\s*|))")
-
-
-def get_subsequent_prefix(prefix: str) -> str:
-    """Calculate the prefix for subsequent sentences in a split paragraph.
-    Preserves '>' for blockquotes, replaces list markers with spaces."""
-    if ">" in prefix:
-        return prefix
-    return re.sub(r"[^\s]", " ", prefix)
-
-
-def split_sentences(text: str) -> list[str]:
-    """Split text into sentences, respecting abbreviations and URLs.
-    Preserves line-level prefixes and indentation."""
-    # Protect URLs and emails first (before abbreviation protection changes dots)
-    protected, url_map = _protect_urls(text)
-    # Then protect abbreviations
-    protected = _protect_abbreviations(protected)
-
-    # Split by lines first to preserve markdown structure
-    lines = protected.split("\n")
-    result = []
-
-    for line in lines:
-        # Match leading spaces and optional markdown block markers (list item or blockquote)
-        match = _PREFIX_RE.match(line)
-        prefix = match.group(1) if match else ""
-        content = line[len(prefix) :]
-
-        stripped_content = content.strip()
-        if not stripped_content:
-            result.append("")
-            continue
-
-        # Skip lines that are clearly structural blocks that should not be split
-        # (headings, code fences, tables, images)
-        if re.match(r"^(#{1,6}\s|```|\|.*\||\$\$|!\[)", stripped_content):
-            result.append(_restore_abbreviations(line))
-            continue
-
-        # Split on sentence-ending punctuation
-        parts = _SENT_END.split(content)
-        sentences = []
-        current = ""
-
-        # Merge each punctuation mark back with its preceding text,
-        # then decide if it's a real sentence boundary.
-        for i in range(0, len(parts) - 1, 2):
-            text_part = parts[i]
-            punct = parts[i + 1]
-            combined = text_part + punct
-            next_text = parts[i + 2] if i + 2 < len(parts) else ""
-
-            current += combined
-
-            # Skip if this period belongs to an abbreviation
-            if punct == "." and len(text_part) > 0 and text_part[-1] == _SENTINEL_ABBR:
-                continue
-
-            # Skip decimal numbers: "." followed by digit (e.g., "3.14")
-            if punct == "." and next_text and next_text[0].isdigit():
-                continue
-
-            # Real sentence boundary
-            sentences.append(current.strip())
-            current = ""
-
-        # Remaining trailing text without punctuation
-        if len(parts) % 2 == 1:
-            current += parts[-1]
-        if current.strip():
-            sentences.append(current.strip())
-
-        # Restore abbreviations in each sentence and preserve correct indentation
-        if sentences:
-            first_line = prefix + _restore_abbreviations(sentences[0])
-            result.append(first_line)
-
-            sub_prefix = get_subsequent_prefix(prefix)
-            for s in sentences[1:]:
-                line_out = sub_prefix + _restore_abbreviations(s)
-                result.append(line_out)
-
-    # Restore URLs and emails
-    result = [_restore_urls(line_item, url_map) for line_item in result]
-
-    return result
-
-
-def format_one_per_line(lines: list[str]) -> str:
-    """Join lines with newlines, preserving paragraph boundaries.
-    Blank lines in input become blank lines in output (paragraph separators)."""
-    output_lines = []
-    prev_blank = False
-
-    for line in lines:
-        if line == "":
-            if not prev_blank:
-                output_lines.append("")
-            prev_blank = True
-        else:
-            output_lines.append(line)
-            prev_blank = False
-
-    return "\n".join(output_lines)
-
-
 # ── Math spacing cleanup (Stack-based state machine & spacing optimization) ──
-
-
-def parse_math_segments(text: str) -> tuple[list[tuple[str, str]], bool, list[int]]:
-    """Parse text into alternating (type, content) segments where type is 'text' or 'math'.
-    Returns (segments, is_balanced, unbalanced_line_numbers).
-
-    Line numbers are 1-indexed. The delimiters ($ or $$) are preserved inside the math segment.
-    """
-    segments = []
-    # Match escaped dollar (\\\$), double dollar ($$), or single dollar ($)
-    pattern = re.compile(r"(\\\$|\$\$|\$)")
-
-    last_idx = 0
-    in_math = False
-    math_type = None  # 'inline' or 'block'
-    current_math_start = -1
-    current_math_delim = ""
-
-    stack = []
-    unbalanced_lines = []
-
-    def get_line_number(index: int) -> int:
-        return text[:index].count("\n") + 1
-
-    for match in pattern.finditer(text):
-        token = match.group(1)
-        start, end = match.span()
-
-        if token.startswith("\\"):
-            # Escaped dollar, treat as normal text, do not change math state
-            continue
-
-        if in_math:
-            # We are inside math, check if this token closes it
-            if token == current_math_delim:
-                # Close math segment!
-                # Extract text before opening delimiter as text segment
-                before_math = text[last_idx:current_math_start]
-                if before_math:
-                    segments.append(("text", before_math))
-                # Extract math block including delimiters
-                math_block = text[current_math_start:end]
-                segments.append(("math", math_block))
-
-                in_math = False
-                math_type = None
-                current_math_delim = ""
-                stack.pop()
-                last_idx = end
-            else:
-                # Mismatched delimiter inside math block (unbalanced)
-                unbalanced_lines.append(stack[-1][2])
-                # Reset math state to the new delimiter
-                before_math = text[last_idx:current_math_start]
-                if before_math:
-                    segments.append(("text", before_math))
-                # Extract the old unclosed math as math segment
-                math_block = text[current_math_start:start]
-                segments.append(("math", math_block))
-
-                current_math_start = start
-                current_math_delim = token
-                math_type = "block" if token == "$$" else "inline"
-                stack[-1] = (math_type, start, get_line_number(start))
-                last_idx = start
-        else:
-            # Outside math, this token opens a math block
-            in_math = True
-            current_math_start = start
-            current_math_delim = token
-            math_type = "block" if token == "$$" else "inline"
-            stack.append((math_type, start, get_line_number(start)))
-
-    # Add any remaining text
-    if in_math:
-        # Unclosed math block at end of text
-        before_math = text[last_idx:current_math_start]
-        if before_math:
-            segments.append(("text", before_math))
-        segments.append(("math", text[current_math_start:]))
-    else:
-        remaining = text[last_idx:]
-        if remaining:
-            segments.append(("text", remaining))
-
-    while stack:
-        unbalanced_lines.append(stack.pop()[2])
-
-    is_balanced = len(unbalanced_lines) == 0
-    return segments, is_balanced, sorted(list(set(unbalanced_lines)))
 
 
 def cleanup_math_content_spacing(math_text: str) -> str:
@@ -446,101 +256,722 @@ def cleanup_math_content_spacing(math_text: str) -> str:
         delim = ""
         content = math_text
 
-    # 1. Remove spaces between digits/dots: "0 1 1 1 0" -> "01110"
+    return f"{delim}{cleanup_math_body(content)}{delim}"
+
+
+def cleanup_math_body(content: str) -> str:
+    """Apply spacing cleanup to math content without adding delimiters."""
     content = re.sub(r"(?<=[\d.])\s+(?=[\d.])", "", content)
-
-    # 2. Remove spaces before braces after a LaTeX command
-    # e.g., "\mathrm { " -> "\mathrm{"
     content = re.sub(r"(\\[a-zA-Z]+)\s*([{(])", r"\1\2", content)
-
-    # 3. Remove spaces around superscript and subscript operators:
-    # e.g., "^ { \mathrm" -> "^{\mathrm"
-    # e.g., "_ { 1 }" -> "_{1}"
     content = re.sub(r"([_^])\s*(\{)", r"\1\2", content)
-
-    # 4. Remove space after opening brace/bracket: "{ " -> "{"
     content = re.sub(r"([{(])\s+", r"\1", content)
-
-    # 5. Remove space before closing brace/bracket: " }" -> "}"
     content = re.sub(r"\s+([})])", r"\1", content)
+    return content
 
-    return f"{delim}{content}{delim}"
+
+@dataclass
+class Block:
+    kind: str
+    lines: list[str]
+    start_line: int
+    end_line: int
 
 
-def fallback_cleanup_math_spacing(text: str) -> str:
-    """Fallback spacing cleanup using basic regex when delimiters are unbalanced."""
-    text = re.sub(r"\$\s+([.,;:!?)\]}])", r"$\1", text)
-    text = re.sub(r"([([{])\s+\$", r"\1$", text)
-    text = re.sub(r"\$\s+([.,;:!?])\s+\$", r"$\1 $", text)
+_CODE_FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})")
+_HEADING_LINE_RE = re.compile(r"^\s{0,3}#{1,6}\s+")
+_HR_LINE_RE = re.compile(r"^\s{0,3}([*_-])(?:\s*\1){2,}\s*$")
+_IMAGE_LINE_RE = re.compile(r"^\s*!\[[^\]]*\]\([^)]*\)\s*$")
+_BLOCKQUOTE_RE = re.compile(r"^( {0,3}>\s?)(.*)$")
+_LIST_MARKER_RE = re.compile(r"^(\s*)([-*+]\s+|\d+[.)]\s+)(.*)$")
+_PIPE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
+_PIPE_TABLE_ALIGN_RE = re.compile(
+    r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
+)
+_HTML_TABLE_START_RE = re.compile(r"<\s*(table|tr|td|th)\b", re.IGNORECASE)
+_HTML_TABLE_END_RE = re.compile(r"</\s*table\s*>", re.IGNORECASE)
+_LATEX_BEGIN_RE = re.compile(
+    r"^\s*\\begin\{(equation\*?|align\*?|aligned|gather\*?|multline\*?|split)\}"
+)
+_LATEX_END_TEMPLATE = r"\\end\{%s\}"
+_CAPTION_LABEL_RE = re.compile(
+    r"^((?:Fig|Figs|Figure|Figures|Table|Tab|Eq|Equation)\.?\s*\d+(?:\.\d+)?[A-Za-z]?)\.(?=\s+\S)",
+    re.IGNORECASE,
+)
+
+
+def is_heading_line(line: str) -> bool:
+    return bool(_HEADING_LINE_RE.match(line))
+
+
+def is_hr_line(line: str) -> bool:
+    return bool(_HR_LINE_RE.match(line))
+
+
+def is_image_line(line: str) -> bool:
+    return bool(_IMAGE_LINE_RE.match(line))
+
+
+def is_code_fence_start(line: str) -> re.Match | None:
+    return _CODE_FENCE_RE.match(line)
+
+
+def _is_escaped_at(text: str, index: int) -> bool:
+    backslashes = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 1
+
+
+def _unescaped_count(text: str, token: str) -> int:
+    count = 0
+    start = 0
+    while True:
+        idx = text.find(token, start)
+        if idx == -1:
+            return count
+        if not _is_escaped_at(text, idx):
+            count += 1
+        start = idx + len(token)
+
+
+def is_display_math_start(line: str) -> bool:
+    stripped = line.lstrip()
+    return (
+        stripped.startswith("$$")
+        or stripped.startswith(r"\[")
+        or bool(_LATEX_BEGIN_RE.match(line))
+    )
+
+
+def is_html_table_start(line: str) -> bool:
+    return bool(_HTML_TABLE_START_RE.search(line))
+
+
+def is_pipe_table_start(lines: list[str], index: int) -> bool:
+    return (
+        index + 1 < len(lines)
+        and bool(_PIPE_ROW_RE.match(lines[index]))
+        and bool(_PIPE_TABLE_ALIGN_RE.match(lines[index + 1]))
+    )
+
+
+def is_list_item_line(line: str) -> re.Match | None:
+    return _LIST_MARKER_RE.match(line)
+
+
+def is_blockquote_line(line: str) -> re.Match | None:
+    return _BLOCKQUOTE_RE.match(line)
+
+
+def is_structural_start(lines: list[str], index: int) -> bool:
+    line = lines[index]
+    return (
+        not line.strip()
+        or bool(is_code_fence_start(line))
+        or is_display_math_start(line)
+        or is_html_table_start(line)
+        or is_pipe_table_start(lines, index)
+        or is_heading_line(line)
+        or is_hr_line(line)
+        or is_image_line(line)
+        or bool(is_list_item_line(line))
+        or bool(is_blockquote_line(line))
+    )
+
+
+def _find_code_fence_end(lines: list[str], start: int, fence: str) -> int:
+    char = fence[0]
+    min_len = len(fence)
+    close_re = re.compile(rf"^\s*{re.escape(char)}{{{min_len},}}\s*$")
+    for idx in range(start + 1, len(lines)):
+        if close_re.match(lines[idx]):
+            return idx + 1
+    return len(lines)
+
+
+def _find_conservative_block_end(lines: list[str], start: int) -> int:
+    idx = start + 1
+    while idx < len(lines) and lines[idx].strip():
+        if idx != start and (
+            is_heading_line(lines[idx])
+            or is_hr_line(lines[idx])
+            or is_image_line(lines[idx])
+            or is_html_table_start(lines[idx])
+        ):
+            break
+        idx += 1
+    return idx
+
+
+def _find_display_math_end(lines: list[str], start: int) -> int:
+    stripped = lines[start].lstrip()
+    if stripped.startswith("$$"):
+        if _unescaped_count(lines[start], "$$") >= 2:
+            return start + 1
+        for idx in range(start + 1, len(lines)):
+            if _unescaped_count(lines[idx], "$$"):
+                return idx + 1
+        return _find_conservative_block_end(lines, start)
+
+    if stripped.startswith(r"\["):
+        if r"\]" in lines[start][lines[start].find(r"\[") + 2 :]:
+            return start + 1
+        for idx in range(start + 1, len(lines)):
+            if r"\]" in lines[idx]:
+                return idx + 1
+        return _find_conservative_block_end(lines, start)
+
+    m = _LATEX_BEGIN_RE.match(lines[start])
+    if m:
+        end_re = re.compile(_LATEX_END_TEMPLATE % re.escape(m.group(1)))
+        for idx in range(start, len(lines)):
+            if end_re.search(lines[idx]):
+                return idx + 1
+        return _find_conservative_block_end(lines, start)
+
+    return start + 1
+
+
+def _find_html_table_end(lines: list[str], start: int) -> int:
+    for idx in range(start, len(lines)):
+        if _HTML_TABLE_END_RE.search(lines[idx]):
+            return idx + 1
+        if idx > start and not lines[idx].strip():
+            return idx
+    return len(lines)
+
+
+def _find_pipe_table_end(lines: list[str], start: int) -> int:
+    idx = start
+    while idx < len(lines) and _PIPE_ROW_RE.match(lines[idx]):
+        idx += 1
+    return idx
+
+
+def _find_list_end(lines: list[str], start: int) -> int:
+    idx = start + 1
+    base_indent = len(lines[start]) - len(lines[start].lstrip())
+    while idx < len(lines):
+        line = lines[idx]
+        if not line.strip():
+            break
+        marker = is_list_item_line(line)
+        indent = len(line) - len(line.lstrip())
+        if marker or indent > base_indent:
+            idx += 1
+            continue
+        break
+    return idx
+
+
+def _find_blockquote_end(lines: list[str], start: int) -> int:
+    idx = start + 1
+    while idx < len(lines):
+        if not lines[idx].strip():
+            break
+        if not is_blockquote_line(lines[idx]) and not is_list_item_line(lines[idx]):
+            break
+        idx += 1
+    return idx
+
+
+def _find_paragraph_end(lines: list[str], start: int) -> int:
+    idx = start + 1
+    while idx < len(lines) and not is_structural_start(lines, idx):
+        idx += 1
+    return idx
+
+
+def parse_blocks(text: str) -> list[Block]:
+    lines = text.split("\n")
+    blocks: list[Block] = []
+    idx = 0
+
+    while idx < len(lines):
+        line = lines[idx]
+        start_line = idx + 1
+
+        if not line.strip():
+            blocks.append(Block("blank", [line], start_line, start_line))
+            idx += 1
+            continue
+
+        fence = is_code_fence_start(line)
+        if fence:
+            end = _find_code_fence_end(lines, idx, fence.group(1))
+            blocks.append(Block("code_fence", lines[idx:end], start_line, end))
+            idx = end
+            continue
+
+        if is_display_math_start(line):
+            end = _find_display_math_end(lines, idx)
+            blocks.append(Block("display_math", lines[idx:end], start_line, end))
+            idx = end
+            continue
+
+        if is_html_table_start(line):
+            end = _find_html_table_end(lines, idx)
+            blocks.append(Block("html_table", lines[idx:end], start_line, end))
+            idx = end
+            continue
+
+        if is_pipe_table_start(lines, idx):
+            end = _find_pipe_table_end(lines, idx)
+            blocks.append(Block("pipe_table", lines[idx:end], start_line, end))
+            idx = end
+            continue
+
+        if is_blockquote_line(line):
+            end = _find_blockquote_end(lines, idx)
+            blocks.append(Block("blockquote", lines[idx:end], start_line, end))
+            idx = end
+            continue
+
+        if is_heading_line(line):
+            blocks.append(Block("heading", [line], start_line, start_line))
+            idx += 1
+            continue
+
+        if is_hr_line(line):
+            blocks.append(Block("hr", [line], start_line, start_line))
+            idx += 1
+            continue
+
+        if is_image_line(line):
+            blocks.append(Block("image", [line], start_line, start_line))
+            idx += 1
+            continue
+
+        if is_list_item_line(line):
+            end = _find_list_end(lines, idx)
+            blocks.append(Block("list", lines[idx:end], start_line, end))
+            idx = end
+            continue
+
+        end = _find_paragraph_end(lines, idx)
+        blocks.append(Block("paragraph", lines[idx:end], start_line, end))
+        idx = end
+
+    return blocks
+
+
+def warn_block(block: Block, message: str) -> None:
+    print(
+        f"[WARNING] line {block.start_line}-{block.end_line} {block.kind}: {message}",
+        file=sys.stderr,
+    )
+
+
+def _is_cjk_or_punctuation(c: str) -> bool:
+    if not c:
+        return False
+    val = ord(c[0])
+    return (
+        0x4E00 <= val <= 0x9FFF
+        or 0x3000 <= val <= 0x303F
+        or 0xFF00 <= val <= 0xFFEF
+        or 0x3400 <= val <= 0x4DBF
+    )
+
+
+def needs_join_space(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    if right[0] in ",.;:!?)]}”’%":
+        return False
+    if left[-1] in "([{“‘":
+        return False
+    if _is_cjk_or_punctuation(left[-1]) or _is_cjk_or_punctuation(right[0]):
+        return False
+    return True
+
+
+def join_soft_wrapped_lines(lines: list[str]) -> str:
+    parts = [line.strip() for line in lines if line.strip()]
+    if not parts:
+        return ""
+
+    text = parts[0]
+    for part in parts[1:]:
+        if text.endswith("-") and part and part[0].islower():
+            last_token = text.rsplit(maxsplit=1)[-1]
+            if "-" in last_token[:-1]:
+                text += part
+            else:
+                text = text[:-1] + part
+        elif needs_join_space(text, part):
+            text += " " + part
+        else:
+            text += part
     return text
+
+
+def _protect_caption_labels(text: str) -> str:
+    return _CAPTION_LABEL_RE.sub(lambda m: m.group(1) + _SENTINEL_ABBR, text)
+
+
+def split_sentences_in_text(text: str) -> list[str]:
+    protected, url_map = _protect_urls(text)
+    protected = _protect_caption_labels(protected)
+    protected = _protect_abbreviations(protected)
+
+    parts = _SENT_END.split(protected)
+    sentences = []
+    current = ""
+
+    for idx in range(0, len(parts) - 1, 2):
+        text_part = parts[idx]
+        punct = parts[idx + 1]
+        next_text = parts[idx + 2] if idx + 2 < len(parts) else ""
+        current += text_part + punct
+
+        if punct == "." and next_text and next_text[0].isdigit():
+            continue
+
+        sentences.append(current.strip())
+        current = ""
+
+    if len(parts) % 2 == 1:
+        current += parts[-1]
+    if current.strip():
+        sentences.append(current.strip())
+
+    restored = []
+    for sentence in sentences:
+        sentence = _restore_abbreviations(sentence)
+        sentence = _restore_urls(sentence, url_map)
+        restored.append(sentence)
+    return restored
+
+
+def _is_single_dollar(text: str, index: int) -> bool:
+    if text[index] != "$" or _is_escaped_at(text, index):
+        return False
+    if index > 0 and text[index - 1] == "$":
+        return False
+    return not (index + 1 < len(text) and text[index + 1] == "$")
+
+
+def _find_closing_dollar(text: str, start_idx: int) -> int | None:
+    idx = start_idx + 1
+    while idx < len(text):
+        if text[idx] == "$":
+            if not _is_escaped_at(text, idx):
+                # Ensure it is not a double dollar
+                if idx + 1 < len(text) and text[idx + 1] == "$":
+                    idx += 2
+                    continue
+                if idx > 0 and text[idx - 1] == "$":
+                    idx += 1
+                    continue
+                return idx
+        idx += 1
+    return None
+
+
+def _is_valid_inline_math_open(text: str, index: int) -> bool:
+    cursor = index + 1
+    while cursor < len(text) and text[cursor].isspace():
+        cursor += 1
+    if cursor >= len(text):
+        return False
+
+    # If followed by punctuation like . , ; : etc., it's not a valid math open
+    if text[cursor] in ".,;:!?)]}":
+        return False
+
+    close_idx = _find_closing_dollar(text, index)
+    if close_idx is None:
+        return False
+
+    content = text[index + 1 : close_idx]
+
+    # Rule 1: A math formula cannot cross a sentence boundary
+    if _SENT_END_BOUNDARY.search(content):
+        return False
+
+    # If it is followed by a digit, it could be a currency sign (like $100)
+    # OR a math formula starting with a digit (like $1 - x).
+    # We look ahead to distinguish them:
+    if text[cursor].isdigit():
+        # If the closing dollar is followed by a digit, it is likely another currency symbol
+        if close_idx + 1 < len(text) and text[close_idx + 1].isdigit():
+            return False
+        # Rule 2: If the content does not contain math operators/delimiters, it must not contain whitespace
+        if not any(c in content for c in "\\^_{}+-=<>*/,;"):
+            if any(c.isspace() for c in content):
+                return False
+
+    # Validate that the closing dollar is otherwise valid
+    if not _is_valid_inline_math_close(text, close_idx):
+        return False
+
+    return True
+
+
+def _is_valid_inline_math_close(text: str, index: int) -> bool:
+    cursor = index - 1
+    while cursor >= 0 and text[cursor].isspace():
+        cursor -= 1
+    return cursor >= 0 and text[cursor] != "$"
+
+
+def protect_inline_math(text: str) -> tuple[str, dict[str, str]]:
+    mapping: dict[str, str] = {}
+    output = []
+    last = 0
+    idx = 0
+
+    while idx < len(text):
+        if not _is_single_dollar(text, idx):
+            idx += 1
+            continue
+
+        if _is_valid_inline_math_open(text, idx):
+            close_idx = _find_closing_dollar(text, idx)
+            if close_idx is not None:
+                if _is_valid_inline_math_close(text, close_idx):
+                    output.append(text[last:idx])
+                    key = f"{_SENTINEL_MATH}{len(mapping)}{_SENTINEL_MATH}"
+                    mapping[key] = text[idx : close_idx + 1]
+                    output.append(key)
+                    idx = close_idx + 1
+                    last = idx
+                    continue
+
+        idx += 1
+
+    output.append(text[last:])
+    return "".join(output), mapping
+
+
+def restore_inline_math(text: str, mapping: dict[str, str]) -> str:
+    for key, value in mapping.items():
+        text = text.replace(key, cleanup_math_content_spacing(value))
+    return text
+
+
+def process_prose_lines(lines: list[str], block: Block) -> list[str]:
+    text = join_soft_wrapped_lines(lines)
+    if not text:
+        return []
+
+    try:
+        protected, math_map = protect_inline_math(text)
+    except ValueError as exc:
+        warn_block(block, str(exc))
+        return block.lines
+
+    protected = cleanup_ocr(protected)
+    return [
+        restore_inline_math(sentence, math_map)
+        for sentence in split_sentences_in_text(protected)
+    ]
+
+
+def process_paragraph_block(block: Block) -> list[str]:
+    return process_prose_lines(block.lines, block)
+
+
+def process_blockquote_block(block: Block) -> list[str]:
+    output: list[str] = []
+    current_prefix = ""
+    current_lines: list[str] = []
+
+    def flush():
+        nonlocal current_prefix, current_lines
+        if not current_lines:
+            return
+        prose_lines = []
+        for line in current_lines:
+            m = is_blockquote_line(line)
+            if m:
+                prose_lines.append(m.group(2))
+            else:
+                prose_lines.append(line)
+        processed = process_prose_lines(prose_lines, block)
+        for s in processed:
+            output.append(current_prefix + s)
+        current_lines = []
+
+    for line in block.lines:
+        m = is_blockquote_line(line)
+        if m:
+            prefix = m.group(1)
+            if current_lines and prefix != current_prefix:
+                flush()
+            current_prefix = prefix
+            current_lines.append(line)
+        else:
+            current_lines.append(line)
+    flush()
+    return output
+
+
+def _is_top_level_list_marker(line: str, base_indent: int) -> bool:
+    marker = is_list_item_line(line)
+    return bool(marker) and len(marker.group(1)) == base_indent
+
+
+def _list_item_groups(block: Block) -> list[tuple[int, list[str]]]:
+    first_marker = is_list_item_line(block.lines[0])
+    base_indent = len(first_marker.group(1)) if first_marker else 0
+    groups = []
+    idx = 0
+    while idx < len(block.lines):
+        start = idx
+        idx += 1
+        while idx < len(block.lines) and not _is_top_level_list_marker(
+            block.lines[idx], base_indent
+        ):
+            idx += 1
+        groups.append((start, block.lines[start:idx]))
+    return groups
+
+
+def _is_safe_list_item(lines: list[str]) -> bool:
+    if not lines or not is_list_item_line(lines[0]):
+        return False
+    marker = is_list_item_line(lines[0])
+    base_indent = len(marker.group(1))
+    for line in lines[1:]:
+        if not line.strip():
+            return False
+        indent = len(line) - len(line.lstrip())
+        if indent <= base_indent:
+            return False
+        stripped = line.strip()
+        if (
+            is_code_fence_start(stripped)
+            or is_display_math_start(stripped)
+            or is_html_table_start(stripped)
+            or is_image_line(stripped)
+            or is_heading_line(stripped)
+            or is_hr_line(stripped)
+            or is_list_item_line(stripped)
+        ):
+            return False
+    return True
+
+
+def process_list_block(block: Block) -> list[str]:
+    output: list[str] = []
+    for start_idx, item_lines in _list_item_groups(block):
+        if not _is_safe_list_item(item_lines):
+            output.extend(item_lines)
+            continue
+
+        marker = is_list_item_line(item_lines[0])
+        prefix = marker.group(1) + marker.group(2)
+        content_col = len(prefix)
+        content_lines = [marker.group(3)]
+        for line in item_lines[1:]:
+            content_lines.append(
+                line[content_col:] if len(line) >= content_col else line.strip()
+            )
+
+        item_block = Block(
+            "list_item",
+            content_lines,
+            block.start_line + start_idx,
+            block.start_line + start_idx + len(item_lines) - 1,
+        )
+        processed = process_prose_lines(content_lines, item_block)
+        if processed == content_lines or not processed:
+            output.extend(item_lines)
+            continue
+
+        output.append(prefix + processed[0])
+        output.extend(" " * len(prefix) + sentence for sentence in processed[1:])
+    return output
+
+
+def _display_math_is_balanced(text: str) -> bool:
+    stripped = text.strip()
+    if stripped.startswith("$$"):
+        return stripped.endswith("$$") and _unescaped_count(stripped, "$$") >= 2
+    if stripped.startswith(r"\["):
+        return stripped.endswith(r"\]")
+    m = _LATEX_BEGIN_RE.match(stripped)
+    if m:
+        return bool(re.search(_LATEX_END_TEMPLATE % re.escape(m.group(1)), stripped))
+    return True
+
+
+def process_display_math_block(block: Block) -> list[str]:
+    text = "\n".join(block.lines)
+    if not _display_math_is_balanced(text):
+        warn_block(block, "unbalanced display math delimiter; preserving block")
+        return block.lines
+
+    stripped = text.strip()
+    if stripped.startswith("$$") and stripped.endswith("$$"):
+        return cleanup_math_content_spacing(stripped).split("\n")
+    if stripped.startswith(r"\[") and stripped.endswith(r"\]"):
+        return (r"\[" + cleanup_math_body(stripped[2:-2]) + r"\]").split("\n")
+    if _LATEX_BEGIN_RE.match(stripped):
+        return cleanup_math_body(stripped).split("\n")
+    return cleanup_math_body(text).split("\n")
+
+
+def process_block(block: Block) -> list[str]:
+    try:
+        if block.kind == "blank":
+            return [""]
+        if block.kind == "paragraph":
+            return process_paragraph_block(block)
+        if block.kind == "blockquote":
+            return process_blockquote_block(block)
+        if block.kind == "list":
+            return process_list_block(block)
+        if block.kind == "display_math":
+            return process_display_math_block(block)
+        if block.kind == "heading":
+            return [cleanup_ligatures(line) for line in block.lines]
+        return block.lines
+    except Exception as exc:
+        warn_block(block, f"{exc}; preserving block")
+        return block.lines
+
+
+def process_blocks(blocks: list[Block]) -> list[str]:
+    output: list[str] = []
+    for block in blocks:
+        output.extend(process_block(block))
+    return output
+
+
+def format_processed_blocks(lines: list[str]) -> str:
+    output = []
+    previous_blank = False
+    for line in lines:
+        if line == "":
+            if not previous_blank:
+                output.append("")
+            previous_blank = True
+        else:
+            output.append(line.rstrip())
+            previous_blank = False
+    return "\n".join(output).strip("\n")
 
 
 def process(text: str) -> str:
     """Full deterministic processing pipeline."""
-    # 0. Clean any pre-existing sentinel characters in input to prevent injection/mismatch
     text = (
         text.replace(_SENTINEL_ABBR, "")
         .replace(_SENTINEL_URL, "")
         .replace(_SENTINEL_MATH, "")
     )
 
-    # 1. OCR cleanup
-    text = cleanup_ocr(text)
-
-    # 2. Parse math segments to check balance and get AST
-    segments, is_balanced, unbalanced_lines = parse_math_segments(text)
-
-    if not is_balanced:
-        # Unbalanced fallback: print warning and run old flat regex pipeline
-        lines_str = ", ".join(map(str, unbalanced_lines))
-        print(
-            f"[WARNING] Unbalanced math delimiter '$' detected on line(s): {lines_str}. "
-            "Falling back to safe global math spacing regexes.",
-            file=sys.stderr,
-        )
-        text = fallback_cleanup_math_spacing(text)
-        lines = split_sentences(text)
-        text = format_one_per_line(lines)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text
-
-    # 3. Balanced flow: replace math segments with placeholders (using sentinel delimiter)
-    placeholder_text_parts = []
-    for idx, (seg_type, seg_content) in enumerate(segments):
-        if seg_type == "math":
-            placeholder_text_parts.append(f"{_SENTINEL_MATH}{idx}{_SENTINEL_MATH}")
-        else:
-            placeholder_text_parts.append(seg_content)
-
-    text_with_placeholders = "".join(placeholder_text_parts)
-
-    # 4. Split sentences on the protected text (formula content is safe!)
-    lines = split_sentences(text_with_placeholders)
-    processed_text = format_one_per_line(lines)
-
-    # 5. Restore placeholders and clean spacing
-    def _restore_placeholder(match):
-        idx = int(match.group(1))
-        math_content = segments[idx][1]
-        cleaned_math = cleanup_math_content_spacing(math_content)
-        return cleaned_math
-
-    final_text = re.sub(
-        rf"{_SENTINEL_MATH}(\d+){_SENTINEL_MATH}", _restore_placeholder, processed_text
-    )
-
-    # 6. Spacing around math boundaries
-    final_text = re.sub(r"\$\s+([.,;:!?)\]}])", r"$\1", final_text)
-    final_text = re.sub(r"([([{])\s+\$", r"\1$", final_text)
-    final_text = re.sub(r"\$\s+([.,;:!?])\s+\$", r"$\1 $", final_text)
-
-    # 7. Collapse extra blank lines
-    final_text = re.sub(r"\n{3,}", "\n\n", final_text)
-    return final_text
+    blocks = parse_blocks(text)
+    lines = process_blocks(blocks)
+    return format_processed_blocks(lines)
 
 
 # ── Heading tools for LLM ──────────────────────────────────────────────────
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+_HEADING_RE = re.compile(r"^([ >\t]*)(#{1,6})\s+(.*)$")
 
 
 def extract_headings(text: str, context_lines: int = 1) -> str:
@@ -554,10 +985,10 @@ def extract_headings(text: str, context_lines: int = 1) -> str:
     entries = []
 
     for i, line in enumerate(lines):
-        m = _HEADING_RE.match(line.strip())
+        m = _HEADING_RE.match(line)
         if m:
-            level = len(m.group(1))
-            title = m.group(2).strip()
+            level = len(m.group(2))
+            title = m.group(3).strip()
             # Grab context lines after the heading
             ctx_start = i + 1
             ctx_end = min(i + 1 + context_lines, len(lines))
@@ -582,10 +1013,11 @@ def apply_headings(text: str, mapping: dict[int, str]) -> str:
     for line_num, new_prefix in mapping.items():
         idx = line_num - 1
         if 0 <= idx < len(lines):
-            m = _HEADING_RE.match(lines[idx].strip())
+            m = _HEADING_RE.match(lines[idx])
             if m:
-                title = m.group(2).strip()
-                lines[idx] = f"{new_prefix} {title}"
+                prefix = m.group(1)
+                title = m.group(3).strip()
+                lines[idx] = f"{prefix}{new_prefix} {title}"
     return "\n".join(lines)
 
 
@@ -638,22 +1070,14 @@ def main():
         help="Output file (default: overwrite input)",
     )
 
-    # Support running without subcommand (default to polish)
-    parser.add_argument("--input", type=str, help=argparse.SUPPRESS)
-    parser.add_argument(
-        "-o", "--output", type=str, default=None, help=argparse.SUPPRESS
-    )
+    argv = sys.argv[1:]
+    if argv and argv[0] not in {"polish", "headings", "apply", "-h", "--help"}:
+        argv = ["polish", *argv]
 
-    args = parser.parse_args()
-
-    # Default to polish if no subcommand
+    args = parser.parse_args(argv)
     if args.command is None:
-        args.command = "polish"
-        # Re-parse with polish defaults
-        p2 = argparse.ArgumentParser()
-        p2.add_argument("input", type=str)
-        p2.add_argument("-o", "--output", type=str, default=None)
-        args = p2.parse_args()
+        parser.print_help()
+        sys.exit(2)
 
     if args.command == "polish":
         input_path = Path(args.input)

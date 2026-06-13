@@ -20,11 +20,12 @@ Responsibilities are split between a deterministic Python script and the LLM:
 
 | Step | Owner | Tasks |
 |------|-------|-------|
-| 1. OCR cleanup | **Script** | Ligature replacement (`ﬁ`→`fi`), stray backslash removal |
-| 2. Math spacing | **Script** | Fix spacing inside and around mathematical formulas |
-| 3. Sentence splitting | **Script** | Abbreviation-aware splitting (`Fig. 1`, `e.g.`, `et al.` etc.), one sentence per line, keeping list/blockquote indentation |
-| 4. Heading hierarchy | **LLM** | Promote headings so sections start at `##`, infer document title |
-| 5. Semantic review | **LLM** | Fix edge cases the script missed, verify meaning preserved |
+| 1. OCR cleanup | **Script** | Ligature replacement (`ﬁ`→`fi`), prose-safe stray backslash removal |
+| 2. Block parsing | **Script** | Lightweight OCR/PDF-oriented block detection for headings, rules, images, tables, code fences, display math, lists, and paragraphs |
+| 3. Math protection | **Script** | Preserve display math as structural blocks; protect inline math block-locally while processing prose |
+| 4. Paragraph reflow & sentence splitting | **Script** | Reflow PDF/OCR soft line breaks, then abbreviation-aware sentence splitting (`Fig. 1`, `e.g.`, `et al.` etc.) into one sentence per line |
+| 5. Heading hierarchy | **LLM** | Promote headings so sections start at `##`, infer document title |
+| 6. Semantic review | **LLM** | Fix edge cases the script missed, verify meaning preserved |
 
 ## Workflow
 
@@ -51,10 +52,14 @@ uv run --python 3.10+ agents/.agents/skills/pdf2md-polish/polish.py apply <polis
 
 The script handles:
 - **OCR ligature cleanup**: `ﬁ`→`fi`, `ﬂ`→`fl`, `ﬃ`→`ffi`, etc.
+- **OCR/PDF block parsing**: Treats headings, horizontal rules, images, HTML tables, pipe tables, code fences, display math, lists, and normal paragraphs as separate processing units.
+- **Soft-line reflow**: Rejoins PDF/OCR physical line wraps inside prose paragraphs before sentence splitting.
 - **Abbreviation-aware sentence splitting**: Knows common abbreviations (Fig., e.g., et al., etc.) and does NOT break sentences on their internal dots.
-- **Indentation preservation**: Keeps correct leading spaces and blockquote/list prefixes (`  - `, `> `) for nested elements.
+- **Caption handling**: Reflows split figure/table captions such as `Fig. 1.` followed by caption text.
+- **Conservative list processing**: Reflows simple list-item paragraphs while preserving complex/nested list structures.
+- **Block-local math handling**: Preserves display math blocks and protects inline math within each prose block; unbalanced math warnings stay local to the affected block.
 - **One sentence per line**: Sentences end at `.`, `!`, `?`, `。`, `！`, `？`. Same-paragraph sentences are adjacent (no blank lines); paragraphs separated by one blank line.
-- **Markdown structure preserved**: Headings, lists, code fences, tables, images, blockquotes, and math blocks are not broken by sentence splitting.
+- **Markdown structure preserved**: Headings, rules, lists, code fences, tables, images, and math blocks are not broken by sentence splitting.
 
 Default output: `<input>-polished.md`
 
@@ -97,7 +102,7 @@ After the script runs, adjust heading levels:
 #### Semantic Review
 
 - **Do NOT rewrite or output the entire document** during semantic review. If targeted semantic fixes are needed (e.g., merging false splits, fixing OCR typos like `0` vs `O`), use precise line-replacement or diff-editing tools. Do not rewrite, rephrase, or summarize the unchanged text.
-- Verify the script's sentence splits are correct; merge any false splits (e.g. a sentence that got split at a decimal number).
+- Verify the script's paragraph reflow and sentence splits are correct; merge any false splits or bad joins (e.g. a sentence that got split at a decimal number, or an OCR line break that should remain structural).
 - Fix remaining OCR artifacts that require context to identify (e.g. `0` vs `O`, `1` vs `l`).
 - Ensure no content was lost or altered during script processing.
 - Preserve images, tables, code blocks, and footnotes as-is.
