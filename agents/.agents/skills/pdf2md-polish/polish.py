@@ -245,7 +245,7 @@ _SENT_END = re.compile(
     r"([。！？]['\"()\]\}”’）】」』〉》]*"
     r"|[!?.]+['\"()\]\}”’）】」』〉》]*(?=\s|$))"
 )
-_SENT_END_BOUNDARY = re.compile(r"[。！？]|[!?.]\s")
+_SENT_END_BOUNDARY = re.compile(r"[。！？]|[!?.]\s(?![0-9])")
 
 
 _URL_EMAIL_RE = re.compile(
@@ -327,7 +327,8 @@ def cleanup_math_body(content: str) -> str:
     """Apply spacing cleanup to math content without adding delimiters."""
     content = re.sub(r"(?<=[\d.])\s+(?=[\d.])", "", content)
     content = re.sub(r"(\\[a-zA-Z]+)\s*([{(])", r"\1\2", content)
-    content = re.sub(r"([_^])\s*(\{)", r"\1\2", content)
+    content = re.sub(r"\s*([+\-=<>*/_^])\s*", r"\1", content)
+    content = re.sub(r"\s*,\s*", ", ", content)
     content = re.sub(r"([{(])\s+", r"\1", content)
     content = re.sub(r"\s+([})])", r"\1", content)
     return content
@@ -695,7 +696,12 @@ def split_sentences_in_text(text: str) -> list[str]:
         next_text = parts[idx + 2] if idx + 2 < len(parts) else ""
         current += text_part + punct
 
-        if punct == "." and next_text and next_text[0].isdigit():
+        if (
+            punct == "."
+            and next_text
+            and next_text.lstrip()
+            and next_text.lstrip()[0].isdigit()
+        ):
             continue
 
         sentences.append(current.strip())

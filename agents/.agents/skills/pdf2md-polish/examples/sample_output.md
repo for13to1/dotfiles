@@ -6,7 +6,7 @@ As shown by Li et al. in [our paper Fig. 1. Detailed comparison is given.](http:
 Es gibt viele Anwendungen, z. B. in der Informatik.
 Eine weitere Anwendung ist in der Medizin.
 
-We also use the formula $x _{i} + y _{j}$, where $x$ and $y$ are variables.
+We also use the formula $x_{i}+y_{j}$, where $x$ and $y$ are variables.
 The cost is \$$b$ per unit, and we satisfy $b\$$ boundary.
 
 - The first objective is to design a high-performance classifier, which runs in real-time on embedded platforms.

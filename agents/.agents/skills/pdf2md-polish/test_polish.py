@@ -85,6 +85,11 @@ class TestSentenceSplitting:
         sentences = polish.split_sentences_in_text(text)
         assert len(sentences) == 1
 
+    def test_decimal_with_spaces_not_split(self):
+        text = "The value is 3 . 14 in this case."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 1
+
     def test_multiple_decimals(self):
         text = "Pressure reached 101.325 kPa at time t=3.7 seconds."
         sentences = polish.split_sentences_in_text(text)
@@ -155,6 +160,13 @@ class TestInlineMath:
         assert len(mapping) == 1
         assert list(mapping.values()) == [r"$b\$$"]
 
+    def test_formula_with_decimal_spaces_protected(self):
+        text, mapping = polish.protect_inline_math(
+            "Once all the off-grid brightnesses $M _ { o } ( i + 0 . 5 , j + 0 . 5 )$ have been determined"
+        )
+        assert len(mapping) == 1
+        assert list(mapping.values()) == ["$M _ { o } ( i + 0 . 5 , j + 0 . 5 )$"]
+
 
 # ── Display math ────────────────────────────────────────────────────────────
 
@@ -174,7 +186,7 @@ class TestDisplayMath:
     def test_display_math_preserved_in_process(self):
         text = "Before.\n\n$$E = mc^2$$\n\nAfter."
         result = polish.process(text)
-        assert "$$E = mc^2$$" in result
+        assert "$$E=mc^2$$" in result
 
     def test_display_math_not_sentence_split(self):
         """Display math content should not be processed as prose."""
@@ -316,7 +328,7 @@ class TestEndToEnd:
     def test_preserves_display_math(self):
         text = "Before.\n\n$$E = mc^2$$\n\nAfter."
         result = polish.process(text)
-        assert "$$E = mc^2$$" in result
+        assert "$$E=mc^2$$" in result
 
     def test_ligature_cleanup_e2e(self):
         result = polish.process("The ﬁnal result was ﬂawless.")
@@ -389,7 +401,7 @@ class TestMathSpacing:
         assert polish.cleanup_math_body("1 2 . 3") == "12.3"
         # math function spacing
         assert polish.cleanup_math_body("\\alpha ( x )") == "\\alpha(x)"
-        assert polish.cleanup_math_body("a + b") == "a + b"  # regular spacing kept
+        assert polish.cleanup_math_body("a + b") == "a+b"  # regular spacing kept
 
     def test_cleanup_math_content_spacing(self):
         assert polish.cleanup_math_content_spacing("$x_{ i }$") == "$x_{i}$"
@@ -565,7 +577,7 @@ class TestListSentenceSplitting:
         """Multi-line display math inside a list item should be preserved."""
         text = "- The formula\n\n  $$\n  E = mc^2\n  $$\n\n  is famous.\n- Next item."
         result = polish.process(text)
-        assert "E = mc^2" in result
+        assert "E=mc^2" in result
         assert "- The formula" in result
         assert "- Next item." in result
 
@@ -634,6 +646,7 @@ class TestInlineMathEdgeCases:
         """Markdown images with periods in alt text should not cause false splits."""
         text = "See Fig. 1. below."
         sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 2
         # "Fig." is protected as abbreviation, but "1." triggers a split after protection
         # because "1." is sentence-ending punctuation followed by space.
         # This is the expected behavior — the image alt text test is below.
@@ -742,7 +755,7 @@ class TestBlockBoundaries:
         assert "## Section" in result
         assert "First sentence." in result
         assert "Second sentence." in result
-        assert "$$E = mc^2$$" in result
+        assert "$$E=mc^2$$" in result
         assert "| A | B |" in result
 
     def test_blockquote_recursive_processing(self):
@@ -757,7 +770,7 @@ class TestBlockBoundaries:
         """Inline math inside blockquotes should be preserved after sentence splitting."""
         text = "> The formula $x + y$ is simple. Another sentence."
         result = polish.process(text)
-        assert "> The formula $x + y$ is simple." in result
+        assert "> The formula $x+y$ is simple." in result
         assert "> Another sentence." in result
 
     def test_blockquote_with_display_math(self):
@@ -765,4 +778,4 @@ class TestBlockBoundaries:
         text = "> See below:\n>\n> $$\n> E = mc^2\n> $$"
         result = polish.process(text)
         assert "$$" in result
-        assert "E = mc^2" in result
+        assert "E=mc^2" in result
