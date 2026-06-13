@@ -6,7 +6,9 @@ and one-sentence-per-line formatting. Run this BEFORE letting the LLM adjust
 heading hierarchy and handle ambiguous cases.
 
 Usage:
-    python polish.py input.md [-o output.md]
+    python polish.py polish input.md [-o output.md]
+    python polish.py headings input.md [-c CONTEXT] [-o output.md]
+    python polish.py apply input.md -m MAPPING [-o output.md]
 """
 
 import argparse
@@ -128,6 +130,11 @@ ABBREVIATIONS = [
     "trans.",
     "symp.",
     "conf.",
+    "Conf.",
+    "Res.",
+    "Lab.",
+    "Labs.",
+    "Div.",
 ]
 
 # Sort longest first to avoid partial matches
@@ -136,7 +143,9 @@ ABBREVIATIONS.sort(key=len, reverse=True)
 # Compile single abbreviation matching pattern using word boundaries to prevent
 # false positives (e.g. "signal." matching "al.")
 _ABBR_PATTERN = re.compile(
-    r"\b(?:" + "|".join(re.escape(abbr) for abbr in ABBREVIATIONS) + r")(?![a-zA-Z])",
+    r"(?<![a-zA-Z])(?:"
+    + "|".join(re.escape(abbr) for abbr in ABBREVIATIONS)
+    + r")(?![a-zA-Z])",
     re.IGNORECASE,
 )
 
@@ -333,7 +342,9 @@ def _unescaped_count(text: str, token: str) -> int:
             return count
         if not _is_escaped_at(text, idx):
             count += 1
-        start = idx + len(token)
+            start = idx + len(token)
+        else:
+            start = idx + 1
 
 
 def is_display_math_start(line: str) -> bool:
@@ -394,7 +405,7 @@ def _find_code_fence_end(lines: list[str], start: int, fence: str) -> int:
 def _find_conservative_block_end(lines: list[str], start: int) -> int:
     idx = start + 1
     while idx < len(lines) and lines[idx].strip():
-        if idx != start and (
+        if (
             is_heading_line(lines[idx])
             or is_hr_line(lines[idx])
             or is_image_line(lines[idx])
@@ -471,7 +482,7 @@ def _find_blockquote_end(lines: list[str], start: int) -> int:
     while idx < len(lines):
         if not lines[idx].strip():
             break
-        if not is_blockquote_line(lines[idx]) and not is_list_item_line(lines[idx]):
+        if not is_blockquote_line(lines[idx]):
             break
         idx += 1
     return idx
@@ -573,6 +584,7 @@ def _is_cjk_or_punctuation(c: str) -> bool:
         or 0x3000 <= val <= 0x303F
         or 0xFF00 <= val <= 0xFFEF
         or 0x3400 <= val <= 0x4DBF
+        or 0x20000 <= val <= 0x3FFFF
     )
 
 
@@ -649,9 +661,13 @@ def split_sentences_in_text(text: str) -> list[str]:
 def _is_single_dollar(text: str, index: int) -> bool:
     if text[index] != "$" or _is_escaped_at(text, index):
         return False
-    if index > 0 and text[index - 1] == "$":
+    if index > 0 and text[index - 1] == "$" and not _is_escaped_at(text, index - 1):
         return False
-    return not (index + 1 < len(text) and text[index + 1] == "$")
+    return not (
+        index + 1 < len(text)
+        and text[index + 1] == "$"
+        and not _is_escaped_at(text, index + 1)
+    )
 
 
 def _find_closing_dollar(text: str, start_idx: int) -> int | None:
@@ -660,10 +676,18 @@ def _find_closing_dollar(text: str, start_idx: int) -> int | None:
         if text[idx] == "$":
             if not _is_escaped_at(text, idx):
                 # Ensure it is not a double dollar
-                if idx + 1 < len(text) and text[idx + 1] == "$":
+                if (
+                    idx + 1 < len(text)
+                    and text[idx + 1] == "$"
+                    and not _is_escaped_at(text, idx + 1)
+                ):
                     idx += 2
                     continue
-                if idx > 0 and text[idx - 1] == "$":
+                if (
+                    idx > 0
+                    and text[idx - 1] == "$"
+                    and not _is_escaped_at(text, idx - 1)
+                ):
                     idx += 1
                     continue
                 return idx
@@ -671,26 +695,26 @@ def _find_closing_dollar(text: str, start_idx: int) -> int | None:
     return None
 
 
-def _is_valid_inline_math_open(text: str, index: int) -> bool:
+def _is_valid_inline_math_open(text: str, index: int) -> int | None:
     cursor = index + 1
     while cursor < len(text) and text[cursor].isspace():
         cursor += 1
     if cursor >= len(text):
-        return False
+        return None
 
     # If followed by punctuation like . , ; : etc., it's not a valid math open
     if text[cursor] in ".,;:!?)]}":
-        return False
+        return None
 
     close_idx = _find_closing_dollar(text, index)
     if close_idx is None:
-        return False
+        return None
 
     content = text[index + 1 : close_idx]
 
     # Rule 1: A math formula cannot cross a sentence boundary
     if _SENT_END_BOUNDARY.search(content):
-        return False
+        return None
 
     # If it is followed by a digit, it could be a currency sign (like $100)
     # OR a math formula starting with a digit (like $1 - x).
@@ -698,24 +722,24 @@ def _is_valid_inline_math_open(text: str, index: int) -> bool:
     if text[cursor].isdigit():
         # If the closing dollar is followed by a digit, it is likely another currency symbol
         if close_idx + 1 < len(text) and text[close_idx + 1].isdigit():
-            return False
+            return None
         # Rule 2: If the content does not contain math operators/delimiters, it must not contain whitespace
         if not any(c in content for c in "\\^_{}+-=<>*/,;"):
             if any(c.isspace() for c in content):
-                return False
+                return None
 
     # Validate that the closing dollar is otherwise valid
     if not _is_valid_inline_math_close(text, close_idx):
-        return False
+        return None
 
-    return True
+    return close_idx
 
 
 def _is_valid_inline_math_close(text: str, index: int) -> bool:
     cursor = index - 1
     while cursor >= 0 and text[cursor].isspace():
         cursor -= 1
-    return cursor >= 0 and text[cursor] != "$"
+    return cursor >= 0 and (text[cursor] != "$" or _is_escaped_at(text, cursor))
 
 
 def protect_inline_math(text: str) -> tuple[str, dict[str, str]]:
@@ -729,17 +753,15 @@ def protect_inline_math(text: str) -> tuple[str, dict[str, str]]:
             idx += 1
             continue
 
-        if _is_valid_inline_math_open(text, idx):
-            close_idx = _find_closing_dollar(text, idx)
-            if close_idx is not None:
-                if _is_valid_inline_math_close(text, close_idx):
-                    output.append(text[last:idx])
-                    key = f"{_SENTINEL_MATH}{len(mapping)}{_SENTINEL_MATH}"
-                    mapping[key] = text[idx : close_idx + 1]
-                    output.append(key)
-                    idx = close_idx + 1
-                    last = idx
-                    continue
+        close_idx = _is_valid_inline_math_open(text, idx)
+        if close_idx is not None:
+            output.append(text[last:idx])
+            key = f"{_SENTINEL_MATH}{len(mapping)}{_SENTINEL_MATH}"
+            mapping[key] = text[idx : close_idx + 1]
+            output.append(key)
+            idx = close_idx + 1
+            last = idx
+            continue
 
         idx += 1
 
@@ -750,6 +772,13 @@ def protect_inline_math(text: str) -> tuple[str, dict[str, str]]:
 def restore_inline_math(text: str, mapping: dict[str, str]) -> str:
     for key, value in mapping.items():
         text = text.replace(key, cleanup_math_content_spacing(value))
+    return text
+
+
+def _cleanup_math_boundary_spacing(text: str) -> str:
+    text = re.sub(r"\$\s+([.,;:!?)\]}])", r"$\1", text)
+    text = re.sub(r"([([{])\s+\$", r"\1$", text)
+    text = re.sub(r"\$\s+([.,;:!?])\s+\$", r"$\1 $", text)
     return text
 
 
@@ -765,10 +794,9 @@ def process_prose_lines(lines: list[str], block: Block) -> list[str]:
         return block.lines
 
     protected = cleanup_ocr(protected)
-    return [
-        restore_inline_math(sentence, math_map)
-        for sentence in split_sentences_in_text(protected)
-    ]
+    sentences = split_sentences_in_text(protected)
+    restored = [restore_inline_math(s, math_map) for s in sentences]
+    return [_cleanup_math_boundary_spacing(s) for s in restored]
 
 
 def process_paragraph_block(block: Block) -> list[str]:
@@ -865,12 +893,9 @@ def process_list_block(block: Block) -> list[str]:
 
         marker = is_list_item_line(item_lines[0])
         prefix = marker.group(1) + marker.group(2)
-        content_col = len(prefix)
         content_lines = [marker.group(3)]
         for line in item_lines[1:]:
-            content_lines.append(
-                line[content_col:] if len(line) >= content_col else line.strip()
-            )
+            content_lines.append(line.strip())
 
         item_block = Block(
             "list_item",
@@ -929,8 +954,10 @@ def process_block(block: Block) -> list[str]:
         if block.kind == "display_math":
             return process_display_math_block(block)
         if block.kind == "heading":
-            return [cleanup_ligatures(line) for line in block.lines]
-        return block.lines
+            return [cleanup_ocr(line) for line in block.lines]
+        if block.kind == "code_fence":
+            return block.lines
+        return [cleanup_ligatures(line) for line in block.lines]
     except Exception as exc:
         warn_block(block, f"{exc}; preserving block")
         return block.lines
