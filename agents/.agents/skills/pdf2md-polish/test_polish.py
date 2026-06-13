@@ -411,6 +411,11 @@ class TestHeadingTools:
         expected = "L   1 # Quoted Title  ctx: > Context here."
         assert polish.extract_headings(text, context_lines=1) == expected
 
+    def test_extract_headings_ignores_code_block_comments(self):
+        text = "# Title\n\n```python\n# Comment\n```"
+        expected = "L   1 # Title"
+        assert polish.extract_headings(text, context_lines=1) == expected
+
     def test_apply_headings_basic(self):
         text = "# Title\n\n## Section 1\n\n### Section 2"
         mapping = {1: "##", 5: "##"}

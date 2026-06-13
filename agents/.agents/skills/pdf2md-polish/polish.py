@@ -1008,10 +1008,23 @@ def extract_headings(text: str, context_lines: int = 1) -> str:
     lines of context after each heading so the LLM can determine the correct
     hierarchy.
     """
+    blocks = parse_blocks(text)
     lines = text.split("\n")
     entries = []
 
+    # Identify lines that belong to code fences, display math, or tables, where
+    # hash characters (#) are not headings.
+    ignored_lines = set()
+    for block in blocks:
+        if block.kind in {"code_fence", "display_math", "html_table", "pipe_table"}:
+            for line_num in range(block.start_line, block.end_line + 1):
+                ignored_lines.add(line_num)
+
     for i, line in enumerate(lines):
+        line_num = i + 1
+        if line_num in ignored_lines:
+            continue
+
         m = _HEADING_RE.match(line)
         if m:
             level = len(m.group(2))
@@ -1025,7 +1038,7 @@ def extract_headings(text: str, context_lines: int = 1) -> str:
                 if cl:
                     context.append(cl)
             ctx_str = f"  ctx: {' '.join(context[:1])}" if context else ""
-            entries.append(f"L{i + 1:4d} {'#' * level} {title}{ctx_str}")
+            entries.append(f"L{line_num:4d} {'#' * level} {title}{ctx_str}")
 
     return "\n".join(entries)
 
