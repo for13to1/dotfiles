@@ -24,6 +24,8 @@ from pathlib import Path
 _SENTINEL_ABBR = "\x00"  # Protects abbreviation dots
 _SENTINEL_URL = "\x01"  # Protects URL and email dots
 _SENTINEL_MATH = "\x02"  # Protects math blocks and formula content
+_SENTINEL_LINK = "\x03"  # Protects markdown links and images
+
 
 # ── Abbreviations & tokens that should NOT trigger sentence breaks ──────────
 ABBREVIATIONS = [
@@ -135,6 +137,34 @@ ABBREVIATIONS = [
     "Lab.",
     "Labs.",
     "Div.",
+    # German
+    "z. B.",
+    "z.B.",
+    "d. h.",
+    "d.h.",
+    "u. a.",
+    "u.a.",
+    "s. u.",
+    "s.u.",
+    "s. o.",
+    "s.o.",
+    "z. T.",
+    "z.T.",
+    "bzw.",
+    "usw.",
+    "vgl.",
+    # French
+    "c.-à-d.",
+    "c-à-d.",
+    "M.",
+    "Mme.",
+    "Mlle.",
+    # Spanish
+    "p. ej.",
+    "p.ej.",
+    "Sr.",
+    "Sra.",
+    "Dra.",
 ]
 
 # Sort longest first to avoid partial matches
@@ -243,6 +273,31 @@ def _protect_urls(text: str) -> tuple[str, dict]:
 
 def _restore_urls(text: str, mapping: dict) -> str:
     """Restore URL/email placeholders."""
+    for key, val in mapping.items():
+        text = text.replace(key, val)
+    return text
+
+
+# Matches standard markdown links/images: ![alt](url) or [text](url)
+_LINK_RE = re.compile(r"(!?\[[^\]]*\]\([^)]*\))")
+
+
+def _protect_links_and_images(text: str) -> tuple[str, dict]:
+    """Replace markdown links and images with placeholders to protect internal punctuation."""
+    mapping = {}
+    counter = [0]
+
+    def _replacer(m):
+        key = f"{_SENTINEL_LINK}{counter[0]}{_SENTINEL_LINK}"
+        counter[0] += 1
+        mapping[key] = m.group()
+        return key
+
+    return _LINK_RE.sub(_replacer, text), mapping
+
+
+def _restore_links_and_images(text: str, mapping: dict) -> str:
+    """Restore markdown link and image placeholders."""
     for key, val in mapping.items():
         text = text.replace(key, val)
     return text
@@ -625,7 +680,8 @@ def _protect_caption_labels(text: str) -> str:
 
 
 def split_sentences_in_text(text: str) -> list[str]:
-    protected, url_map = _protect_urls(text)
+    protected, link_map = _protect_links_and_images(text)
+    protected, url_map = _protect_urls(protected)
     protected = _protect_caption_labels(protected)
     protected = _protect_abbreviations(protected)
 
@@ -654,6 +710,7 @@ def split_sentences_in_text(text: str) -> list[str]:
     for sentence in sentences:
         sentence = _restore_abbreviations(sentence)
         sentence = _restore_urls(sentence, url_map)
+        sentence = _restore_links_and_images(sentence, link_map)
         restored.append(sentence)
     return restored
 
@@ -672,27 +729,23 @@ def _is_single_dollar(text: str, index: int) -> bool:
 
 def _find_closing_dollar(text: str, start_idx: int) -> int | None:
     idx = start_idx + 1
-    while idx < len(text):
-        if text[idx] == "$":
-            if not _is_escaped_at(text, idx):
-                # Ensure it is not a double dollar
-                if (
-                    idx + 1 < len(text)
-                    and text[idx + 1] == "$"
-                    and not _is_escaped_at(text, idx + 1)
-                ):
-                    idx += 2
-                    continue
-                if (
-                    idx > 0
-                    and text[idx - 1] == "$"
-                    and not _is_escaped_at(text, idx - 1)
-                ):
-                    idx += 1
-                    continue
-                return idx
+    while True:
+        idx = text.find("$", idx)
+        if idx == -1:
+            return None
+        if not _is_escaped_at(text, idx):
+            if (
+                idx + 1 < len(text)
+                and text[idx + 1] == "$"
+                and not _is_escaped_at(text, idx + 1)
+            ):
+                idx += 2
+                continue
+            if idx > 0 and text[idx - 1] == "$" and not _is_escaped_at(text, idx - 1):
+                idx += 1
+                continue
+            return idx
         idx += 1
-    return None
 
 
 def _is_valid_inline_math_open(text: str, index: int) -> int | None:
@@ -702,7 +755,6 @@ def _is_valid_inline_math_open(text: str, index: int) -> int | None:
     if cursor >= len(text):
         return None
 
-    # If followed by punctuation like . , ; : etc., it's not a valid math open
     if text[cursor] in ".,;:!?)]}":
         return None
 
@@ -712,23 +764,16 @@ def _is_valid_inline_math_open(text: str, index: int) -> int | None:
 
     content = text[index + 1 : close_idx]
 
-    # Rule 1: A math formula cannot cross a sentence boundary
     if _SENT_END_BOUNDARY.search(content):
         return None
 
-    # If it is followed by a digit, it could be a currency sign (like $100)
-    # OR a math formula starting with a digit (like $1 - x).
-    # We look ahead to distinguish them:
     if text[cursor].isdigit():
-        # If the closing dollar is followed by a digit, it is likely another currency symbol
         if close_idx + 1 < len(text) and text[close_idx + 1].isdigit():
             return None
-        # Rule 2: If the content does not contain math operators/delimiters, it must not contain whitespace
         if not any(c in content for c in "\\^_{}+-=<>*/,;"):
             if any(c.isspace() for c in content):
                 return None
 
-    # Validate that the closing dollar is otherwise valid
     if not _is_valid_inline_math_close(text, close_idx):
         return None
 
@@ -804,25 +849,32 @@ def process_paragraph_block(block: Block) -> list[str]:
 
 
 def process_blockquote_block(block: Block) -> list[str]:
-    output: list[str] = []
+    # Contiguous blockquote lines are grouped and processed recursively.
+    output = []
     current_prefix = ""
-    current_lines: list[str] = []
+    current_lines = []
 
     def flush():
-        nonlocal current_prefix, current_lines
         if not current_lines:
             return
-        prose_lines = []
+        unwrapped_lines = []
         for line in current_lines:
             m = is_blockquote_line(line)
             if m:
-                prose_lines.append(m.group(2))
+                unwrapped_lines.append(m.group(2))
             else:
-                prose_lines.append(line)
-        processed = process_prose_lines(prose_lines, block)
-        for s in processed:
-            output.append(current_prefix + s)
-        current_lines = []
+                unwrapped_lines.append(line)
+
+        unwrapped_text = "\n".join(unwrapped_lines)
+        processed_text = process(unwrapped_text)
+        processed_lines = processed_text.split("\n")
+
+        for line in processed_lines:
+            if line.strip():
+                output.append(current_prefix + line)
+            else:
+                output.append(current_prefix.rstrip())
+        current_lines.clear()
 
     for line in block.lines:
         m = is_blockquote_line(line)
@@ -859,57 +911,36 @@ def _list_item_groups(block: Block) -> list[tuple[int, list[str]]]:
     return groups
 
 
-def _is_safe_list_item(lines: list[str]) -> bool:
-    if not lines or not is_list_item_line(lines[0]):
-        return False
-    marker = is_list_item_line(lines[0])
-    base_indent = len(marker.group(1))
-    for line in lines[1:]:
-        if not line.strip():
-            return False
-        indent = len(line) - len(line.lstrip())
-        if indent <= base_indent:
-            return False
-        stripped = line.strip()
-        if (
-            is_code_fence_start(stripped)
-            or is_display_math_start(stripped)
-            or is_html_table_start(stripped)
-            or is_image_line(stripped)
-            or is_heading_line(stripped)
-            or is_hr_line(stripped)
-            or is_list_item_line(stripped)
-        ):
-            return False
-    return True
-
-
 def process_list_block(block: Block) -> list[str]:
     output: list[str] = []
     for start_idx, item_lines in _list_item_groups(block):
-        if not _is_safe_list_item(item_lines):
+        marker = is_list_item_line(item_lines[0])
+        if not marker:
             output.extend(item_lines)
             continue
 
-        marker = is_list_item_line(item_lines[0])
         prefix = marker.group(1) + marker.group(2)
+        content_col = len(prefix)
         content_lines = [marker.group(3)]
         for line in item_lines[1:]:
-            content_lines.append(line.strip())
+            if line.startswith(" " * content_col):
+                content_lines.append(line[content_col:])
+            else:
+                content_lines.append(line.lstrip())
 
-        item_block = Block(
-            "list_item",
-            content_lines,
-            block.start_line + start_idx,
-            block.start_line + start_idx + len(item_lines) - 1,
-        )
-        processed = process_prose_lines(content_lines, item_block)
-        if processed == content_lines or not processed:
-            output.extend(item_lines)
+        unwrapped_text = "\n".join(content_lines)
+        processed_text = process(unwrapped_text)
+        processed_lines = processed_text.split("\n")
+
+        if not processed_lines or (
+            len(processed_lines) == 1 and not processed_lines[0].strip()
+        ):
+            output.append(prefix)
             continue
 
-        output.append(prefix + processed[0])
-        output.extend(" " * len(prefix) + sentence for sentence in processed[1:])
+        output.append(prefix + processed_lines[0])
+        for line in processed_lines[1:]:
+            output.append(" " * content_col + line)
     return output
 
 
@@ -942,25 +973,25 @@ def process_display_math_block(block: Block) -> list[str]:
 
 
 def process_block(block: Block) -> list[str]:
-    try:
-        if block.kind == "blank":
-            return [""]
-        if block.kind == "paragraph":
-            return process_paragraph_block(block)
-        if block.kind == "blockquote":
-            return process_blockquote_block(block)
-        if block.kind == "list":
-            return process_list_block(block)
-        if block.kind == "display_math":
-            return process_display_math_block(block)
-        if block.kind == "heading":
-            return [cleanup_ocr(line) for line in block.lines]
-        if block.kind == "code_fence":
-            return block.lines
-        return [cleanup_ligatures(line) for line in block.lines]
-    except Exception as exc:
-        warn_block(block, f"{exc}; preserving block")
+    if block.kind == "blank":
+        return [""]
+    if block.kind == "heading":
+        return [cleanup_ocr(line) for line in block.lines]
+    if block.kind == "code_fence":
         return block.lines
+    if block.kind in ("paragraph", "blockquote"):
+        try:
+            if block.kind == "paragraph":
+                return process_paragraph_block(block)
+            return process_blockquote_block(block)
+        except Exception as exc:
+            warn_block(block, f"{exc}; preserving block")
+            return block.lines
+    if block.kind == "list":
+        return process_list_block(block)
+    if block.kind == "display_math":
+        return process_display_math_block(block)
+    return [cleanup_ligatures(line) for line in block.lines]
 
 
 def process_blocks(blocks: list[Block]) -> list[str]:
@@ -990,6 +1021,7 @@ def process(text: str) -> str:
         text.replace(_SENTINEL_ABBR, "")
         .replace(_SENTINEL_URL, "")
         .replace(_SENTINEL_MATH, "")
+        .replace(_SENTINEL_LINK, "")
     )
 
     blocks = parse_blocks(text)

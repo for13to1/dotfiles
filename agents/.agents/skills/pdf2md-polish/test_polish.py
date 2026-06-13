@@ -54,6 +54,12 @@ class TestAbbreviationProtection:
         sentences = polish.split_sentences_in_text(text)
         assert len(sentences) == 1
 
+    def test_german_abbreviation_split(self):
+        text = "Es gibt viele Anwendungen, z. B. in der Informatik. Eine weitere ist in der Medizin."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 2
+        assert "z. B." in sentences[0]
+
 
 # ── Sentence splitting ──────────────────────────────────────────────────────
 
@@ -534,6 +540,35 @@ class TestListSentenceSplitting:
         assert lines[0].startswith("- ")
         assert lines[1].startswith("  ")  # continuation indent
 
+    def test_nested_list_reflow(self):
+        """Nested list items and parent item should both reflow correctly while keeping nesting structure."""
+        text = (
+            "- The first objective is to design a high-performance\n"
+            "  classifier, which runs in real-time on\n"
+            "  embedded platforms.\n"
+            "  - Specifically, we target devices with less than\n"
+            "    2GB of RAM."
+        )
+        result = polish.process(text)
+        lines = [line for line in result.split("\n") if line.strip()]
+        # Parent list item should be reflowed into a single line
+        assert (
+            lines[0]
+            == "- The first objective is to design a high-performance classifier, which runs in real-time on embedded platforms."
+        )
+        # Sub-list item should also be reflowed into a single line, correctly indented
+        assert (
+            lines[1] == "  - Specifically, we target devices with less than 2GB of RAM."
+        )
+
+    def test_list_item_with_display_math(self):
+        """Multi-line display math inside a list item should be preserved."""
+        text = "- The formula\n\n  $$\n  E = mc^2\n  $$\n\n  is famous.\n- Next item."
+        result = polish.process(text)
+        assert "E = mc^2" in result
+        assert "- The formula" in result
+        assert "- Next item." in result
+
 
 # ── Code fence preservation ──────────────────────────────────────────────────
 
@@ -588,3 +623,146 @@ class TestInlineMathEdgeCases:
         """Boundary spacing cleanup should tighten $ and punctuation."""
         result = polish.process("We found $x + y$ . The result.")
         assert "$x+y$." in result or "$x+y$ ." not in result
+
+    def test_link_with_periods_not_split(self):
+        """Markdown links containing dots should not be split into multiple sentences."""
+        text = "Check [our paper Fig. 1. Detailed comparison is given.](http://example.com/fig1) for details."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 1
+
+    def test_image_with_periods_not_split(self):
+        """Markdown images with periods in alt text should not cause false splits."""
+        text = "See Fig. 1. below."
+        sentences = polish.split_sentences_in_text(text)
+        # "Fig." is protected as abbreviation, but "1." triggers a split after protection
+        # because "1." is sentence-ending punctuation followed by space.
+        # This is the expected behavior — the image alt text test is below.
+        text2 = "See ![Fig. 1. Comparison](img.png) for details."
+        sentences2 = polish.split_sentences_in_text(text2)
+        assert len(sentences2) == 1
+
+    def test_multiple_links_in_sentence(self):
+        """Multiple links in one sentence should all be preserved."""
+        text = "See [Fig. 1](a.com) and [Fig. 2](b.com) for details."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 1
+        assert "[Fig. 1](a.com)" in sentences[0]
+        assert "[Fig. 2](b.com)" in sentences[0]
+
+
+# ── Block boundary transitions ───────────────────────────────────────────────
+
+
+class TestBlockBoundaries:
+    """Verify correct block detection at transitions between block types."""
+
+    def test_paragraph_to_heading(self):
+        text = "Some prose.\n# New Section"
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "paragraph"
+        assert blocks[1].kind == "heading"
+
+    def test_paragraph_to_list(self):
+        text = "Some prose.\n- item one\n- item two"
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "paragraph"
+        assert blocks[1].kind == "list"
+
+    def test_paragraph_to_display_math(self):
+        text = "Some prose.\n$$\nE = mc^2\n$$"
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "paragraph"
+        assert blocks[1].kind == "display_math"
+
+    def test_list_to_paragraph(self):
+        text = "- item one\n- item two\nSome prose."
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "list"
+        assert blocks[1].kind == "paragraph"
+
+    def test_list_to_heading(self):
+        text = "- item one\n# New Section"
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "list"
+        assert blocks[1].kind == "heading"
+
+    def test_heading_to_paragraph(self):
+        text = "# Title\nSome prose."
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "heading"
+        assert blocks[1].kind == "paragraph"
+
+    def test_display_math_to_paragraph(self):
+        text = "$$E = mc^2$$\nSome prose."
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "display_math"
+        assert blocks[1].kind == "paragraph"
+
+    def test_code_fence_to_paragraph(self):
+        text = "```\ncode\n```\nSome prose."
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "code_fence"
+        assert blocks[1].kind == "paragraph"
+
+    def test_pipe_table_to_paragraph(self):
+        text = "| A | B |\n|---|---|\n| 1 | 2 |\nSome prose."
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "pipe_table"
+        assert blocks[1].kind == "paragraph"
+
+    def test_blockquote_to_paragraph(self):
+        text = "> quoted text\nSome prose."
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "blockquote"
+        assert blocks[1].kind == "paragraph"
+
+    def test_full_document_e2e(self):
+        """A realistic document with multiple block types processes without error."""
+        text = (
+            "# Title\n"
+            "\n"
+            "First sentence. Second sentence.\n"
+            "\n"
+            "## Section\n"
+            "\n"
+            "- Item one. Item two.\n"
+            "- Item three.\n"
+            "\n"
+            "$$E = mc^2$$\n"
+            "\n"
+            "> Quoted text here. Another sentence.\n"
+            "\n"
+            "| A | B |\n"
+            "|---|---|\n"
+            "| 1 | 2 |\n"
+        )
+        result = polish.process(text)
+        # Should process without error and preserve structure
+        assert "# Title" in result
+        assert "## Section" in result
+        assert "First sentence." in result
+        assert "Second sentence." in result
+        assert "$$E = mc^2$$" in result
+        assert "| A | B |" in result
+
+    def test_blockquote_recursive_processing(self):
+        """Headings and lists inside blockquotes should be parsed and processed recursively."""
+        text = "> # Heading inside blockquote\n> - item one\n> - item two"
+        result = polish.process(text)
+        assert "> # Heading inside blockquote" in result
+        assert "> - item one" in result
+        assert "> - item two" in result
+
+    def test_blockquote_with_inline_math(self):
+        """Inline math inside blockquotes should be preserved after sentence splitting."""
+        text = "> The formula $x + y$ is simple. Another sentence."
+        result = polish.process(text)
+        assert "> The formula $x + y$ is simple." in result
+        assert "> Another sentence." in result
+
+    def test_blockquote_with_display_math(self):
+        """Display math inside blockquotes should be preserved."""
+        text = "> See below:\n>\n> $$\n> E = mc^2\n> $$"
+        result = polish.process(text)
+        assert "$$" in result
+        assert "E = mc^2" in result

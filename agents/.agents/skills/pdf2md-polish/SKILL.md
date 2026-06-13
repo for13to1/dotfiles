@@ -22,8 +22,8 @@ Responsibilities are split between a deterministic Python script and the LLM:
 |------|-------|-------|
 | 1. OCR cleanup | **Script** | Ligature replacement (`ﬁ`→`fi`), prose-safe stray backslash removal |
 | 2. Block parsing | **Script** | Lightweight OCR/PDF-oriented block detection for headings, rules, images, tables, code fences, display math, lists, and paragraphs |
-| 3. Math protection | **Script** | Preserve display math as structural blocks; protect inline math block-locally while processing prose |
-| 4. Paragraph reflow & sentence splitting | **Script** | Reflow PDF/OCR soft line breaks, then abbreviation-aware sentence splitting (`Fig. 1`, `e.g.`, `et al.` etc.) into one sentence per line |
+| 3. Math & link protection | **Script** | Preserve display math as structural blocks; protect inline math, links, and images block-locally while processing prose |
+| 4. Paragraph reflow & sentence splitting | **Script** | Reflow PDF/OCR soft line breaks, then abbreviation-aware multilingual sentence splitting (`Fig. 1`, `z. B.`, `et al.` etc.) into one sentence per line |
 | 5. Heading hierarchy | **LLM** | Promote headings so sections start at `##`, infer document title |
 | 6. Semantic review | **LLM** | Fix edge cases the script missed, verify meaning preserved |
 
@@ -54,9 +54,10 @@ The script handles:
 - **OCR ligature cleanup**: `ﬁ`→`fi`, `ﬂ`→`fl`, `ﬃ`→`ffi`, etc.
 - **OCR/PDF block parsing**: Treats headings, horizontal rules, images, HTML tables, pipe tables, code fences, display math, lists, and normal paragraphs as separate processing units.
 - **Soft-line reflow**: Rejoins PDF/OCR physical line wraps inside prose paragraphs before sentence splitting.
-- **Abbreviation-aware sentence splitting**: Knows common abbreviations (Fig., e.g., et al., etc.) and does NOT break sentences on their internal dots.
+- **Abbreviation-aware sentence splitting**: Knows common abbreviations (Fig., e.g., et al., z. B., etc.) in multiple languages (English, German, French, Spanish) and does NOT break sentences on their internal dots.
+- **Markdown link & image protection**: Preserves links (`[text](url)`) and images (`![alt](url)`) during sentence splitting so that punctuation (such as periods) inside descriptions or URLs does not cause false sentence breaks.
 - **Caption handling**: Reflows split figure/table captions such as `Fig. 1.` followed by caption text.
-- **Conservative list processing**: Reflows simple list-item paragraphs while preserving complex/nested list structures.
+- **Recursive list processing**: Reflows paragraphs inside list items recursively, supporting arbitrarily nested lists, code fences, and display math while preserving original indentation structures.
 - **Block-local math handling**: Preserves display math blocks and protects inline math within each prose block; unbalanced math warnings stay local to the affected block.
 - **One sentence per line**: Sentences end at `.`, `!`, `?`, `。`, `！`, `？`. Same-paragraph sentences are adjacent (no blank lines); paragraphs separated by one blank line.
 - **Markdown structure preserved**: Headings, rules, lists, code fences, tables, images, and math blocks are not broken by sentence splitting.
