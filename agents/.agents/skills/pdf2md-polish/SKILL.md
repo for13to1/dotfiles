@@ -1,18 +1,18 @@
 ---
 name: pdf2md-polish
-description: Use when the user wants to post-process, proofread, or reformat markdown files converted from PDF (e.g. by minerU, marker, nougat, or similar tools). Also use when the user mentions "markdown校对", "markdown格式化", "pdf2md", or asks to apply heading/heading-level/equation/sentence-per-line formatting rules to markdown.
+description: Use when the user provides a markdown file (.md) and asks to clean up, polish, proofread, reformat, or tidy it up. Also use when the user asks to apply heading/heading-level/equation/sentence-per-line formatting rules to a markdown file. Explicit trigger keywords: "pdf2md-polish", "polish", "tidy up", "proofread", "reformat", "校对", "格式化", "整理", "清理".
 ---
 
-# Markdown Post-Processing for PDF-Converted Documents
+# Markdown Post-Processing
 
-This skill provides a **hybrid workflow** (script + LLM) for polishing markdown output from PDF-to-markdown conversion tools (minerU, marker, nougat, etc.).
+This skill provides a **hybrid workflow** (script + LLM) for polishing markdown files with OCR artifacts, broken paragraphs, or messy formatting.
 
 ## When to Use
 
 Trigger this skill when:
-- User provides a markdown file converted from PDF and asks to polish/proofread it
-- User mentions PDF-to-markdown conversion workflow
-- User asks to reformat markdown with specific heading, equation, or sentence rules
+- User provides a markdown file (.md) and asks to clean up, polish, proofread, reformat, or tidy it up
+- User asks to apply heading, equation, or sentence-per-line formatting rules to a markdown file
+- User explicitly mentions any trigger keyword: "pdf2md-polish", "polish", "tidy up", "proofread", "reformat", "校对", "格式化", "整理", "清理"
 
 ## Architecture: Hybrid Mode
 
@@ -32,10 +32,10 @@ Responsibilities are split between a deterministic Python script and the LLM:
 ### Step 1: Run the Python Script
 
 ```bash
-uv run --python 3.10+ agents/.agents/skills/pdf2md-polish/polish.py polish <input.md>
+uv run $HOME/.agents/skills/pdf2md-polish/polish.py polish <input.md>
 ```
 
-Use `uv run` to ensure a consistent Python environment. `uv` will automatically find or download a suitable Python 3.10+ interpreter. No system Python dependency.
+Uses the project's Python environment via `uv run`. If `uv` is unavailable or causes version conflicts, fall back to `python3 $HOME/.agents/skills/pdf2md-polish/polish.py polish <input.md>`.
 
 Available subcommands:
 - `polish` — Full processing pipeline (default)
@@ -44,10 +44,10 @@ Available subcommands:
 
 ```bash
 # Extract headings (compact view for LLM to determine hierarchy)
-uv run --python 3.10+ agents/.agents/skills/pdf2md-polish/polish.py headings <polished.md>
+uv run $HOME/.agents/skills/pdf2md-polish/polish.py headings <polished.md>
 
 # Apply heading changes (JSON mapping: line_number → new prefix)
-uv run --python 3.10+ agents/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"148": "###"}'
+uv run $HOME/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"148": "###"}'
 ```
 
 The script handles:
@@ -70,12 +70,12 @@ After the script runs, adjust heading levels:
 
 1. Extract heading skeleton:
    ```bash
-   uv run --python 3.10+ agents/.agents/skills/pdf2md-polish/polish.py headings <polished.md>
+   uv run $HOME/.agents/skills/pdf2md-polish/polish.py headings <polished.md>
    ```
 2. Analyze the skeleton to determine correct hierarchy (title = `#`, top-level sections = `##`, subsections = `###`, etc.)
 3. Apply changes:
    ```bash
-   uv run --python 3.10+ agents/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"line": "##", ...}'
+   uv run $HOME/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"line": "##", ...}'
    ```
    - **JSON format constraint**: Ensure the JSON mapping for the `-m` argument is a valid, single-line JSON string without Markdown code block formatting (e.g., no ```json backticks).
 
@@ -116,13 +116,13 @@ After the script runs, adjust heading levels:
 
 ### Step 3: Output
 
-Write the final result to a new file (default: `<original-name>-final.md`) or overwrite in-place if the user prefers. Report a brief summary of changes made.
+Overwrite the original file with the polished result (rename `-polished.md` back to the original filename). Report a brief summary of changes made.
 - **Encoding requirement**: Always read and write markdown files using explicit UTF-8 encoding to prevent CP-1252 or platform-specific coding issues and preserve special mathematical symbols, Greek letters, and non-ASCII punctuation.
 
 ## Script Location
 
 ```
-agents/.agents/skills/pdf2md-polish/polish.py
+$HOME/.agents/skills/pdf2md-polish/polish.py
 ```
 
-Dependencies: Python 3.10+ (standard library only, no external packages). Run via `uv run --python 3.10+` for portable Python resolution.
+Dependencies: Python 3.10+ (standard library only, no external packages). Run via `uv run` (uses project Python) or `python3` as fallback.
