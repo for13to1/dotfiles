@@ -42,6 +42,18 @@ vim.opt.autoindent = true
 -- System Clipboard
 vim.opt.clipboard = "unnamedplus"
 
+-- Undo Settings & Keymaps
+vim.opt.undofile = false -- 设置为 true 启用持久化撤销（Neovim 会自动管理并创建撤销目录）
+vim.opt.undolevels = 10000
+vim.opt.undoreload = 10000
+
+-- 插入模式下的撤销断点（按标点符号分段撤销，避免一次性撤销太多）
+vim.keymap.set("i", ",", ",<C-g>u")
+vim.keymap.set("i", ".", ".<C-g>u")
+vim.keymap.set("i", "!", "!<C-g>u")
+vim.keymap.set("i", "?", "?<C-g>u")
+vim.keymap.set("i", ";", ";<C-g>u")
+
 -- Plugins Configuration
 require("lazy").setup({
   -- UI / Theme
@@ -82,6 +94,7 @@ require("lazy").setup({
   { "numToStr/Comment.nvim", config = true }, -- gcc / gc
   { "tpope/vim-sleuth" }, -- auto indent
   { "windwp/nvim-autopairs", config = true }, -- auto close brackets
+  { "mbbill/undotree", keys = { { "<leader>u", "<cmd>UndotreeToggle<cr>", desc = "Toggle UndoTree" } } },
 
   -- LSP / Autocompletion (Replacing ALE)
   { "williamboman/mason.nvim", config = true },

@@ -18,11 +18,20 @@ set autowrite                   " 切换缓冲区时自动保存
 set confirm                     " 处理未保存文件时弹出确认
 
 " 持久化 undo：关闭文件后重新打开仍可撤销之前的操作
-set undodir=~/.vim/undodir
-set undofile
-if !isdirectory(&undodir)
-    call mkdir(&undodir, 'p', 0700)
+set noundofile
+if &undofile
+    set undodir=~/.vim/undodir
+    if !isdirectory(&undodir)
+        call mkdir(&undodir, 'p', 0700)
+    endif
 endif
+
+" 插入模式下的撤销断点（按标点符号分段撤销，避免一次性撤销太多）
+inoremap , ,<C-g>u
+inoremap . .<C-g>u
+inoremap ! !<C-g>u
+inoremap ? ?<C-g>u
+inoremap ; ;<C-g>u
 
 " =============================================================================
 " 搜索

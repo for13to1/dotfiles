@@ -51,7 +51,7 @@ case "$OS" in
 
         if [[ -n "$SELECTED_MIRROR" ]]; then
             brew_mirror "$SELECTED_MIRROR"
-            ok "已在此次装机流程中注入 $SELECTED_MIRROR 镜像源环境变量"
+            ok "已临时设置 $SELECTED_MIRROR 镜像源以加速安装"
         fi
 
         # Xcode 开发工具检测：优先使用完整版 Xcode.app，否则退而安装精简版 CLT
