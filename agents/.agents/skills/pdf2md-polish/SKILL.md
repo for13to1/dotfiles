@@ -111,6 +111,7 @@ After the script runs, adjust heading levels:
 ##### Common Issues to Watch For
 
 - **Images splitting sentences**: OCR-converted text sometimes places images/figure captions in the middle of a sentence. Detection: if the line before an image does NOT end with sentence-ending punctuation (`.`, `!`, `?`), the sentence is likely split by the image. Move the image and caption after the complete sentence.
+- **Punctuation inside math expressions**: OCR may place commas or periods inside math delimiters, e.g., `$\varphi, $` should be `$\varphi$,`. Check for punctuation followed by a space before the closing `$`.
 
 #### Additional Rules
 

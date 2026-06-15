@@ -22,6 +22,10 @@ The authors would like to thank Dipl.-Ing. A. Stadermann for technical support.
 
 Here we propose architectures with readout circuits for both, the phase resp. time-of-flight values and the pixel intensities.
 
+With the optical input signal $s(t)$ of modulation amplitude and phase $\varphi$, and the demodulation signal $g(t)$ defined as follows.
+
+The sampling function, a $\mathrm{rect}(t/\Delta t)$ function, where $\Delta t$ is the integration time.
+
 The micro-photograph gives an overview of the PMD-chip, including readout circuitry.
 
 ## 3. Image Splitting Sentence

@@ -252,6 +252,8 @@ def cleanup_ocr(text: str) -> str:
     # We ensure we do not touch double backslashes (\\) which are valid in LaTeX/Markdown.
     # Includes whitespace, single quote, and double quote in exclusion list to protect valid escapes (e.g. \ , \", \').
     text = re.sub(r"(?<!\\)\\(?!\\)(?=[^a-zA-Z()\[\]$%#{}&_*+\-.!\`<>\"'\s])", "", text)
+    # Fix duplicate commas (common OCR artifact): ", ," or ",,"
+    text = re.sub(r",\s*,", ",", text)
     return text
 
 
@@ -341,12 +343,20 @@ def cleanup_math_content_spacing(math_text: str) -> str:
 
 def cleanup_math_body(content: str) -> str:
     """Apply spacing cleanup to math content without adding delimiters."""
+    content = content.strip()
     content = re.sub(r"(?<=[\d.])\s+(?=[\d.])", "", content)
     content = re.sub(r"(\\[a-zA-Z]+)\s*([{(])", r"\1\2", content)
     content = re.sub(r"\s*([+\-=<>*/_^])\s*", r"\1", content)
     content = re.sub(r"\s*,\s*", ", ", content)
     content = re.sub(r"([{(])\s+", r"\1", content)
     content = re.sub(r"\s+([})])", r"\1", content)
+    content = re.sub(r"([a-zA-Z}])\s+(\()", r"\1\2", content)
+    # Clean up spaces inside \mathrm{} and \text{} (text-mode commands)
+    content = re.sub(
+        r"(\\(?:mathrm|text|textbf|textit|textrm|textsf|texttt)\{)([^}]*)\}",
+        lambda m: m.group(1) + m.group(2).replace(" ", "") + "}",
+        content,
+    )
     return content
 
 
