@@ -118,6 +118,12 @@ fi
 [[ -d "/opt/homebrew/opt/postgresql@18/bin" ]] && export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
 # <<< postgresql@18 loading <<<
 
+# >>> opencode loading >>>
+# 安装时使用 --no-modify-path 避免脚本自动修改 .zshrc
+# curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path
+[[ -d "$HOME/.opencode/bin" ]] && export PATH="$HOME/.opencode/bin:$PATH"
+# <<< opencode loading <<<
+
 # >>> zoxide (better cd) loading >>>
 if command -v zoxide &>/dev/null; then
     eval "$(zoxide init zsh)"
