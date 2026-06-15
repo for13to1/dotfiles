@@ -108,6 +108,10 @@ After the script runs, adjust heading levels:
 - Ensure no content was lost or altered during script processing.
 - Preserve images, tables, code blocks, and footnotes as-is.
 
+##### Common Issues to Watch For
+
+- **Images splitting sentences**: OCR-converted text sometimes places images/figure captions in the middle of a sentence. Detection: if the line before an image does NOT end with sentence-ending punctuation (`.`, `!`, `?`), the sentence is likely split by the image. Move the image and caption after the complete sentence.
+
 #### Additional Rules
 
 - Preserve all original content and meaning. Do not add, remove, or rephrase substantive text.

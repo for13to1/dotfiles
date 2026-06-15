@@ -15,3 +15,25 @@ The cost is \$$b$ per unit, and we satisfy $b\$$ boundary.
 > # Heading inside blockquote
 > - item one in quote with a continuation line
 > - item two
+
+## 2. German Academic Context
+
+The authors would like to thank Dipl.-Ing. A. Stadermann for technical support.
+
+Here we propose architectures with readout circuits for both, the phase resp. time-of-flight values and the pixel intensities.
+
+The micro-photograph gives an overview of the PMD-chip, including readout circuitry.
+
+## 3. Image Splitting Sentence
+
+The key components for RFMI-measurement are the 2D-mixer and the 2D-detector.
+
+![image](https://example.com/fig1.jpg)
+
+Fig. 1 Scheme of a PMD-array applied in the 3D-imaging system.
+
+A transfer characteristic should be described analogously to conventional electro-optic modulators (EOMs), e.g., Pockels cells.
+
+![image](https://example.com/fig2.jpg)
+
+Fig. 8 Cross-sectional view of the device.
