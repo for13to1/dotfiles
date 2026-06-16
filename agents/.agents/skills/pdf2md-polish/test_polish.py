@@ -453,6 +453,13 @@ class TestMathSpacing:
         assert polish.cleanup_math_body("\\alpha ( x )") == "\\alpha(x)"
         assert polish.cleanup_math_body("a + b") == "a+b"  # operator spaces removed
 
+    def test_cleanup_math_body_bracket_spacing(self):
+        # square bracket spacing
+        assert (
+            polish.cleanup_math_body(r"\sqrt{[ a ]^{2}+[ b ]^{2}}")
+            == r"\sqrt{[a]^{2}+[b]^{2}}"
+        )
+
     def test_cleanup_math_content_spacing(self):
         assert polish.cleanup_math_content_spacing("$x_{ i }$") == "$x_{i}$"
         assert polish.cleanup_math_content_spacing("$$1 2 . 3$$") == "$$12.3$$"

@@ -395,6 +395,9 @@ def cleanup_math_body(content: str) -> str:
     content = re.sub(r"([{(])\s+", r"\1", content)
     content = re.sub(r"\s+([})])", r"\1", content)
     content = re.sub(r"([a-zA-Z}])\s+(\()", r"\1\2", content)
+    # Clean up spaces inside square brackets used for grouping
+    content = re.sub(r"\[\s+", "[", content)
+    content = re.sub(r"\s+\]", "]", content)
     # Clean up spaces inside \mathrm{} and \text{} (text-mode commands)
     content = re.sub(
         r"(\\(?:mathrm|text|textbf|textit|textrm|textsf|texttt)\{)([^}]*)\}",
