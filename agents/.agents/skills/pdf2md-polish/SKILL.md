@@ -20,9 +20,9 @@ Responsibilities are split between a deterministic Python script and the LLM:
 
 | Step | Owner | Tasks |
 |------|-------|-------|
-| 1. OCR cleanup | **Script** | Ligature replacement (`ﬁ`→`fi`), prose-safe stray backslash removal |
-| 2. Block parsing | **Script** | Lightweight OCR/PDF-oriented block detection for headings, rules, images, tables, code fences, display math, lists, and paragraphs |
-| 3. Math & link protection | **Script** | Preserve display math as structural blocks; protect inline math, links, and images block-locally while processing prose |
+| 1. OCR cleanup | **Script** | True-ligature replacement (`ﬁ`→`fi`), prose-safe stray backslash removal, inline whitespace normalization (collapse multi-space/tabs) |
+| 2. Block parsing | **Script** | Lightweight OCR/PDF-oriented block detection for headings, rules, images, tables, code fences, display math, lists, blockquotes, and paragraphs |
+| 3. Math & link handling | **Script** | Isolate display math as structural blocks and **normalize** their internal spacing; protect inline math, links, and images block-locally while processing prose, normalizing inline-math spacing too |
 | 4. Paragraph reflow & sentence splitting | **Script** | Reflow PDF/OCR soft line breaks, then abbreviation-aware multilingual sentence splitting (`Fig. 1`, `z. B.`, `et al.` etc.) into one sentence per line |
 | 5. Heading hierarchy | **LLM** | Promote headings so sections start at `##`, infer document title |
 | 6. Semantic review | **LLM** | Fix edge cases the script missed, verify meaning preserved |
@@ -51,14 +51,16 @@ uv run $HOME/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"14
 ```
 
 The script handles:
-- **OCR ligature cleanup**: `ﬁ`→`fi`, `ﬂ`→`fl`, `ﬃ`→`ffi`, etc.
-- **OCR/PDF block parsing**: Treats headings, horizontal rules, images, HTML tables, pipe tables, code fences, display math, lists, and normal paragraphs as separate processing units.
+- **True-ligature cleanup**: `ﬁ`→`fi`, `ﬂ`→`fl`, `ﬃ`→`ffi`, etc. (en-dash `–` is intentionally left alone — it is meaningful punctuation, e.g. page ranges `pp. 12–15`).
+- **OCR/PDF block parsing**: Treats headings, horizontal rules, images, HTML tables, pipe tables, code fences, display math, lists, blockquotes, and normal paragraphs as separate processing units.
+- **Inline whitespace normalization**: In prose and headings, collapses runs of spaces/tabs to a single space (inline code, inline math, and link/image targets are protected, so their internal spacing is preserved). Table cells are left untouched.
 - **Soft-line reflow**: Rejoins PDF/OCR physical line wraps inside prose paragraphs before sentence splitting.
 - **Abbreviation-aware sentence splitting**: Knows common abbreviations (Fig., e.g., et al., z. B., etc.) in multiple languages (English, German, French, Spanish) and does NOT break sentences on their internal dots.
 - **Markdown link & image protection**: Preserves links (`[text](url)`) and images (`![alt](url)`) during sentence splitting so that punctuation (such as periods) inside descriptions or URLs does not cause false sentence breaks.
 - **Caption handling**: Reflows split figure/table captions such as `Fig. 1.` followed by caption text.
-- **Recursive list processing**: Reflows paragraphs inside list items recursively, supporting arbitrarily nested lists, code fences, and display math while preserving original indentation structures.
-- **Block-local math handling**: Preserves display math blocks and protects inline math within each prose block; unbalanced math warnings stay local to the affected block.
+- **Recursive list & blockquote processing**: Reflows paragraphs inside list items and blockquotes recursively, supporting arbitrarily nested lists, code fences, and display math while preserving original indentation structures.
+- **Math delimiter normalization**: `\(...\)` inline math → `$...$` and `\[...\]` display math → `$$...$$`, for consistent, widely-rendered output. `\begin{...}` environments (e.g. `align`, `equation`) are left untouched, since converting them to `$$` would lose multi-line alignment/numbering.
+- **Block-local math handling (normalizing)**: Isolates display math blocks and protects inline math within each prose block, then **normalizes spacing inside the formula** (e.g. `x_{ i }`→`x_{i}`, `a + b`→`a+b`, `\mathrm{r e c t}`→`\mathrm{rect}`). This rewrites formula whitespace — it does not preserve it byte-for-byte. Unbalanced math warnings stay local to the affected block.
 - **One sentence per line**: Sentences end at `.`, `!`, `?`, `。`, `！`, `？`. Same-paragraph sentences are adjacent (no blank lines); paragraphs separated by one blank line.
 - **Markdown structure preserved**: Headings, rules, lists, code fences, tables, images, and math blocks are not broken by sentence splitting.
 
@@ -75,9 +77,9 @@ After the script runs, adjust heading levels:
 2. Analyze the skeleton to determine correct hierarchy (title = `#`, top-level sections = `##`, subsections = `###`, etc.)
 3. Apply changes:
    ```bash
-   uv run $HOME/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"line": "##", ...}'
+   uv run $HOME/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"148": "##", "203": "###"}'
    ```
-   - **JSON format constraint**: Ensure the JSON mapping for the `-m` argument is a valid, single-line JSON string without Markdown code block formatting (e.g., no ```json backticks).
+   - **JSON format**: The mapping is `{"<line_number>": "<new_prefix>"}` — keys are line numbers (as strings), values are the target heading prefix (`##`, `###`, …). Pass a valid single-line JSON string for `-m`. A surrounding ```json code fence is tolerated (the `apply` command strips it automatically), but prefer passing bare JSON.
 
 
 #### Heading Rules
@@ -112,6 +114,13 @@ After the script runs, adjust heading levels:
 
 - **Images splitting sentences**: OCR-converted text sometimes places images/figure captions in the middle of a sentence. Detection: if the line before an image does NOT end with sentence-ending punctuation (`.`, `!`, `?`), the sentence is likely split by the image. Move the image and caption after the complete sentence.
 - **Punctuation inside math expressions**: OCR may place commas or periods inside math delimiters, e.g., `$\varphi, $` should be `$\varphi$,`. Check for punctuation followed by a space before the closing `$`.
+- **en-dash flattened to hyphen in ranges** (publication-grade only; skip for casual docs): OCR/PDF extraction frequently degrades en-dashes (`–`, U+2013) to plain hyphens (`-`), so a *range* may appear as `pp. 12-15` when it should be `pp. 12–15`. The script deliberately does NOT touch hyphens (too many legitimate uses: `COVID-19`, `state-of-the-art`, `Section 3-2`, model numbers), so this is an LLM-only judgment.
+  - **Recall the candidates deterministically** — grep narrows the search so you don't miss any while scanning prose:
+    ```bash
+    grep -nE '[0-9]+ ?- ?[0-9]+' <polished.md>
+    ```
+  - **Promote `-` → `–` ONLY when context makes it unambiguously a numeric range**: page ranges (`pp. 12-15`), year/date spans (`2010-2020`), figure/table/equation/section ranges (`Figs. 3-5`, `Eqs. 2-4`), inclusive numeric intervals in prose ("values 5-10").
+  - **Leave it as `-` (when in doubt, do nothing) for**: identifiers/model names (`COVID-19`, `RTX-4090`, `IPv6-only`), single hierarchical labels rather than spans (`Section 3-2` meaning "subsection 2 of section 3"), phone/ISBN/serial numbers, hyphenated compounds, and anything you cannot confirm from surrounding text. A wrong promotion is worse than a missed one.
 
 #### Additional Rules
 
@@ -123,6 +132,13 @@ After the script runs, adjust heading levels:
 
 Overwrite the original file with the polished result (rename `-polished.md` back to the original filename). Report a brief summary of changes made.
 - **Encoding requirement**: Always read and write markdown files using explicit UTF-8 encoding to prevent CP-1252 or platform-specific coding issues and preserve special mathematical symbols, Greek letters, and non-ASCII punctuation.
+
+> **Reference examples** (three-way comparison, so the script/LLM boundary is explicit):
+> - `examples/sample_input.md` — raw OCR/PDF input.
+> - `examples/sample_prepass.md` — output of `polish.py polish` **alone** (deterministic script only). Regenerate with `uv run polish.py polish examples/sample_input.md -o examples/sample_prepass.md`.
+> - `examples/sample_output.md` — the **full script + LLM pipeline** result.
+>
+> Diffing the last two shows exactly what the LLM step adds and the script deliberately leaves alone: moving an image out of the middle of a sentence (§3), OCR character fixes (`a the`→`the`), and moving a stray comma out of math (`$\varphi, $`→`$\varphi$,`) — all context-dependent judgments that belong to the Step 2 LLM pass, not `polish.py`.
 
 ## Script Location
 

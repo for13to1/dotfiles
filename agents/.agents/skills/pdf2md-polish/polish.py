@@ -25,6 +25,7 @@ _SENTINEL_ABBR = "\x00"  # Protects abbreviation dots
 _SENTINEL_URL = "\x01"  # Protects URL and email dots
 _SENTINEL_MATH = "\x02"  # Protects math blocks and formula content
 _SENTINEL_LINK = "\x03"  # Protects markdown links and images
+_SENTINEL_WS = "\x04"  # Protects internal whitespace during inline-whitespace collapse
 
 
 # ── Abbreviations & tokens that should NOT trigger sentence breaks ──────────
@@ -231,10 +232,14 @@ _LIGATURES = {
     "\ufb03": "ffi",  # ﬃ
     "\ufb04": "ffl",  # ﬄ
     "\ufb00": "ff",  # ﬀ
-    "\u2013": "-",  # en-dash → hyphen (in text; adjust if you prefer –)
     "\ufb05": "st",  # ﬅ
     "\ufb06": "st",  # ﬆ
 }
+
+
+# NOTE: en-dash (U+2013) is intentionally NOT in _LIGATURES. It is meaningful
+# punctuation (e.g. page ranges "pp. 12-15"); rewriting it to a hyphen would
+# alter prose. Only true typographic ligatures are normalized above.
 
 
 def cleanup_ligatures(text: str) -> str:
@@ -254,6 +259,45 @@ def cleanup_ocr(text: str) -> str:
     text = re.sub(r"(?<!\\)\\(?!\\)(?=[^a-zA-Z()\[\]$%#{}&_*+\-.!\`<>\"'\s])", "", text)
     # Fix duplicate commas (common OCR artifact): ", ," or ",,"
     text = re.sub(r",\s*,", ",", text)
+    return text
+
+
+# ── Inline whitespace normalization ─────────────────────────────────────────
+# Protects inline code spans, inline math, and markdown links/images so their
+# internal spacing survives, then collapses runs of spaces/tabs to one space.
+_INLINE_CODE_RE = re.compile(r"`+[^`\n]*`+")
+_INLINE_MATH_WS_RE = re.compile(r"\$[^$\n]*\$")
+
+
+def collapse_inline_whitespace(text: str) -> str:
+    """Collapse runs of spaces/tabs to a single space within a single line of
+    text, protecting inline code spans, inline math (`$...$`), and markdown
+    links/images so their internal spacing is preserved.
+
+    Self-contained: protects and restores on its own, so it is safe to call on
+    both prose (where math/links may already be sentinel-protected — a no-op
+    for those) and raw heading lines (which carry no prior protection)."""
+    mapping: dict[str, str] = {}
+    counter = [0]
+
+    def _protect(pattern: re.Pattern) -> None:
+        def _replacer(m):
+            key = f"{_SENTINEL_WS}{counter[0]}{_SENTINEL_WS}"
+            counter[0] += 1
+            mapping[key] = m.group()
+            return key
+
+        nonlocal text
+        text = pattern.sub(_replacer, text)
+
+    _protect(_INLINE_CODE_RE)
+    _protect(_INLINE_MATH_WS_RE)
+    _protect(_LINK_RE)
+
+    text = re.sub(r"[ \t]+", " ", text)
+
+    for key, val in mapping.items():
+        text = text.replace(key, val)
     return text
 
 
@@ -374,7 +418,14 @@ _HR_LINE_RE = re.compile(r"^\s{0,3}([*_-])(?:\s*\1){2,}\s*$")
 _IMAGE_LINE_RE = re.compile(r"^\s*!\[[^\]]*\]\([^)]*\)\s*$")
 _BLOCKQUOTE_RE = re.compile(r"^( {0,3}>\s?)(.*)$")
 _LIST_MARKER_RE = re.compile(r"^(\s*)([-*+]\s+|\d+[.)]\s+)(.*)$")
-_PIPE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
+_PIPE_ROW_RE = re.compile(r"^(?:[^|\\]|\\.)*(?<!\\)\|")
+_UNESCAPED_PIPE_RE = re.compile(r"(?<!\\)\|")
+
+
+def _count_unescaped_pipes(line: str) -> int:
+    return len(_UNESCAPED_PIPE_RE.findall(line))
+
+
 _PIPE_TABLE_ALIGN_RE = re.compile(
     r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
 )
@@ -537,8 +588,15 @@ def _find_html_table_end(lines: list[str], start: int) -> int:
 
 
 def _find_pipe_table_end(lines: list[str], start: int) -> int:
-    idx = start
-    while idx < len(lines) and _PIPE_ROW_RE.match(lines[idx]):
+    # The header + align rows at start, start+1 are guaranteed by
+    # is_pipe_table_start. For continuation rows, require the same unescaped-
+    # pipe count as the align row, so a prose paragraph that happens to contain
+    # a single literal `|` does not extend a borderless table above it.
+    if start + 1 >= len(lines):
+        return min(start + 2, len(lines))
+    expected = _count_unescaped_pipes(lines[start + 1])
+    idx = start + 2
+    while idx < len(lines) and _count_unescaped_pipes(lines[idx]) == expected:
         idx += 1
     return idx
 
@@ -549,7 +607,22 @@ def _find_list_end(lines: list[str], start: int) -> int:
     while idx < len(lines):
         line = lines[idx]
         if not line.strip():
-            break
+            # A blank line is allowed if the next non-blank line is:
+            # - indented more than base_indent
+            # - or is a list item line at base_indent
+            next_non_blank = idx + 1
+            while next_non_blank < len(lines) and not lines[next_non_blank].strip():
+                next_non_blank += 1
+            if next_non_blank >= len(lines):
+                break
+            next_line = lines[next_non_blank]
+            next_marker = is_list_item_line(next_line)
+            next_indent = len(next_line) - len(next_line.lstrip())
+            if next_marker or next_indent > base_indent:
+                idx = next_non_blank
+                continue
+            else:
+                break
         marker = is_list_item_line(line)
         indent = len(line) - len(line.lstrip())
         if marker or indent > base_indent:
@@ -711,6 +784,7 @@ def split_sentences_in_text(text: str) -> list[str]:
     protected, url_map = _protect_urls(protected)
     protected = _protect_caption_labels(protected)
     protected = _protect_abbreviations(protected)
+    protected = collapse_inline_whitespace(protected)
 
     parts = _SENT_END.split(protected)
     sentences = []
@@ -722,8 +796,14 @@ def split_sentences_in_text(text: str) -> list[str]:
         next_text = parts[idx + 2] if idx + 2 < len(parts) else ""
         current += text_part + punct
 
+        # Protect OCR-split decimals like "3 . 14": only skip the break when the
+        # char BEFORE the dot is also a digit. This avoids merging a genuine new
+        # sentence that starts with a number/list marker (e.g. "End. 2. New.").
+        before = text_part.rstrip()
         if (
             punct == "."
+            and before
+            and before[-1].isdigit()
             and next_text
             and next_text.lstrip()
             and next_text.lstrip()[0].isdigit()
@@ -819,6 +899,18 @@ def _is_valid_inline_math_close(text: str, index: int) -> bool:
     return cursor >= 0 and (text[cursor] != "$" or _is_escaped_at(text, cursor))
 
 
+# Normalize \(...\) inline-math delimiters to $...$ so the rest of the pipeline
+# (which is built around $) handles them uniformly. Only unescaped \( \) pairs
+# are touched; \\( (an escaped backslash + paren) is left alone.
+_INLINE_PAREN_MATH_RE = re.compile(
+    r"(?<!\\)\\\(((?:(?!\\\(|\\\)).)*?)(?<!\\)\\\)", re.DOTALL
+)
+
+
+def normalize_inline_paren_math(text: str) -> str:
+    return _INLINE_PAREN_MATH_RE.sub(lambda m: f"${m.group(1)}$", text)
+
+
 def protect_inline_math(text: str) -> tuple[str, dict[str, str]]:
     mapping: dict[str, str] = {}
     output = []
@@ -864,6 +956,8 @@ def process_prose_lines(lines: list[str], block: Block) -> list[str]:
     if not text:
         return []
 
+    text = normalize_inline_paren_math(text)
+
     try:
         protected, math_map = protect_inline_math(text)
     except ValueError as exc:
@@ -899,7 +993,9 @@ def process_blockquote_block(block: Block) -> list[str]:
 
         unwrapped_text = "\n".join(unwrapped_lines)
         processed_text = process(unwrapped_text)
-        processed_lines = processed_text.split("\n")
+        # process() ends with a trailing newline; strip only that, not interior
+        # blank lines (which separate paragraphs within the blockquote).
+        processed_lines = processed_text.rstrip("\n").split("\n")
 
         for line in processed_lines:
             if line.strip():
@@ -962,7 +1058,9 @@ def process_list_block(block: Block) -> list[str]:
 
         unwrapped_text = "\n".join(content_lines)
         processed_text = process(unwrapped_text)
-        processed_lines = processed_text.split("\n")
+        # process() ends with a trailing newline; strip only that, not interior
+        # blank lines (which separate paragraphs within the list item).
+        processed_lines = processed_text.rstrip("\n").split("\n")
 
         if not processed_lines or (
             len(processed_lines) == 1 and not processed_lines[0].strip()
@@ -998,32 +1096,41 @@ def process_display_math_block(block: Block) -> list[str]:
     if stripped.startswith("$$") and stripped.endswith("$$"):
         return cleanup_math_content_spacing(stripped).split("\n")
     if stripped.startswith(r"\[") and stripped.endswith(r"\]"):
-        return (r"\[" + cleanup_math_body(stripped[2:-2]) + r"\]").split("\n")
+        # Normalize \[...\] display delimiters to $$...$$ for a consistent,
+        # widely-rendered output. \begin{...} environments are left untouched.
+        return ("$$" + cleanup_math_body(stripped[2:-2]) + "$$").split("\n")
     if _LATEX_BEGIN_RE.match(stripped):
         return cleanup_math_body(stripped).split("\n")
     return cleanup_math_body(text).split("\n")
 
 
-def process_block(block: Block) -> list[str]:
+def _process_block_inner(block: Block) -> list[str]:
     if block.kind == "blank":
         return [""]
     if block.kind == "heading":
-        return [cleanup_ocr(line) for line in block.lines]
+        return [collapse_inline_whitespace(cleanup_ocr(line)) for line in block.lines]
     if block.kind == "code_fence":
         return block.lines
-    if block.kind in ("paragraph", "blockquote"):
-        try:
-            if block.kind == "paragraph":
-                return process_paragraph_block(block)
-            return process_blockquote_block(block)
-        except Exception as exc:
-            warn_block(block, f"{exc}; preserving block")
-            return block.lines
+    if block.kind == "paragraph":
+        return process_paragraph_block(block)
+    if block.kind == "blockquote":
+        return process_blockquote_block(block)
     if block.kind == "list":
         return process_list_block(block)
     if block.kind == "display_math":
         return process_display_math_block(block)
     return [cleanup_ligatures(line) for line in block.lines]
+
+
+def process_block(block: Block) -> list[str]:
+    # Any block-processing failure degrades gracefully: warn and emit the block
+    # unchanged rather than aborting the whole document. Applies uniformly to
+    # every block kind (not just paragraph/blockquote).
+    try:
+        return _process_block_inner(block)
+    except Exception as exc:
+        warn_block(block, f"{exc}; preserving block")
+        return block.lines
 
 
 def process_blocks(blocks: list[Block]) -> list[str]:
@@ -1037,14 +1144,16 @@ def format_processed_blocks(lines: list[str]) -> str:
     output = []
     previous_blank = False
     for line in lines:
-        if line == "":
+        if not line.strip():
             if not previous_blank:
                 output.append("")
             previous_blank = True
         else:
             output.append(line.rstrip())
             previous_blank = False
-    return "\n".join(output).strip("\n")
+    while output and not output[-1].strip():
+        output.pop()
+    return "\n".join(output) + "\n"
 
 
 def process(text: str) -> str:
@@ -1054,6 +1163,7 @@ def process(text: str) -> str:
         .replace(_SENTINEL_URL, "")
         .replace(_SENTINEL_MATH, "")
         .replace(_SENTINEL_LINK, "")
+        .replace(_SENTINEL_WS, "")
     )
 
     blocks = parse_blocks(text)
@@ -1101,7 +1211,7 @@ def extract_headings(text: str, context_lines: int = 1) -> str:
                 cl = lines[j].strip()
                 if cl:
                     context.append(cl)
-            ctx_str = f"  ctx: {' '.join(context[:1])}" if context else ""
+            ctx_str = f"  ctx: {' '.join(context)}" if context else ""
             entries.append(f"L{line_num:4d} {'#' * level} {title}{ctx_str}")
 
     return "\n".join(entries)

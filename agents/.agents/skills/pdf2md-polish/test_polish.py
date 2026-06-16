@@ -95,6 +95,13 @@ class TestSentenceSplitting:
         sentences = polish.split_sentences_in_text(text)
         assert len(sentences) == 1
 
+    def test_sentence_ending_before_number_splits(self):
+        """A real sentence boundary before a number/list marker must split.
+        The decimal guard only applies when a digit precedes the dot too
+        (e.g. '3 . 14'), not 'End. 2. New.'."""
+        sentences = polish.split_sentences_in_text("End. 2. New.")
+        assert sentences == ["End.", "2.", "New."]
+
     def test_ellipsis_not_split(self):
         text = "The algorithm... converged after 100 iterations."
         sentences = polish.split_sentences_in_text(text)
@@ -211,8 +218,11 @@ class TestOCRCleanup:
     def test_ligature_ff(self):
         assert polish.cleanup_ligatures("diﬃcult") == "difficult"
 
-    def test_en_dash(self):
-        assert polish.cleanup_ligatures("A–B") == "A-B"
+    def test_en_dash_preserved(self):
+        """en-dash is meaningful punctuation (e.g. page ranges pp. 12–15) and
+        must NOT be rewritten to a hyphen."""
+        assert polish.cleanup_ligatures("A–B") == "A–B"
+        assert "–" in polish.process("Pages pp. 12–15 cover it.")
 
     def test_hyphen_reflow(self):
         lines = ["The experi-", "mental results confirm the hy-", "pothesis."]
@@ -241,6 +251,46 @@ class TestOCRCleanup:
         assert polish.cleanup_ocr(r"escaped \\ character") == r"escaped \\ character"
         assert polish.cleanup_ocr(r"escaped \$ dollar") == r"escaped \$ dollar"
         assert polish.cleanup_ocr(r"escaped \  space") == r"escaped \  space"
+
+
+# ── Inline whitespace normalization ──────────────────────────────────────────
+
+
+class TestInlineWhitespace:
+    def test_prose_multi_space_collapsed(self):
+        result = polish.process("Word1    word2     word3.")
+        assert "Word1 word2 word3." in result
+
+    def test_prose_multi_space_across_sentences(self):
+        result = polish.process("First  sentence.   Second  one.")
+        lines = [line for line in result.split("\n") if line.strip()]
+        assert lines == ["First sentence.", "Second one."]
+
+    def test_heading_multi_space_collapsed(self):
+        assert polish.process("# 1.    Introduction") == "# 1. Introduction\n"
+
+    def test_tab_collapsed_to_space(self):
+        result = polish.process("a\t\tb is here.")
+        assert "a b is here." in result
+
+    def test_inline_code_spacing_preserved(self):
+        result = polish.process("Run `a    b` now. Done.")
+        assert "`a    b`" in result
+
+    def test_link_internal_spacing_preserved(self):
+        result = polish.process("See [our  paper](http://x.com) here. End.")
+        assert "[our  paper](http://x.com)" in result
+
+    def test_inline_math_spacing_not_broken_by_collapse(self):
+        """collapse must not corrupt inline math; math normalization still owns
+        its spacing (a + b -> a+b)."""
+        result = polish.process("We use $a + b$    here. Done.")
+        assert "$a+b$" in result
+
+    def test_german_single_space_abbreviation_preserved(self):
+        """Single spaces (e.g. in 'z. B.') are no-ops and must survive."""
+        result = polish.process("Es gibt viele, z. B. in der Informatik.")
+        assert "z. B." in result
 
 
 # ── CJK handling ────────────────────────────────────────────────────────────
@@ -381,7 +431,7 @@ class TestEndToEnd:
         """Bug: list processing sliced based on content_col and ate characters if subsequent lines were less indented than content_col."""
         text = "- item\n detail"
         result = polish.process(text)
-        assert result == "- item detail"
+        assert result == "- item detail\n"
 
     def test_cjk_extensions(self):
         """Test that rare CJK extensions (e.g. SIP planes) are recognized as CJK and don't insert extra spaces."""
@@ -401,7 +451,7 @@ class TestMathSpacing:
         assert polish.cleanup_math_body("1 2 . 3") == "12.3"
         # math function spacing
         assert polish.cleanup_math_body("\\alpha ( x )") == "\\alpha(x)"
-        assert polish.cleanup_math_body("a + b") == "a+b"  # regular spacing kept
+        assert polish.cleanup_math_body("a + b") == "a+b"  # operator spaces removed
 
     def test_cleanup_math_content_spacing(self):
         assert polish.cleanup_math_content_spacing("$x_{ i }$") == "$x_{i}$"
@@ -634,7 +684,8 @@ class TestInlineMathEdgeCases:
     def test_math_boundary_spacing_e2e(self):
         """Boundary spacing cleanup should tighten $ and punctuation."""
         result = polish.process("We found $x + y$ . The result.")
-        assert "$x+y$." in result or "$x+y$ ." not in result
+        assert "$x+y$." in result
+        assert "$x+y$ ." not in result
 
     def test_link_with_periods_not_split(self):
         """Markdown links containing dots should not be split into multiple sentences."""
@@ -661,6 +712,41 @@ class TestInlineMathEdgeCases:
         assert len(sentences) == 1
         assert "[Fig. 1](a.com)" in sentences[0]
         assert "[Fig. 2](b.com)" in sentences[0]
+
+
+# ── LaTeX delimiter normalization (\(...\) -> $...$, \[...\] -> $$...$$) ──────
+
+
+class TestLatexDelimiterNormalization:
+    def test_inline_paren_math_to_dollar(self):
+        """\\(...\\) inline math is normalized to $...$ and spacing-cleaned."""
+        result = polish.process(r"The value \(x + y\) is here. Done.")
+        assert "$x+y$" in result
+        assert r"\(" not in result and r"\)" not in result
+
+    def test_inline_paren_math_period_not_split(self):
+        """A period inside \\(...\\) must not cause a false sentence break."""
+        sentences = polish.split_sentences_in_text(
+            polish.normalize_inline_paren_math(r"Let \(a = 1.5\) hold. Next.")
+        )
+        assert len(sentences) == 2
+
+    def test_escaped_backslash_paren_left_alone(self):
+        """\\\\( (escaped backslash + paren) is not a math delimiter."""
+        result = polish.normalize_inline_paren_math(r"A literal \\(x\\) token.")
+        assert result == r"A literal \\(x\\) token."
+
+    def test_display_bracket_math_to_double_dollar(self):
+        """\\[...\\] display math is normalized to $$...$$."""
+        result = polish.process("Before.\n\n\\[ E = mc^2 \\]\n\nAfter.")
+        assert "$$E=mc^2$$" in result
+        assert r"\[" not in result and r"\]" not in result
+
+    def test_latex_environment_preserved(self):
+        r"""\begin{...} environments are NOT converted (multi-line align etc.)."""
+        result = polish.process("\\begin{align}\na &= b\n\\end{align}")
+        assert "\\begin{align}" in result
+        assert "\\end{align}" in result
 
 
 # ── Block boundary transitions ───────────────────────────────────────────────
@@ -779,3 +865,101 @@ class TestBlockBoundaries:
         result = polish.process(text)
         assert "$$" in result
         assert "E=mc^2" in result
+
+    def test_blockquote_preserves_paragraph_separator(self):
+        """Interior blank lines that separate paragraphs inside a blockquote must
+        survive recursive processing (regression: the trailing-newline strip must
+        not drop interior blanks and merge the paragraphs)."""
+        text = "> Para one.\n>\n> Para two."
+        result = polish.process(text)
+        assert result == "> Para one.\n>\n> Para two.\n"
+
+
+# ── Defensive block processing ───────────────────────────────────────────────
+
+
+class TestDefensiveBlockProcessing:
+    """Every block kind must degrade gracefully (warn + preserve) on failure,
+    not abort the whole document. Guards the uniform try/except in
+    process_block."""
+
+    def test_malformed_inputs_do_not_raise(self):
+        for txt in [
+            "- item one\n- item two",
+            "- a\n  - b\n    - c",
+            "$$\n\\frac{a}{",  # unbalanced display math
+            "| a | b |\n|---|---|\n| 1 | 2 |",
+            "<table><tr><td>x</td></tr></table>",
+        ]:
+            # Must not raise.
+            polish.process(txt)
+
+    def test_failing_block_is_preserved_not_dropped(self, monkeypatch):
+        """If a block processor raises, that block is emitted unchanged and the
+        rest of the document still processes."""
+
+        def boom(block):
+            raise RuntimeError("synthetic failure")
+
+        monkeypatch.setattr(polish, "process_list_block", boom)
+        text = "Intro sentence.\n\n- list item that will fail\n\n# Heading"
+        result = polish.process(text)
+        # Surrounding blocks still processed; failing list preserved verbatim.
+        assert "Intro sentence." in result
+        assert "- list item that will fail" in result
+        assert "# Heading" in result
+
+    def test_borderless_pipe_table_block(self):
+        """Borderless tables (no outer pipes) should be recognized as pipe tables."""
+        text = "A | B\n---|---\n1 | 2"
+        blocks = polish.parse_blocks(text)
+        assert blocks[0].kind == "pipe_table"
+
+    def test_borderless_table_preserved_e2e(self):
+        """Borderless tables should pass through without paragraph reflowing/sentence-splitting."""
+        text = "Name | Age\n---|---\nAlice | 20\nBob | 30"
+        result = polish.process(text)
+        assert "Name | Age" in result
+        assert "---|---" in result
+        assert "Alice | 20" in result
+        assert "Bob | 30" in result
+
+    def test_multi_paragraph_list_preserved(self):
+        """Multi-paragraph lists separated by blank lines should preserve indentation and layout."""
+        text = "- Item one.\n\n  Paragraph two.\n- Item two."
+        result = polish.process(text)
+        # Expected output includes indentation for continuation paragraph
+        assert "- Item one.\n\n  Paragraph two.\n- Item two." in result
+
+    def test_unbalanced_paren_math_not_matched(self):
+        """Unbalanced paren math must not match across other math tags."""
+        result = polish.process("Let \\( be a paren, and \\(x + y\\) be math.")
+        assert "Let \\( be a paren" in result
+        assert "$x+y$" in result
+
+    def test_paragraph_with_fewer_pipes_not_eaten_by_table(self):
+        """A borderless table followed (no blank line) by a paragraph whose
+        unescaped-pipe count differs from the align row must not extend the
+        table block; the paragraph must remain a paragraph."""
+        text = (
+            "A | B | C\n"
+            "---|---|---\n"
+            "1 | 2 | 3\n"
+            "Next paragraph has | a literal pipe.\n"
+            "Plain final line."
+        )
+        blocks = polish.parse_blocks(text)
+        kinds = [b.kind for b in blocks]
+        assert "pipe_table" in kinds
+        para_blocks = [b for b in blocks if b.kind == "paragraph"]
+        assert any(
+            "Next paragraph has | a literal pipe." in "\n".join(b.lines)
+            for b in para_blocks
+        )
+
+    def test_blank_then_paragraph_ends_list(self):
+        """A blank line followed by a non-list, non-indented paragraph must
+        terminate the list — the paragraph stays its own block."""
+        text = "- a\n- b\n\nNormal paragraph."
+        result = polish.process(text)
+        assert "- a\n- b\n\nNormal paragraph." in result
