@@ -19,3 +19,6 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
+
+# Skill runtime state / logs
+**/history.json

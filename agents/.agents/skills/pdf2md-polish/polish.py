@@ -1311,6 +1311,51 @@ def main():
         output_path.write_text(result, encoding="utf-8")
         print(f"Done. Output: {output_path}")
 
+        # Update history.json automatically
+        try:
+            history_path = Path(__file__).parent / "history.json"
+            history_data = []
+            if history_path.exists():
+                try:
+                    history_data = json.loads(history_path.read_text(encoding="utf-8"))
+                    if not isinstance(history_data, list):
+                        history_data = []
+                except Exception:
+                    pass
+
+            # Simple sentence count estimation
+            sentences_count = len(
+                [s for s in re.split(r"[.!?。！？\n]+", result) if s.strip()]
+            )
+
+            # Get language from config.json if available
+            lang = "auto"
+            config_path = Path(__file__).parent / "config.json"
+            if config_path.exists():
+                try:
+                    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+                    lang = cfg.get("language", "auto")
+                except Exception:
+                    pass
+
+            from datetime import datetime
+
+            history_data.append(
+                {
+                    "timestamp": datetime.now().isoformat()[:19],
+                    "file": input_path.name,
+                    "sentences": sentences_count,
+                    "warnings": 0,
+                    "language": lang,
+                    "notes": "Automated run log",
+                }
+            )
+            history_path.write_text(
+                json.dumps(history_data, indent=2), encoding="utf-8"
+            )
+        except Exception as e:
+            print(f"Warning: Failed to update history.json: {e}", file=sys.stderr)
+
     elif args.command == "headings":
         input_path = Path(args.input)
         if not input_path.exists():

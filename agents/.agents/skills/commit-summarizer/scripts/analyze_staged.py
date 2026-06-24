@@ -26,9 +26,7 @@ from pathlib import Path
 
 def run(cmd: list[str], cwd: str | None = None) -> str:
     """Run a command and return stdout, stripped."""
-    result = subprocess.run(
-        cmd, capture_output=True, text=True, cwd=cwd
-    )
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
     return result.stdout.strip()
 
 
@@ -66,12 +64,14 @@ def get_diff_numstat(cwd: str | None = None) -> list[dict]:
         parts = line.split("\t")
         if len(parts) >= 3:
             ins, dels, path = parts[0], parts[1], parts[2]
-            stats.append({
-                "path": path,
-                "insertions": int(ins) if ins != "-" else 0,
-                "deletions": int(dels) if dels != "-" else 0,
-                "binary": ins == "-" and dels == "-",
-            })
+            stats.append(
+                {
+                    "path": path,
+                    "insertions": int(ins) if ins != "-" else 0,
+                    "deletions": int(dels) if dels != "-" else 0,
+                    "binary": ins == "-" and dels == "-",
+                }
+            )
     return stats
 
 
@@ -80,7 +80,10 @@ def get_staged_diff_preview(cwd: str | None = None, max_lines: int = 500) -> str
     raw = run(["git", "diff", "--cached", "--unified=2"], cwd=cwd)
     lines = raw.splitlines()
     if len(lines) > max_lines:
-        return "\n".join(lines[:max_lines]) + f"\n... [truncated: {len(lines)} total lines]"
+        return (
+            "\n".join(lines[:max_lines])
+            + f"\n... [truncated: {len(lines)} total lines]"
+        )
     return raw
 
 
@@ -97,9 +100,13 @@ def detect_commitlint(cwd: str | None = None) -> dict:
 
     # Check commitlint config files
     for name in [
-        ".commitlintrc", ".commitlintrc.json", ".commitlintrc.js",
-        ".commitlintrc.yml", ".commitlintrc.yaml",
-        "commitlint.config.js", "commitlint.config.ts",
+        ".commitlintrc",
+        ".commitlintrc.json",
+        ".commitlintrc.js",
+        ".commitlintrc.yml",
+        ".commitlintrc.yaml",
+        "commitlint.config.js",
+        "commitlint.config.ts",
     ]:
         if (base_path / name).exists():
             result["commitlint"] = True
@@ -112,7 +119,9 @@ def detect_commitlint(cwd: str | None = None) -> dict:
         try:
             with pkg_path.open() as f:
                 pkg = json.load(f)
-            if "commitlint" in pkg.get("devDependencies", {}) or "commitlint" in pkg.get("dependencies", {}):
+            if "commitlint" in pkg.get(
+                "devDependencies", {}
+            ) or "commitlint" in pkg.get("dependencies", {}):
                 result["commitlint"] = True
         except (json.JSONDecodeError, OSError):
             pass
@@ -162,11 +171,21 @@ def classify_files(files: list[dict]) -> dict:
         "assets": [],
     }
 
-    test_patterns = re.compile(r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.|__tests__)", re.I)
-    config_patterns = re.compile(r"(\.env|config[._]|settings[._]|\.rc$|\.ya?ml$|\.toml$|\.json$|\.ini$)", re.I)
-    doc_patterns = re.compile(r"(\.md$|\.rst$|\.txt$|docs?/|README|CHANGELOG|LICENSE)", re.I)
-    ci_patterns = re.compile(r"(\.github/|\.gitlab|\.circleci|\.travis|Jenkinsfile|\.ci)", re.I)
-    asset_patterns = re.compile(r"(\.(png|jpg|jpeg|gif|svg|ico|woff|ttf|eot|mp[34]|wav)$)", re.I)
+    test_patterns = re.compile(
+        r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.|__tests__)", re.I
+    )
+    config_patterns = re.compile(
+        r"(\.env|config[._]|settings[._]|\.rc$|\.ya?ml$|\.toml$|\.json$|\.ini$)", re.I
+    )
+    doc_patterns = re.compile(
+        r"(\.md$|\.rst$|\.txt$|docs?/|README|CHANGELOG|LICENSE)", re.I
+    )
+    ci_patterns = re.compile(
+        r"(\.github/|\.gitlab|\.circleci|\.travis|Jenkinsfile|\.ci)", re.I
+    )
+    asset_patterns = re.compile(
+        r"(\.(png|jpg|jpeg|gif|svg|ico|woff|ttf|eot|mp[34]|wav)$)", re.I
+    )
 
     for f in files:
         p = f["path"]
@@ -201,26 +220,49 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
     has_new = any(f["status"] == "A" for f in files)
     has_delete = any(f["status"] == "D" for f in files)
     has_modify = any(f["status"] in ("M", "R") for f in files)
-    has_tests = bool(re.search(r"(test[_/]|_test\.|\.test\.)", "\n".join(f["path"] for f in files), re.I))
-    has_docs = bool(re.search(r"(\.md$|docs?/)", "\n".join(f["path"] for f in files), re.I))
+    has_tests = bool(
+        re.search(
+            r"(test[_/]|_test\.|\.test\.)", "\n".join(f["path"] for f in files), re.I
+        )
+    )
+    has_docs = bool(
+        re.search(r"(\.md$|docs?/)", "\n".join(f["path"] for f in files), re.I)
+    )
     only_tests = has_tests and all(
-        re.search(r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.)", f["path"], re.I)
+        re.search(
+            r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.)", f["path"], re.I
+        )
         for f in files
     )
     only_docs = has_docs and all(
-        re.search(r"(\.md$|\.rst$|\.txt$|docs?/)", f["path"], re.I)
-        for f in files
+        re.search(r"(\.md$|\.rst$|\.txt$|docs?/)", f["path"], re.I) for f in files
     )
 
     # Check for refactoring signals: new + delete of similar files
     new_paths = {f["path"] for f in files if f["status"] == "A"}
     del_paths = {f["path"] for f in files if f["status"] == "D"}
-    is_rename_heavy = has_new and has_delete and len(new_paths) > 0 and len(del_paths) > 0
+    is_rename_heavy = (
+        has_new and has_delete and len(new_paths) > 0 and len(del_paths) > 0
+    )
 
     # Check diff for feature/fix signals
-    feat_signals = len(re.findall(r"^\+.*(?:feat|feature|add|implement|new|create)", diff_preview, re.I | re.M))
-    fix_signals = len(re.findall(r"^\+.*(?:fix|bug|patch|resolve|correct|repair)", diff_preview, re.I | re.M))
-    refactor_signals = len(re.findall(r"^\+.*(?:refactor|rename|move|extract|reorganiz)", diff_preview, re.I | re.M))
+    feat_signals = len(
+        re.findall(
+            r"^\+.*(?:feat|feature|add|implement|new|create)", diff_preview, re.I | re.M
+        )
+    )
+    fix_signals = len(
+        re.findall(
+            r"^\+.*(?:fix|bug|patch|resolve|correct|repair)", diff_preview, re.I | re.M
+        )
+    )
+    refactor_signals = len(
+        re.findall(
+            r"^\+.*(?:refactor|rename|move|extract|reorganiz)",
+            diff_preview,
+            re.I | re.M,
+        )
+    )
 
     # Primary inference
     if only_docs:
@@ -306,7 +348,8 @@ def build_output(cwd: str | None = None) -> dict:
             "binary_files": binary_files if binary_files else None,
             "large_diff": total_ins + total_dels > 500,
             "merge_commit": context["is_merge"],
-            "many_unrelated_changes": len(classification["by_directory"]) > 5 and len(files) > 15,
+            "many_unrelated_changes": len(classification["by_directory"]) > 5
+            and len(files) > 15,
         },
     }
 
