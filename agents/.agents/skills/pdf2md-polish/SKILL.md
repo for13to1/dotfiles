@@ -1,6 +1,6 @@
 ---
 name: pdf2md-polish
-description: Use when the user provides a markdown file (.md) and asks to clean up, polish, proofread, reformat, or tidy it up. Also use when the user asks to apply heading/heading-level/equation/sentence-per-line formatting rules to a markdown file. Explicit trigger keywords: "pdf2md-polish", "polish", "tidy up", "proofread", "reformat", "校对", "格式化", "整理", "清理".
+description: Use when the user provides a markdown file (.md) and asks to clean up, polish, proofread, reformat, or tidy it up. Also use when the user asks to apply heading/heading-level/equation/sentence-per-line formatting rules to a markdown file. Also use when converting PDF-OCR output, cleaning academic paper markdown, or fixing broken paragraphs from PDF extraction. Trigger keywords: "pdf2md-polish", "polish", "tidy up", "proofread", "reformat", "clean up this markdown", "fix formatting", "one sentence per line", "校对", "格式化", "整理", "清理", "清洗", "OCR 清洗".
 ---
 
 # Markdown Post-Processing
@@ -13,6 +13,59 @@ Trigger this skill when:
 - User provides a markdown file (.md) and asks to clean up, polish, proofread, reformat, or tidy it up
 - User asks to apply heading, equation, or sentence-per-line formatting rules to a markdown file
 - User explicitly mentions any trigger keyword: "pdf2md-polish", "polish", "tidy up", "proofread", "reformat", "校对", "格式化", "整理", "清理"
+
+## Configuration
+
+This skill reads `config.json` from its directory. If the file is missing, defaults apply.
+
+| Key | Default | Values | Description |
+|-----|---------|--------|-------------|
+| `overwrite_original` | `true` | `true` / `false` | Overwrite the input file with polished output |
+| `language` | `"auto"` | `"auto"`, `"en"`, `"de"`, `"fr"`, `"es"`, `"zh"` | Primary language (affects abbreviation list priority) |
+| `heading_style` | `"atx"` | `"atx"`, `"setext"` | Markdown heading syntax |
+| `sentence_per_line` | `true` | `true` / `false` | Enable one-sentence-per-line formatting |
+| `math_normalization` | `true` | `true` / `false` | Normalize whitespace inside math formulas |
+| `en_dash_promotion` | `"llm_only"` | `"llm_only"`, `"off"`, `"aggressive"` | Hyphen→en-dash promotion strategy |
+
+To customize: edit `config.json` directly, or instruct the agent to update it.
+
+## Processing History
+
+The skill maintains `history.json` as an append-only log of processing runs. After each successful polish, append an entry:
+
+```json
+{
+  "timestamp": "2026-06-24T10:30:00",
+  "file": "paper.md",
+  "sentences": 142,
+  "warnings": 0,
+  "language": "de",
+  "notes": ""
+}
+```
+
+The agent reads this file to detect patterns across runs (e.g., recurring OCR issues from the same scanner) and to avoid reprocessing files that were already polished.
+
+## References
+
+Detailed reference material lives in the `references/` directory. The agent reads these on demand when relevant:
+
+- **`references/abbreviation-table.md`** — All abbreviations the script recognizes (100+ entries across English, German, French, Spanish). Consult when the script makes a false sentence break on an abbreviation.
+- **`references/ocr-patterns.md`** — Common OCR/PDF artifacts: what the script handles automatically vs. what needs LLM judgment. Consult when reviewing script output for missed patterns.
+
+## Gotchas
+
+These are known edge cases and pitfalls. Read before reviewing the script's output.
+
+- **CJK + abbreviation conflict**: `Li et al.提出` — when CJK characters immediately follow abbreviations like `et al.`, the script's `\b` word-boundary assertion may behave differently than expected. The script handles this via CJK-aware logic, but during LLM semantic review, do NOT flag these as false sentence breaks.
+- **Decimal numbers with OCR spaces**: `3 . 14` (OCR inserts spaces in numbers) — the script merges these back to `3.14`. But if you see `3 . 14` in the output, the script missed it; fix it manually.
+- **Currency vs inline math**: `$100` is currency (NOT math), `$x + y$` is inline math. The script uses heuristics (starts with digit → currency; contains backslash/letter operators → math). Edge cases like `$n` (single variable) may be misclassified.
+- **en-dash intentionally preserved**: The script does NOT convert hyphens to en-dashes. `A–B` (U+2013) stays as-is, but `A-B` (U+002D) also stays as-is. Promoting hyphens to en-dashes in numeric ranges (e.g. `pp. 12-15`) is an LLM-only judgment step — see Step 2 "en-dash flattened to hyphen" instructions.
+- **Unbalanced display math**: If `$$` delimiters don't pair up, the script preserves the block unchanged and prints a `[WARNING]` to stderr. The LLM should check stderr output and decide whether to fix the math or leave it.
+- **Ligature normalization is one-way**: `ﬁ`→`fi`, `ﬂ`→`fl` etc. are always applied. If the original text intentionally uses Unicode ligatures (rare), they will be destroyed.
+- **`\\begin{...}` environments untouched**: LaTeX environments like `align`, `equation`, `gather` are NOT converted to `$$` — converting them would lose multi-line alignment and equation numbering.
+- **List/blockquote recursion**: The script processes paragraphs inside list items and blockquotes recursively. Deeply nested structures (>4 levels) may occasionally lose indentation — check output for very deep lists.
+- **Trailing hyphen reflow**: The script rejoins lines ending with `-` (OCR soft hyphenation). But legitimate hyphens in compound words (`state-of-the-art` at line end) should NOT be reflowed. The script distinguishes these by checking if the next line starts with a lowercase letter and the hyphenated word is not in a known compound — but false reflows can happen.
 
 ## Architecture: Hybrid Mode
 
