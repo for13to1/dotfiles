@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/linux/setup.sh — Linux 系统级优化脚本
+# _setup/linux/setup.sh — Linux 系统级优化脚本
 
 set -euo pipefail
 

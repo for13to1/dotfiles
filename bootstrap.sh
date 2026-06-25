@@ -116,6 +116,28 @@ case "$OS" in
     Linux*)
         info "🐧 Linux 环境，开始配置..."
 
+        install_packages_from_file() {
+            local manager="$1"
+            local list_file="${@: -1}"
+            local -a install_cmd=("${@:2:$#-2}")
+            local -a packages=()
+            while IFS= read -r pkg; do
+                [[ -n "$pkg" ]] && packages+=("$pkg")
+            done < <(grep -v '^[[:space:]]*#' "$list_file" | grep -v '^[[:space:]]*$' || true)
+
+            if (( ${#packages[@]} == 0 )); then
+                warn "软件清单为空，跳过安装: $list_file"
+                return 0
+            fi
+
+            info "正在通过 $manager 安装软件..."
+            if ! "${install_cmd[@]}" "${packages[@]}"; then
+                warn "$manager 软件安装过程中有失败项，请稍后根据清单重试"
+                return 1
+            fi
+            ok "$manager 软件安装完毕"
+        }
+
         if command -v apt &>/dev/null; then
             info "正在更新 apt 软件包索引..."
             if ! sudo apt update; then
@@ -137,9 +159,7 @@ case "$OS" in
             fi
 
             if [[ -f "$DOTFILES_DIR/_install/linux/apt-list.txt" ]]; then
-                info "正在通过 apt 安装软件..."
-                grep -v '^[[:space:]]*#' "$DOTFILES_DIR/_install/linux/apt-list.txt" | grep -v '^[[:space:]]*$' | xargs sudo apt install -y
-                ok "apt 软件安装完毕"
+                install_packages_from_file "apt" sudo apt install -y "$DOTFILES_DIR/_install/linux/apt-list.txt"
             else
                 warn "未找到 _install/linux/apt-list.txt，跳过其他软件安装"
             fi
@@ -161,9 +181,7 @@ case "$OS" in
             fi
 
             if [[ -f "$DOTFILES_DIR/_install/linux/pacman-list.txt" ]]; then
-                info "正在通过 pacman 安装软件..."
-                grep -v '^[[:space:]]*#' "$DOTFILES_DIR/_install/linux/pacman-list.txt" | grep -v '^[[:space:]]*$' | xargs sudo pacman -S --noconfirm --needed
-                ok "pacman 软件安装完毕"
+                install_packages_from_file "pacman" sudo pacman -S --noconfirm --needed "$DOTFILES_DIR/_install/linux/pacman-list.txt"
             else
                 warn "未找到 _install/linux/pacman-list.txt，跳过其他软件安装"
             fi
@@ -349,24 +367,19 @@ info "正在使用 Stow 挂载配置文件..."
 
 ## 1. 确定模块列表（单一真值源 SSOT）
 if [[ -f "Makefile" ]]; then
-    # 增强解析：匹配 MODULES := ... 或 MODULES=...，处理续行和前后空格
-    # 使用 awk 处理多行定义（行尾有 \ 表示续行）
     STOW_MODULES=$(awk '/^[[:space:]]*MODULES[[:space:]]*[:+]?=/ {
         gsub(/^[[:space:]]*MODULES[[:space:]]*[:+]?=[[:space:]]*/, "");
         line = $0;
-        # 处理续行
         while (sub(/\\$/, "", line)) {
             getline next_line;
             line = line " " next_line;
         }
-        # 移除注释并清理
         gsub(/#.*$/, "", line);
         gsub(/\\/, "", line);
         print line;
     }' Makefile | xargs)
 fi
 
-# 如果 Makefile 解析失败或模块为空，使用兜底列表
 if [[ -z "${STOW_MODULES:-}" ]]; then
     warn "Makefile 中未发现有效的 MODULES 定义，正在尝试默认列表..."
     STOW_MODULES="agents codestyle zsh git vim nvim tmux"
@@ -374,52 +387,79 @@ else
     info "从 Makefile 加载模块: $STOW_MODULES"
 fi
 
-## 2. 动态备份冲突文件（完全贴合 Stow 的 Unfolding 逻辑）
-backup_conflicts() {
+## 2. 动态备份明确冲突的目标路径
+# 这些是系统共享目录，不能被备份（备份后 stow 会对整个目录进行折叠）
+SHARED_PARENT_DIRS=(".config")
+
+backup_explicit_conflicts() {
     local mod="$1"
     local rel_path="$2"
-    local full_src="$mod${rel_path:+/$rel_path}"
     local full_target="$HOME${rel_path:+/$rel_path}"
 
-    if [[ -z "$rel_path" ]]; then
-        # 模块根目录，直接遍历进入
-        if [[ -d "$full_src" ]]; then
-            while IFS= read -r -d '' sub_src; do
-                backup_conflicts "$mod" "${sub_src#"$mod"/}"
-            done < <(find "$full_src" -mindepth 1 -maxdepth 1 -print0)
+    # 跳过共享父目录，防止它们被备份后被 stow 整体折叠
+    for shared in "${SHARED_PARENT_DIRS[@]}"; do
+        if [[ "$rel_path" == "$shared" ]]; then
+            return 0
         fi
-    else
-        # 仅当目标存在、且不是软链时才需要考虑备份
-        if [[ -e "$full_target" && ! -L "$full_target" ]]; then
-            if [[ -d "$full_src" && -d "$full_target" ]]; then
-                # 源和目标都是真实的目录：Stow 会自动展开 (Unfolding) 进入内部，
-                # 所以我们不能移走整个目录，而是跟着 Stow 一起递归进入
-                while IFS= read -r -d '' sub_src; do
-                    backup_conflicts "$mod" "${sub_src#"$mod"/}"
-                done < <(find "$full_src" -mindepth 1 -maxdepth 1 -print0)
-            else
-                # 冲突发生（目标是文件，或源是文件但目标是目录），直接备份目标
-                local timestamp
-                timestamp=$(date +%Y%m%d_%H%M%S)
-                warn "发现冲突文件/目录 ~/$rel_path （非软链接），备份为 ~/$rel_path.bak.$timestamp"
-                mv "$full_target" "$full_target.bak.$timestamp"
+    done
+
+    if [[ -e "$full_target" && ! -L "$full_target" ]]; then
+        # 检查祖先路径是否已被 stow 管理（折叠后的目录级软链接）
+        # 如果是，子路径全在 stow 管辖范围内，无需备份
+        local p; p=$(dirname "$full_target")
+        while [[ "$p" != "$HOME" ]]; do
+            if [[ -L "$p" ]]; then
+                local link_target; link_target=$(readlink "$p")
+                if [[ "$link_target" != /* ]]; then
+                    link_target="$(cd "$(dirname "$p")" && cd "$(dirname "$link_target")" 2>/dev/null && pwd)/$(basename "$link_target")"
+                fi
+                if [[ "$link_target" == "$DOTFILES_DIR"* ]]; then
+                    return 0
+                fi
+                break
             fi
-        fi
+            p=$(dirname "$p")
+        done
+
+        local timestamp
+        timestamp=$(date +%Y%m%d_%H%M%S)
+        warn "发现冲突文件/目录 ~/$rel_path （非软链接），备份为 ~/$rel_path.bak.$timestamp"
+        mv "$full_target" "$full_target.bak.$timestamp"
     fi
+}
+
+backup_module_conflicts() {
+    local mod="$1"
+    local path
+
+    if [[ ! -d "$mod" ]]; then
+        return 0
+    fi
+
+    while IFS= read -r -d '' path; do
+        backup_explicit_conflicts "$mod" "${path#"$mod"/}"
+    done < <(find "$mod" -mindepth 1 ! -name "__pycache__" ! -name ".pytest_cache" ! -name ".stow-local-ignore" ! -name ".DS_Store" ! -name ".git" ! -name "history.json" \( -type f -o -type l \) -print0)
+
+    while IFS= read -r -d '' path; do
+        backup_explicit_conflicts "$mod" "${path#"$mod"/}"
+    done < <(find "$mod" -mindepth 1 ! -name "__pycache__" ! -name ".pytest_cache" ! -name ".stow-local-ignore" ! -name ".DS_Store" ! -name ".git" ! -name "history.json" -type d -print0)
 }
 
 cd "$DOTFILES_DIR"
 
 ## 3. 执行 Stow 挂载
+# 使用默认折叠：~/.zsh.d、~/.agents、~/.config/nvim 各自折叠为一条软链接。
+# ~/ .config 由 mkdir -p 确保先存在，stow 就不会折叠到 .config 层，只会折叠到 nvim 层。
 if [[ -z "${STOW_MODULES:-}" ]]; then
     warn "没有需要挂载的模块，跳过 Stow"
 else
     for mod in $STOW_MODULES; do
         if [[ -d "$mod" ]]; then
-            backup_conflicts "$mod" ""
+            backup_module_conflicts "$mod"
         fi
     done
-    stow --no-folding -R $STOW_MODULES
+    mkdir -p "$HOME/.config"
+    stow -R $STOW_MODULES
     ok "Stow 挂载完成"
 fi
 

@@ -58,13 +58,16 @@
         // "editor.defaultFormatter": "ms-vscode.cpptools"
         "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
     },
-    // C/C++ 扩展的 IntelliSense 引擎模式
-    "C_Cpp.intelliSenseEngine": "default",
+    // 禁用 C/C++ 扩展的 IntelliSense（使用 clangd 代替）
+    // 如需切换回 MSVC IntelliSense，改为 "default"
+    "C_Cpp.intelliSenseEngine": "disabled",
+    // clangd 通过此配置从 CMake Tools 获取编译数据库
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     // C 语言标准设置为 C11
     "C_Cpp.default.cStandard": "c11",
     // C++ 语言标准设置为 C++17
     "C_Cpp.default.cppStandard": "c++17",
-    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+    // vcFormat 格式化规则（仅 MSVC IntelliSense 生效）
     "C_Cpp.vcFormat.newLine.beforeOpenBrace.namespace": "sameLine",
     "C_Cpp.vcFormat.indent.accessSpecifiers": true,
     "C_Cpp.vcFormat.indent.braces": true,
@@ -77,8 +80,8 @@
     "C_Cpp.formatting": "clangFormat",
     "html.autoClosingTags": true,
     "js/ts.autoClosingTags.enabled": true,
-    "python.condaPath": "${env:CONDA_ROOT}/bin/conda",
-    "python.defaultInterpreterPath": "${env:CONDA_ROOT}/envs/py3e/bin/python",
+    // uv 会在项目目录创建 .venv，Python 扩展会自动检测
+    // "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     // ====================== 文件与工作区管理 ======================
     // 自动保存策略：焦点离开编辑器时保存
     "files.autoSave": "onFocusChange",
@@ -169,66 +172,21 @@
     // ------ Windows 终端配置 ------
     "terminal.integrated.profiles.windows": {
         "MSVC Prompt": {
-            "path": [
-                "${env:windir}\\Sysnative\\cmd.exe",
-                "${env:windir}\\System32\\cmd.exe"
-            ],
-            "args": [
-                "/k",
-                "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\Tools\\VsDevCmd.bat",
-                "-arch=x64",
-                "-host_arch=x64"
-            ],
-            "icon": "terminal-cmd"
-        },
-        "Conda Prompt": {
-            "path": [
-                "${env:windir}\\Sysnative\\cmd.exe",
-                "${env:windir}\\System32\\cmd.exe"
-            ],
-            "args": [
-                "/k",
-                "C:\\ProgramData\\miniconda3\\Scripts\\activate.bat"
-            ],
-            "icon": "terminal-cmd"
-        },
-        "Conda PowerShell": {
-            // "path": "powershell.exe",
             "path": "pwsh.exe",
             "args": [
-                "-ExecutionPolicy",
-                "ByPass", // 绕过执行策略限制
-                "-NoExit", // 执行后不退出
+                "-NoExit",
                 "-Command",
-                // "& 'C:\\ProgramData\\miniconda3\\shell\\condabin\\conda-hook.ps1'; conda activate 'C:\\ProgramData\\miniconda3' "
-                "& 'C:\\ProgramData\\miniconda3\\shell\\condabin\\conda-hook.ps1'; conda activate py3e "
+                "$vsPath = & 'C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe' -latest -products * -property installationPath; if ($vsPath) { $bat = Join-Path $vsPath 'Common7\\Tools\\VsDevCmd.bat'; & cmd /c \"`\"$bat`\" -arch=amd64 -host_arch=amd64 & set\" | ForEach-Object { if ($_ -match '^(.*?)=(.*)$') { [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') } }; Clear-Host; Write-Host '==================================================' -ForegroundColor Cyan; Write-Host '🚀 MSVC Developer Environment Loaded Successfully!' -ForegroundColor Green; Write-Host ('   Compiler Host : ' + $env:VSCMD_ARG_HOST_ARCH) -ForegroundColor DarkCyan; Write-Host ('   Target Arch   : ' + $env:VSCMD_ARG_TGT_ARCH) -ForegroundColor DarkCyan; Write-Host '==================================================' -ForegroundColor Cyan; } else { Write-Warning 'VS BuildTools not found. MSVC environment not loaded.' }"
             ],
-            "icon": "terminal-cmd"
+            "icon": "terminal-powershell"
         }
     },
     // ------ Linux 终端配置 ------
-    "terminal.integrated.profiles.linux": {
-        "Conda Bash": {
-            "path": "bash",
-            "args": [
-                "-c",
-                "conda activate py3e"
-            ]
-        }
-    },
+    "terminal.integrated.profiles.linux": {},
     // ------ macOS 终端配置 ------
-    "terminal.integrated.profiles.osx": {
-        "Conda Bash": {
-            "path": "zsh",
-            "args": [
-                "-i",
-                "-c",
-                "conda activate py3e"
-            ]
-        }
-    },
+    "terminal.integrated.profiles.osx": {},
     // 默认终端配置文件
-    "terminal.integrated.defaultProfile.windows": "Conda PowerShell",
+    "terminal.integrated.defaultProfile.windows": "MSVC Prompt",
     "terminal.integrated.defaultProfile.linux": "bash",
     "terminal.integrated.defaultProfile.osx": "zsh",
     // ====================== 插件与工具集成 ======================
@@ -249,10 +207,10 @@
         "*.yuv": "hexEditor.hexedit", // 自定义二进制格式
         "*.rgb": "hexEditor.hexedit",
         "*.raw": "hexEditor.hexedit",
-        "*.pdf": "latex-workshop-pdf-hook" // PDF 用 LaTeX 插件打开
+        "*.pdf": "pdf.preview"
     },
     // ------ Clangd 配置 ------
-    // "clangd.path": "${env:LLVM_ROOT}/bin/clangd.exe",
+    "clangd.path": "${env:LLVM_ROOT}/bin/clangd.exe",
     // "clangd.path": "/usr/bin/clangd",
     "clangd.arguments": [
         "--compile-commands-dir=${workspaceFolder}/build", // 编译数据库路径
@@ -268,7 +226,7 @@
     // ====================== 外观与主题 ======================
     // 图标主题（需安装 vscode-icons 插件）
     // "workbench.colorTheme": "Visual Studio Dark",
-    "workbench.iconTheme": "vscode-icons",
+    // "workbench.iconTheme": "vscode-icons",
     // 不同步到云端的设置（如终端字体）
     "settingsSync.ignoredSettings": [
         "terminal.integrated.fontFamily"

@@ -145,7 +145,13 @@ else
     alias ll="ls -alF --color=auto"
 fi
 
-alias grn="grep --color=auto -rnw"
+function grn() {
+    if grep --help 2>/dev/null | grep -q -- '--color'; then
+        grep --color=auto -rnw "$@"
+    else
+        grep -rnw "$@"
+    fi
+}
 
 # 以下 git 别名已由 OMZ git 插件提供，保留 gl1g（OMZ 无对应）
 alias gl1g='git log --oneline --graph --decorate --all'
@@ -165,7 +171,11 @@ function ytdf() { yt-dlp -f bestvideo+bestaudio --write-subs --cookies-from-brow
 function ytds() { yt-dlp -f bestvideo+bestaudio --write-subs --cookies-from-browser safari "$1"; }
 
 function grnh() {
-    grep --color=auto -rnw "$1" /usr/include/*.h
+    if grep --help 2>/dev/null | grep -q -- '--color'; then
+        grep --color=auto -rnw "$1" /usr/include/*.h
+    else
+        grep -rnw "$1" /usr/include/*.h
+    fi
 }
 
 function base64_encode() { echo -n "$1" | base64; }
