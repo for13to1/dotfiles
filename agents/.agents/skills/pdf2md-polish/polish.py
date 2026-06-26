@@ -187,6 +187,13 @@ ABBREVIATIONS = [
 # Sort longest first to avoid partial matches
 ABBREVIATIONS.sort(key=len, reverse=True)
 
+# Abbreviations that can legitimately end a sentence.
+# When followed by space + uppercase, their dots are left unprotected
+# so the sentence splitter can break there. Other abbreviations (i.e.,
+# e.g., vs., cf., etc.) are always protected because they grammatically
+# require content after them.
+_BREAKABLE_ABBRS = {"etc.", "approx."}
+
 # Compile single abbreviation matching pattern using word boundaries to prevent
 # false positives (e.g. "signal." matching "al.")
 _ABBR_PATTERN = re.compile(
@@ -205,7 +212,9 @@ _ELLIPSIS_RE = re.compile(r"\.\.\.|…|\.\s\.\s\.")
 
 def _protect_abbreviations(text: str) -> str:
     """Replace dots in known abbreviations with a sentinel so sentence
-    splitting won't break on them."""
+    splitting won't break on them. Context-aware abbreviations (etc.,
+    approx.) are left unprotected when followed by space + uppercase letter,
+    so the sentence splitter can break there."""
     # Protect ellipsis first (before abbreviation matching changes dots)
     text = _ELLIPSIS_RE.sub(
         lambda m: (
@@ -213,8 +222,34 @@ def _protect_abbreviations(text: str) -> str:
         ),
         text,
     )
+
+    # Pin the source text so the closure below reads a stable, unmodified
+    # string even if the outer `text` variable is rebound later in this
+    # function (e.g. after _ABBR_PATTERN.sub reassigns it).
+    _source = text
+
+    def _abbr_replacer(m: re.Match) -> str:
+        matched = m.group()
+        # Check if this is a context-aware abbreviation followed by
+        # optional closing punctuation then space + uppercase letter.
+        lower = matched.lower()
+        if lower in _BREAKABLE_ABBRS:
+            end = m.end()
+            if end < len(_source):
+                rest = _source[end:]
+                # Strip optional closing punctuation (quotes, brackets)
+                rest_no_punct = rest.lstrip("\"')]}")
+                if rest_no_punct.startswith(" "):
+                    after_space = rest_no_punct.lstrip(" \t")
+                    if after_space and after_space[0].isupper():
+                        return matched  # Don't protect — let sentence splitter break here
+            # At end of string — also a sentence boundary
+            if end == len(_source):
+                return matched
+        return matched.replace(".", _SENTINEL_ABBR)
+
     # Protect abbreviations using precompiled pattern with word boundaries
-    text = _ABBR_PATTERN.sub(lambda m: m.group().replace(".", _SENTINEL_ABBR), text)
+    text = _ABBR_PATTERN.sub(_abbr_replacer, text)
     # Protect single uppercase initials (A., B., C., etc.)
     text = _INITIAL_RE.sub(lambda m: m.group().replace(".", _SENTINEL_ABBR), text)
     return text

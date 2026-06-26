@@ -2,21 +2,23 @@
 
 This document lists all abbreviations that `polish.py` recognizes. These dots are **protected** during sentence splitting — the script will NOT treat them as sentence endings.
 
+**Context-aware protection** (`_BREAKABLE_ABBRS`): `etc.` and `approx.` are left unprotected when followed by a space + uppercase letter (e.g., `etc. The` triggers a sentence break, while `etc., and` does not). All other abbreviations — including `i.e.`, `e.g.`, `vs.`, `cf.` — are **always protected** because they grammatically require content after them.
+
 If you encounter an abbreviation that causes a false sentence break, add it to the `ABBREVIATIONS` list in `polish.py` (line ~32) and update this table.
 
 ---
 
 ## General
 
-| Abbreviation | Meaning |
-|---|---|
-| et al. | et alii (and others) |
-| i.e. | id est (that is) |
-| e.g. | exempli gratia (for example) |
-| etc. | et cetera |
-| vs. | versus |
-| cf. | confer (compare) |
-| approx. | approximately |
+| Abbreviation | Meaning | Breakable? |
+|---|---|---|
+| et al. | et alii (and others) | no |
+| i.e. | id est (that is) | no |
+| e.g. | exempli gratia (for example) | no |
+| etc. | et cetera | **yes** |
+| vs. | versus | no |
+| cf. | confer (compare) | no |
+| approx. | approximately | **yes** |
 
 ## Titles & Honorifics
 

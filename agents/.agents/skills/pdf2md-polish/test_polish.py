@@ -61,6 +61,82 @@ class TestAbbreviationProtection:
         assert "z. B." in sentences[0]
 
 
+# ── Context-aware (breakable) abbreviations ─────────────────────────────────
+
+
+class TestBreakableAbbreviations:
+    """etc. and approx. are left unprotected before space + uppercase so the
+    sentence splitter can treat them as sentence boundaries.  All other
+    abbreviations are always protected regardless of what follows."""
+
+    # --- etc. splits before uppercase ----------------------------------------
+
+    def test_etc_before_uppercase_splits(self):
+        """'etc. The' should produce two sentences."""
+        text = "We tested foo, bar, baz, etc. The results were positive."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 2
+        assert sentences[0].endswith("etc.")
+        assert sentences[1].startswith("The")
+
+    def test_etc_before_lowercase_does_not_split(self):
+        """'etc., and' — etc. mid-sentence should stay on the same line."""
+        text = "We used Python, NumPy, etc., and then ran the analysis."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 1
+
+    def test_etc_with_closing_quote_before_uppercase_splits(self):
+        """Closing punctuation between etc. and uppercase should still split."""
+        text = "She listed 'foo, bar, etc.' The next topic was different."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 2
+
+    # --- approx. splits before uppercase -------------------------------------
+
+    def test_approx_before_uppercase_splits(self):
+        """'approx. This' should produce two sentences."""
+        text = "The delay was approx. This was acceptable."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 2
+        assert sentences[0].endswith("approx.")
+        assert sentences[1].startswith("This")
+
+    def test_approx_before_lowercase_does_not_split(self):
+        """'approx. 3 ms' — approx. followed by a number should not split."""
+        text = "The latency was approx. 3 ms per request."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 1
+
+    # --- always-protected abbreviations never split --------------------------
+
+    def test_ie_before_uppercase_does_not_split(self):
+        """i.e. is always protected — should never trigger a sentence break."""
+        text = "The value is fixed, i.e. There is no configuration needed."
+        sentences = polish.split_sentences_in_text(text)
+        # i.e. must be protected; the whole text is one sentence.
+        # (Previous weaker assertions would pass even if i.e. split incorrectly.)
+        assert len(sentences) == 1
+        assert "i.e." in sentences[0]
+
+
+    def test_eg_before_uppercase_does_not_split(self):
+        """e.g. is always protected — should never trigger a sentence break."""
+        text = "Use a fast language, e.g. Python or Go, for scripting."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 1
+
+    # --- end-of-string edge case ---------------------------------------------
+
+    def test_etc_at_end_of_string_does_not_protect(self):
+        """etc. at the very end of the input is also a sentence boundary."""
+        text = "We support foo, bar, etc."
+        sentences = polish.split_sentences_in_text(text)
+        # Single sentence — no split needed, but the abbreviation must not
+        # cause a double-dot restoration artifact.
+        assert len(sentences) == 1
+        assert sentences[0].endswith("etc.")
+
+
 # ── Sentence splitting ──────────────────────────────────────────────────────
 
 
