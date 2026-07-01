@@ -6,9 +6,7 @@ from pathlib import Path
 import pytest
 
 # Load polish.py as a module (it has no __init__.py parent)
-_SPEC = importlib.util.spec_from_file_location(
-    "polish", Path(__file__).parent / "polish.py"
-)
+_SPEC = importlib.util.spec_from_file_location("polish", Path(__file__).parent / "polish.py")
 polish = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(polish)
 
@@ -118,7 +116,6 @@ class TestBreakableAbbreviations:
         assert len(sentences) == 1
         assert "i.e." in sentences[0]
 
-
     def test_eg_before_uppercase_does_not_split(self):
         """e.g. is always protected — should never trigger a sentence break."""
         text = "Use a fast language, e.g. Python or Go, for scripting."
@@ -202,6 +199,14 @@ class TestSentenceSplitting:
         text = 'He said "Stop." She replied "No."'
         sentences = polish.split_sentences_in_text(text)
         assert len(sentences) == 2
+
+    def test_sentence_break_after_inline_math(self):
+        """Period immediately after inline math should still trigger a split."""
+        text = "The range is $R_{1}$ and $R_{2}$. This method is illustrated in Figure 7."
+        sentences = polish.split_sentences_in_text(text)
+        assert len(sentences) == 2
+        assert sentences[0].endswith("$R_{2}$.")
+        assert sentences[1].startswith("This")
 
 
 # ── Inline math ─────────────────────────────────────────────────────────────
@@ -467,11 +472,7 @@ class TestEndToEnd:
         result = polish.process(text)
         assert "Fig. 3" in result
         # Should be one sentence, not split at Fig.
-        lines = [
-            line
-            for line in result.split("\n")
-            if line.strip() and not line.startswith("#")
-        ]
+        lines = [line for line in result.split("\n") if line.strip() and not line.startswith("#")]
         # Only one content line (the sentence)
         assert len(lines) == 1
 
@@ -531,10 +532,7 @@ class TestMathSpacing:
 
     def test_cleanup_math_body_bracket_spacing(self):
         # square bracket spacing
-        assert (
-            polish.cleanup_math_body(r"\sqrt{[ a ]^{2}+[ b ]^{2}}")
-            == r"\sqrt{[a]^{2}+[b]^{2}}"
-        )
+        assert polish.cleanup_math_body(r"\sqrt{[ a ]^{2}+[ b ]^{2}}") == r"\sqrt{[a]^{2}+[b]^{2}}"
 
     def test_cleanup_math_content_spacing(self):
         assert polish.cleanup_math_content_spacing("$x_{ i }$") == "$x_{i}$"
@@ -702,9 +700,7 @@ class TestListSentenceSplitting:
             == "- The first objective is to design a high-performance classifier, which runs in real-time on embedded platforms."
         )
         # Sub-list item should also be reflowed into a single line, correctly indented
-        assert (
-            lines[1] == "  - Specifically, we target devices with less than 2GB of RAM."
-        )
+        assert lines[1] == "  - Specifically, we target devices with less than 2GB of RAM."
 
     def test_list_item_with_display_math(self):
         """Multi-line display math inside a list item should be preserved."""
@@ -809,9 +805,7 @@ class TestLatexDelimiterNormalization:
 
     def test_inline_paren_math_period_not_split(self):
         """A period inside \\(...\\) must not cause a false sentence break."""
-        sentences = polish.split_sentences_in_text(
-            polish.normalize_inline_paren_math(r"Let \(a = 1.5\) hold. Next.")
-        )
+        sentences = polish.split_sentences_in_text(polish.normalize_inline_paren_math(r"Let \(a = 1.5\) hold. Next."))
         assert len(sentences) == 2
 
     def test_escaped_backslash_paren_left_alone(self):
@@ -1024,21 +1018,12 @@ class TestDefensiveBlockProcessing:
         """A borderless table followed (no blank line) by a paragraph whose
         unescaped-pipe count differs from the align row must not extend the
         table block; the paragraph must remain a paragraph."""
-        text = (
-            "A | B | C\n"
-            "---|---|---\n"
-            "1 | 2 | 3\n"
-            "Next paragraph has | a literal pipe.\n"
-            "Plain final line."
-        )
+        text = "A | B | C\n---|---|---\n1 | 2 | 3\nNext paragraph has | a literal pipe.\nPlain final line."
         blocks = polish.parse_blocks(text)
         kinds = [b.kind for b in blocks]
         assert "pipe_table" in kinds
         para_blocks = [b for b in blocks if b.kind == "paragraph"]
-        assert any(
-            "Next paragraph has | a literal pipe." in "\n".join(b.lines)
-            for b in para_blocks
-        )
+        assert any("Next paragraph has | a literal pipe." in "\n".join(b.lines) for b in para_blocks)
 
     def test_blank_then_paragraph_ends_list(self):
         """A blank line followed by a non-list, non-indented paragraph must
@@ -1046,3 +1031,74 @@ class TestDefensiveBlockProcessing:
         text = "- a\n- b\n\nNormal paragraph."
         result = polish.process(text)
         assert "- a\n- b\n\nNormal paragraph." in result
+
+
+# ── Idempotency ─────────────────────────────────────────────────────────────
+
+
+class TestIdempotency:
+    """process() must be idempotent: applying it twice on the same input
+    must produce the same text as applying it once.
+
+    out1 = process(raw)
+    assert process(out1) == out1
+    """
+
+    _SAMPLE_INPUT = (Path(__file__).parent / "examples" / "sample_input.md").read_text(encoding="utf-8")
+
+    def test_sample_input_idempotent(self):
+        """Full realistic OCR fixture: covers soft-wrap, ligatures, German
+        abbreviations, inline math, lists, blockquote, and images."""
+        out1 = polish.process(self._SAMPLE_INPUT)
+        out2 = polish.process(out1)
+        assert out2 == out1
+
+    @pytest.mark.parametrize(
+        "description, raw",
+        [
+            (
+                "plain paragraph with soft-wrap",
+                "The quick brown fox jumps over the lazy\ndog. A second sentence follows.",
+            ),
+            (
+                "abbreviations mid-sentence",
+                "Results in Fig. 3 show that, e.g., the method by Li et al. outperforms\nthe baseline.",
+            ),
+            (
+                "breakable abbreviation before uppercase",
+                "We covered Python, NumPy, etc. The next section introduces PyTorch.",
+            ),
+            (
+                "inline math with sentence boundary",
+                "The value is $x_{i}$. Another sentence with $y^2$ follows.",
+            ),
+            (
+                "display math block",
+                "Consider:\n\n$$\n\\frac{a}{b} = c\n$$\n\nThe above holds.",
+            ),
+            (
+                "nested list",
+                "- First item.\n  - Sub-item one.\n  - Sub-item two.\n- Second item.",
+            ),
+            (
+                "blockquote",
+                "> This is a quote. It has two sentences.\n> Another line of the quote.",
+            ),
+            (
+                "hyphen reflow",
+                "This is a hyphen-\nated word inside a soft-wrapped para.",
+            ),
+            (
+                "code fence passthrough",
+                "Some text.\n\n```python\nx = 1  # comment.\nprint(x)\n```\n\nMore text.",
+            ),
+            (
+                "pipe table passthrough",
+                "| A | B |\n|---|---|\n| 1 | 2 |",
+            ),
+        ],
+    )
+    def test_parametrized_idempotent(self, description, raw):
+        out1 = polish.process(raw)
+        out2 = polish.process(out1)
+        assert out2 == out1, f"Not idempotent for: {description!r}\n--- pass1 ---\n{out1}\n--- pass2 ---\n{out2}"

@@ -197,9 +197,7 @@ _BREAKABLE_ABBRS = {"etc.", "approx."}
 # Compile single abbreviation matching pattern using word boundaries to prevent
 # false positives (e.g. "signal." matching "al.")
 _ABBR_PATTERN = re.compile(
-    r"(?<![a-zA-Z])(?:"
-    + "|".join(re.escape(abbr) for abbr in ABBREVIATIONS)
-    + r")(?![a-zA-Z])",
+    r"(?<![a-zA-Z])(?:" + "|".join(re.escape(abbr) for abbr in ABBREVIATIONS) + r")(?![a-zA-Z])",
     re.IGNORECASE,
 )
 
@@ -217,9 +215,7 @@ def _protect_abbreviations(text: str) -> str:
     so the sentence splitter can break there."""
     # Protect ellipsis first (before abbreviation matching changes dots)
     text = _ELLIPSIS_RE.sub(
-        lambda m: (
-            m.group().replace(".", _SENTINEL_ABBR).replace("…", _SENTINEL_ABBR * 3)
-        ),
+        lambda m: m.group().replace(".", _SENTINEL_ABBR).replace("…", _SENTINEL_ABBR * 3),
         text,
     )
 
@@ -464,14 +460,10 @@ def _count_unescaped_pipes(line: str) -> int:
     return len(_UNESCAPED_PIPE_RE.findall(line))
 
 
-_PIPE_TABLE_ALIGN_RE = re.compile(
-    r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
-)
+_PIPE_TABLE_ALIGN_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
 _HTML_TABLE_START_RE = re.compile(r"<\s*(table|tr|td|th)\b", re.IGNORECASE)
 _HTML_TABLE_END_RE = re.compile(r"</\s*table\s*>", re.IGNORECASE)
-_LATEX_BEGIN_RE = re.compile(
-    r"^\s*\\begin\{(equation\*?|align\*?|aligned|gather\*?|multline\*?|split)\}"
-)
+_LATEX_BEGIN_RE = re.compile(r"^\s*\\begin\{(equation\*?|align\*?|aligned|gather\*?|multline\*?|split)\}")
 _LATEX_END_TEMPLATE = r"\\end\{%s\}"
 _CAPTION_LABEL_RE = re.compile(
     r"^((?:Fig|Figs|Figure|Figures|Table|Tab|Eq|Equation)\.?\s*\d+(?:\.\d+)?[A-Za-z]?)\.(?=\s+\S)",
@@ -520,11 +512,7 @@ def _unescaped_count(text: str, token: str) -> int:
 
 def is_display_math_start(line: str) -> bool:
     stripped = line.lstrip()
-    return (
-        stripped.startswith("$$")
-        or stripped.startswith(r"\[")
-        or bool(_LATEX_BEGIN_RE.match(line))
-    )
+    return stripped.startswith("$$") or stripped.startswith(r"\[") or bool(_LATEX_BEGIN_RE.match(line))
 
 
 def is_html_table_start(line: str) -> bool:
@@ -788,9 +776,7 @@ def needs_join_space(left: str, right: str) -> bool:
         return False
     if left[-1] in "([{“‘":
         return False
-    if _is_cjk_or_punctuation(left[-1]) or _is_cjk_or_punctuation(right[0]):
-        return False
-    return True
+    return not (_is_cjk_or_punctuation(left[-1]) or _is_cjk_or_punctuation(right[0]))
 
 
 def join_soft_wrapped_lines(lines: list[str]) -> str:
@@ -870,11 +856,7 @@ def _is_single_dollar(text: str, index: int) -> bool:
         return False
     if index > 0 and text[index - 1] == "$" and not _is_escaped_at(text, index - 1):
         return False
-    return not (
-        index + 1 < len(text)
-        and text[index + 1] == "$"
-        and not _is_escaped_at(text, index + 1)
-    )
+    return not (index + 1 < len(text) and text[index + 1] == "$" and not _is_escaped_at(text, index + 1))
 
 
 def _find_closing_dollar(text: str, start_idx: int) -> int | None:
@@ -884,11 +866,7 @@ def _find_closing_dollar(text: str, start_idx: int) -> int | None:
         if idx == -1:
             return None
         if not _is_escaped_at(text, idx):
-            if (
-                idx + 1 < len(text)
-                and text[idx + 1] == "$"
-                and not _is_escaped_at(text, idx + 1)
-            ):
+            if idx + 1 < len(text) and text[idx + 1] == "$" and not _is_escaped_at(text, idx + 1):
                 idx += 2
                 continue
             if idx > 0 and text[idx - 1] == "$" and not _is_escaped_at(text, idx - 1):
@@ -920,9 +898,8 @@ def _is_valid_inline_math_open(text: str, index: int) -> int | None:
     if text[cursor].isdigit():
         if close_idx + 1 < len(text) and text[close_idx + 1].isdigit():
             return None
-        if not any(c in content for c in "\\^_{}+-=<>*/,;"):
-            if any(c.isspace() for c in content):
-                return None
+        if not any(c in content for c in "\\^_{}+-=<>*/,;") and any(c.isspace() for c in content):
+            return None
 
     if not _is_valid_inline_math_close(text, close_idx):
         return None
@@ -940,9 +917,7 @@ def _is_valid_inline_math_close(text: str, index: int) -> bool:
 # Normalize \(...\) inline-math delimiters to $...$ so the rest of the pipeline
 # (which is built around $) handles them uniformly. Only unescaped \( \) pairs
 # are touched; \\( (an escaped backslash + paren) is left alone.
-_INLINE_PAREN_MATH_RE = re.compile(
-    r"(?<!\\)\\\(((?:(?!\\\(|\\\)).)*?)(?<!\\)\\\)", re.DOTALL
-)
+_INLINE_PAREN_MATH_RE = re.compile(r"(?<!\\)\\\(((?:(?!\\\(|\\\)).)*?)(?<!\\)\\\)", re.DOTALL)
 
 
 def normalize_inline_paren_math(text: str) -> str:
@@ -1069,9 +1044,7 @@ def _list_item_groups(block: Block) -> list[tuple[int, list[str]]]:
     while idx < len(block.lines):
         start = idx
         idx += 1
-        while idx < len(block.lines) and not _is_top_level_list_marker(
-            block.lines[idx], base_indent
-        ):
+        while idx < len(block.lines) and not _is_top_level_list_marker(block.lines[idx], base_indent):
             idx += 1
         groups.append((start, block.lines[start:idx]))
     return groups
@@ -1079,7 +1052,7 @@ def _list_item_groups(block: Block) -> list[tuple[int, list[str]]]:
 
 def process_list_block(block: Block) -> list[str]:
     output: list[str] = []
-    for start_idx, item_lines in _list_item_groups(block):
+    for _start_idx, item_lines in _list_item_groups(block):
         marker = is_list_item_line(item_lines[0])
         if not marker:
             output.extend(item_lines)
@@ -1100,9 +1073,7 @@ def process_list_block(block: Block) -> list[str]:
         # blank lines (which separate paragraphs within the list item).
         processed_lines = processed_text.rstrip("\n").split("\n")
 
-        if not processed_lines or (
-            len(processed_lines) == 1 and not processed_lines[0].strip()
-        ):
+        if not processed_lines or (len(processed_lines) == 1 and not processed_lines[0].strip()):
             output.append(prefix)
             continue
 
@@ -1274,9 +1245,7 @@ def apply_headings(text: str, mapping: dict[int, str]) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Deterministic markdown post-processing for PDF-converted documents."
-    )
+    parser = argparse.ArgumentParser(description="Deterministic markdown post-processing for PDF-converted documents.")
     sub = parser.add_subparsers(dest="command")
 
     # Default: polish
@@ -1300,9 +1269,7 @@ def main():
         default=1,
         help="Lines of context after each heading (default: 1)",
     )
-    ext.add_argument(
-        "-o", "--output", type=str, default=None, help="Output file (default: stdout)"
-    )
+    ext.add_argument("-o", "--output", type=str, default=None, help="Output file (default: stdout)")
 
     # Apply heading mapping
     app = sub.add_parser("apply", help="Apply heading level mapping")
@@ -1336,11 +1303,7 @@ def main():
         if not input_path.exists():
             print(f"Error: {input_path} not found", file=sys.stderr)
             sys.exit(1)
-        output_path = (
-            Path(args.output)
-            if args.output
-            else input_path.with_name(f"{input_path.stem}-polished.md")
-        )
+        output_path = Path(args.output) if args.output else input_path.with_name(f"{input_path.stem}-polished.md")
         text = input_path.read_text(encoding="utf-8")
         result = process(text)
         output_path.write_text(result, encoding="utf-8")
@@ -1359,9 +1322,7 @@ def main():
                     pass
 
             # Simple sentence count estimation
-            sentences_count = len(
-                [s for s in re.split(r"[.!?。！？\n]+", result) if s.strip()]
-            )
+            sentences_count = len([s for s in re.split(r"[.!?。！？\n]+", result) if s.strip()])
 
             # Get language from config.json if available
             lang = "auto"
@@ -1385,9 +1346,7 @@ def main():
                     "notes": "Automated run log",
                 }
             )
-            history_path.write_text(
-                json.dumps(history_data, indent=2), encoding="utf-8"
-            )
+            history_path.write_text(json.dumps(history_data, indent=2), encoding="utf-8")
         except Exception as e:
             print(f"Warning: Failed to update history.json: {e}", file=sys.stderr)
 
@@ -1396,9 +1355,7 @@ def main():
         if not input_path.exists():
             print(f"Error: {input_path} not found", file=sys.stderr)
             sys.exit(1)
-        result = extract_headings(
-            input_path.read_text(encoding="utf-8"), context_lines=args.context
-        )
+        result = extract_headings(input_path.read_text(encoding="utf-8"), context_lines=args.context)
         if args.output:
             Path(args.output).write_text(result, encoding="utf-8")
             print(f"Done. Output: {args.output}")

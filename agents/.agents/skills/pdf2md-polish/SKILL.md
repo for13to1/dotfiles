@@ -68,8 +68,18 @@ Available subcommands:
    ```
 
 ### Step 3: Semantic Review & Output
-1. Run a semantic review on the output to fix lingering OCR issues, misplaced math punctuation, or image paragraph splits (see [ocr-patterns.md](references/ocr-patterns.md)). Do NOT rewrite or rephrase the entire document; use targeted replacement edits.
-2. Overwrite the original file with the polished result. Ensure encoding is explicit UTF-8.
+
+Review the script output against the following **fixed checklist only**. Do NOT make any changes outside this list:
+
+- [ ] **Ligature artifacts** not caught by script — replace with ASCII equivalents (e.g., `ﬁ`→`fi`, `ﬀ`→`ff`, `ﬃ`→`ffi`)
+- [ ] **OCR character confusions** adjacent to math or digits (e.g., `l`↔`1`, `O`↔`0`, `S`↔`5`) — fix only when context makes the correct form unambiguous
+- [ ] **Broken image paragraphs** — figure/table captions separated from their anchor paragraph by a spurious blank line
+- [ ] **Misplaced math punctuation** — punctuation (`,` `.`) that should be inside a math span but was placed outside, or vice versa
+- [ ] **Unmatched `$$` delimiters** flagged in stderr — fix the unbalanced delimiter
+
+**Output format**: For each fix, output a fenced `diff` block showing only the changed lines. Do NOT output the full document. After all diffs, apply them to the file with `multi_replace_file_content` or equivalent targeted edits.
+
+When no issues are found in a checklist item, skip it silently. Do NOT invent changes to fill the checklist.
 
 ### Reference Examples
 Three-way comparison showing script vs. full pipeline boundaries:
