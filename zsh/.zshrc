@@ -124,6 +124,12 @@ if command -v zoxide &>/dev/null; then
 fi
 # <<< zoxide loading <<<
 
+# >>> ripgrep loading >>>
+if command -v rg &>/dev/null; then
+    export RIPGREP_CONFIG_PATH="$HOME/.ripgreprc"
+fi
+# <<< ripgrep loading <<<
+
 # >>> opencode loading >>>
 # 安装时使用 --no-modify-path 避免脚本自动修改 .zshrc
 # curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path
@@ -152,7 +158,9 @@ else
 fi
 
 function grn() {
-    if grep --help 2>/dev/null | grep -q -- '--color'; then
+    if command -v rg &>/dev/null; then
+        rg -n -w "$@"
+    elif grep --help 2>/dev/null | grep -q -- '--color'; then
         grep --color=auto -rnw "$@"
     else
         grep -rnw "$@"
@@ -177,7 +185,9 @@ function ytdf() { yt-dlp -f bestvideo+bestaudio --write-subs --cookies-from-brow
 function ytds() { yt-dlp -f bestvideo+bestaudio --write-subs --cookies-from-browser safari "$1"; }
 
 function grnh() {
-    if grep --help 2>/dev/null | grep -q -- '--color'; then
+    if command -v rg &>/dev/null; then
+        rg -n -w "$1" /usr/include/*.h
+    elif grep --help 2>/dev/null | grep -q -- '--color'; then
         grep --color=auto -rnw "$1" /usr/include/*.h
     else
         grep -rnw "$1" /usr/include/*.h

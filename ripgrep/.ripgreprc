@@ -1,0 +1,29 @@
+--smart-case
+--hidden
+--glob=!.git/
+--glob=!node_modules/
+--glob=!target/
+
+# Python
+--glob=!__pycache__/
+--glob=!.venv/
+--glob=!*.egg-info/
+--glob=!.mypy_cache/
+--glob=!.pytest_cache/
+--glob=!.ruff_cache/
+
+# TypeScript / Node.js
+--glob=!dist/
+--glob=!.next/
+--glob=!.nuxt/
+--glob=!.output/
+--glob=!coverage/
+
+# C / C++
+--glob=!*.o
+--glob=!*.d
+--glob=!*.so
+--glob=!*.dylib
+--glob=!build/
+--glob=!cmake-build-*/
+--glob=!.cache/

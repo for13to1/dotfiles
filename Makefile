@@ -6,7 +6,7 @@
 # ~/.config 是系统共享目录，由 mkdir -p 确保存在，使 stow 折叠停在 nvim 这一层而不是 .config 层。
 
 SHELL := /bin/bash
-MODULES := agents codestyle zsh git vim nvim tmux
+MODULES := agents codestyle zsh git vim nvim tmux ripgrep
 
 .PHONY: sync check help
 

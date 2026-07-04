@@ -382,7 +382,7 @@ fi
 
 if [[ -z "${STOW_MODULES:-}" ]]; then
     warn "Makefile 中未发现有效的 MODULES 定义，正在尝试默认列表..."
-    STOW_MODULES="agents codestyle zsh git vim nvim tmux"
+    STOW_MODULES="agents codestyle zsh git vim nvim tmux ripgrep"
 else
     info "从 Makefile 加载模块: $STOW_MODULES"
 fi
