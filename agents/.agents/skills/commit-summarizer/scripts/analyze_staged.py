@@ -118,7 +118,7 @@ def detect_commitlint(cwd: str | None = None) -> dict:
                 pkg = json.load(f)
             if "commitlint" in pkg.get("devDependencies", {}) or "commitlint" in pkg.get("dependencies", {}):
                 result["commitlint"] = True
-        except json.JSONDecodeError, OSError:
+        except (json.JSONDecodeError, OSError):
             pass
 
     # Check .gitmessage template

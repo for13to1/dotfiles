@@ -1,8 +1,3 @@
 {
-  "overwrite_original": true,
-  "language": "auto",
-  "heading_style": "atx",
-  "sentence_per_line": true,
-  "math_normalization": true,
-  "en_dash_promotion": "llm_only"
+  "language": "auto"
 }

@@ -1,90 +1,78 @@
 ---
 name: pdf2md-polish
-description: Use when the user provides a markdown file (.md) and asks to clean up, polish, proofread, reformat, or tidy it up. Also use when converting PDF-OCR output, cleaning academic paper markdown, or fixing broken paragraphs from PDF extraction. Trigger keywords: "pdf2md-polish", "polish", "tidy up", "proofread", "reformat", "clean up this markdown", "fix formatting", "one sentence per line", "校对", "格式化", "整理", "清理", "清洗", "OCR 清洗".
+description: Use when cleaning PDF/OCR-exported markdown (broken paragraphs, heading noise, math/OCR artifacts), or when the user asks for one-sentence-per-line academic markdown cleanup. Prefer this for PDF extraction cleanup rather than general prose editing. Trigger keywords: "pdf2md-polish", "OCR 清洗", "PDF markdown", "one sentence per line", "清洗 OCR", "校对 OCR".
 ---
 
 # Markdown Post-Processing
 
-This skill provides a **hybrid workflow** (script + LLM) for polishing markdown files containing OCR artifacts, broken paragraphs, or messy formatting.
+Hybrid workflow (script + LLM) for polishing markdown that came from PDF/OCR extraction.
 
 ## References
 
-Detailed technical guidelines are separated to keep this skill concise. Consult them on demand:
-- **[abbreviation-table.md](references/abbreviation-table.md)** — List of 100+ protected abbreviation dots across English, German, French, and Spanish.
-- **[ocr-patterns.md](references/ocr-patterns.md)** — Common OCR artifacts (deterministic fixes vs. LLM-judgment fixes).
-- **[formatting-rules.md](references/formatting-rules.md)** — Detailed rules for heading hierarchy, semantic review, and script capabilities.
+Load on demand:
+- **[abbreviation-table.md](references/abbreviation-table.md)** — Protected abbreviation dots (EN/DE/FR/ES).
+- **[ocr-patterns.md](references/ocr-patterns.md)** — Deterministic vs LLM-judgment OCR fixes.
+- **[formatting-rules.md](references/formatting-rules.md)** — Heading hierarchy and semantic review rules.
 
 ## Configuration & History
 
-- **`config.json`**: Configures the polish pipeline. Default values:
+- **`config.json`**: currently only `language` is read by `polish.py` (written into `history.json`).
 
-| Key | Default | Values | Description |
-|-----|---------|--------|-------------|
-| `overwrite_original` | `true` | `true` / `false` | Overwrite the input file with polished output |
-| `language` | `"auto"` | `"auto"`, `"en"`, `"de"`, `"fr"`, `"es"`, `"zh"` | Primary language (affects abbreviation list priority) |
-| `heading_style` | `"atx"` | `"atx"`, `"setext"` | Markdown heading syntax |
-| `sentence_per_line` | `true` | `true` / `false` | Enable one-sentence-per-line formatting |
-| `math_normalization` | `true` | `true` / `false` | Normalize whitespace inside math formulas |
-| `en_dash_promotion` | `"llm_only"` | `"llm_only"`, `"off"`, `"aggressive"` | Hyphen→en-dash promotion strategy |
+| Key | Default | Used by script? | Description |
+|-----|---------|-----------------|-------------|
+| `language` | `"auto"` | yes (history only) | Language tag recorded in history |
 
-- **`history.json`**: Keeps an append-only run log. **`polish.py` automatically appends records here upon completion** — the LLM does NOT need to write this file manually. Example entry:
-  ```json
-  {"timestamp": "2026-06-24T10:30:00", "file": "paper.md", "sentences": 142, "warnings": 0, "language": "de", "notes": ""}
-  ```
+- **`history.json`**: append-only run log, updated automatically by `polish.py`. LLM should not edit it. Write failures are non-fatal.
 
-## Gotchas (Common Pitfalls)
+## Gotchas
 
-Read before reviewing the output:
-- **CJK + abbreviation conflict**: `Li et al.提出` — CJK immediately following an abbreviation like `et al.` might bypass standard word boundary checks. The script handles this, do NOT report it as a false sentence break.
-- **Decimal spaces**: `3 . 14` -> `3.14`. Fix manually if the script misses any space-in-number OCR errors.
-- **Currency vs math**: `$100` is currency (no spaces/operators), `$x + y$` is math. Watch out for single-letter math variables (like `$n$`) misclassified as currency or vice-versa.
-- **Hyphen vs en-dash**: The script does NOT convert hyphens. Promoting `-` to `–` in numeric ranges (e.g., `pp. 12-15` -> `pp. 12–15`) must be done during LLM review (see `formatting-rules.md` for guidelines).
-- **Unbalanced Display Math**: If `$$` delimiters are unbalanced, the script outputs a `[WARNING]` to stderr. Check stderr and fix the delimiters manually.
-- **Ligatures & environments**: Ligatures (`ﬁ`->`fi`) are destroyed. LaTeX environments (like `\begin{align}`) are intentionally left untouched by the script.
+- **CJK after abbreviations**: `Li et al.提出` is handled by the script; do not "fix" as a false sentence break.
+- **Decimal spaces**: `3 . 14` → `3.14` if the script misses any.
+- **Currency vs math**: `$100` vs `$x + y$`; be careful with single-letter math like `$n$`.
+- **Hyphen vs en-dash**: script does not promote `-` to `–`; do that in LLM review when appropriate.
+- **Unbalanced `$$`**: script warns on stderr; fix delimiters manually.
+- **Ligatures / LaTeX envs**: ligatures are normalized; `\\begin{align}`-style blocks are left alone.
 
 ## Workflow
 
 ### Step 1: Run the Polish Script
-Run the deterministic pipeline (creates `<input>-polished.md` and appends to `history.json`):
+Default output is a sibling file, not an in-place overwrite:
 ```bash
 uv run $HOME/.agents/skills/pdf2md-polish/polish.py polish <input.md>
 ```
-*Fallback: Use `python3` if `uv` is unavailable.*
+Fallback: `python3` if `uv` is unavailable.
 
-Available subcommands:
-- `polish` — Full processing pipeline (default). Outputs `<input>-polished.md`.
-- `headings` — Extract heading skeleton (compact JSON) for LLM analysis.
-- `apply` — Apply heading level changes from a JSON mapping.
+Subcommands:
+- `polish` — deterministic pipeline → `<input>-polished.md` (or `-o PATH`)
+- `headings` — compact text heading skeleton for hierarchy decisions
+- `apply` — apply heading level mapping; defaults to overwriting the file passed in (use `-o` to write elsewhere)
 
 ### Step 2: Adjust Heading Hierarchy
-1. Extract the heading skeleton:
+1. Extract skeleton:
    ```bash
    uv run $HOME/.agents/skills/pdf2md-polish/polish.py headings <polished.md>
    ```
-2. Determine correct hierarchy (title = `#`, section = `##`, subsection = `###`) according to [formatting-rules.md](references/formatting-rules.md).
-3. Apply the hierarchy mapping (JSON format `{"line_num": "##"}`):
+2. Choose hierarchy (title `#`, section `##`, subsection `###`) per [formatting-rules.md](references/formatting-rules.md).
+3. Apply mapping with 1-indexed line numbers as JSON keys (`{"148": "##"}`):
    ```bash
    uv run $HOME/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"148": "##", "203": "###"}'
    ```
 
 ### Step 3: Semantic Review & Output
 
-Review the script output against the following **fixed checklist only**. Do NOT make any changes outside this list:
+Only fix items on this checklist. Skip silently if clean:
 
-- [ ] **Ligature artifacts** not caught by script — replace with ASCII equivalents (e.g., `ﬁ`→`fi`, `ﬀ`→`ff`, `ﬃ`→`ffi`)
-- [ ] **OCR character confusions** adjacent to math or digits (e.g., `l`↔`1`, `O`↔`0`, `S`↔`5`) — fix only when context makes the correct form unambiguous
-- [ ] **Broken image paragraphs** — figure/table captions separated from their anchor paragraph by a spurious blank line
-- [ ] **Misplaced math punctuation** — punctuation (`,` `.`) that should be inside a math span but was placed outside, or vice versa
-- [ ] **Unmatched `$$` delimiters** flagged in stderr — fix the unbalanced delimiter
+- [ ] Remaining ligatures (`ﬁ`→`fi`, `ﬀ`→`ff`, `ﬃ`→`ffi`)
+- [ ] OCR confusions near math/digits (`l`/`1`, `O`/`0`, `S`/`5`) when unambiguous
+- [ ] Figure/table captions split from anchors by a spurious blank line
+- [ ] Math punctuation placed outside/inside `$...$` incorrectly
+- [ ] Unbalanced `$$` reported on stderr
 
-**Output format**: For each fix, output a fenced `diff` block showing only the changed lines. Do NOT output the full document. After all diffs, apply them to the file with `multi_replace_file_content` or equivalent targeted edits.
-
-When no issues are found in a checklist item, skip it silently. Do NOT invent changes to fill the checklist.
+**Output format**: fenced `diff` blocks for changed lines only (not the full document). Then apply with targeted file edits/patches.
 
 ### Reference Examples
-Three-way comparison showing script vs. full pipeline boundaries:
-- `examples/sample_input.md` — Raw OCR/PDF input.
-- `examples/sample_prepass.md` — Output of `polish.py polish` alone (deterministic script only).
-- `examples/sample_output.md` — Full script + LLM pipeline result.
+- `examples/sample_input.md` — raw OCR/PDF input
+- `examples/sample_prepass.md` — script-only output
+- `examples/sample_output.md` — script + LLM result
 
-Diffing `sample_prepass.md` vs `sample_output.md` shows exactly what the LLM step adds (image repositioning, OCR character fixes, math punctuation).
+Diff `sample_prepass.md` vs `sample_output.md` to see the LLM-only delta.

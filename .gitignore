@@ -16,6 +16,7 @@
 
 # Python 缓存
 __pycache__/
+.venv/
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/

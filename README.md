@@ -8,8 +8,8 @@
 dotfiles/
 ├── agents/                     # Stow 包：通用 AI Agent 能力
 │   └── .agents/
-│       ├── skills/             # 专家技能
-│       └── workflows/          # 自动化流程
+│       ├── AGENTS.md           # Agent 通用原则
+│       └── skills/             # 可复用专家技能
 ├── codestyle/                  # Stow 包：代码风格规范
 │   ├── .clang-format
 │   └── .editorconfig

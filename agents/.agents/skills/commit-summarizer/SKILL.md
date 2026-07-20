@@ -85,9 +85,3 @@ Before generating, check for project-specific conventions:
 - Check for `commitlint` config in the project
 - Read `package.json` / `Cargo.toml` / `pyproject.toml` to infer project type and language
 - Adapt scope names to match the project's module/directory structure
-
-## Memory
-
-After the user accepts or corrects a commit message, log the pattern:
-- Store project-specific scope names, type preferences, and correction patterns
-- This helps future commits match the project's style automatically
