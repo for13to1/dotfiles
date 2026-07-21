@@ -23,6 +23,18 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+# Thresholds for diff-size heuristics (lines added + deleted).
+#   DIFF_PREVIEW_INLINE_LIMIT: diff is included in the JSON only when total
+#       changes are at or below this — above it, the LLM should read from
+#       `git diff` itself rather than from a bloated JSON payload.
+#   DIFF_PREVIEW_TRUNCATE_LINES: line count at which get_staged_diff_preview
+#       truncates its output (cap on raw lines, not modified lines).
+#   LARGE_DIFF_LINES: total modified lines above which we flag the diff as
+#       large (is_large_diff + the large_diff warning).
+DIFF_PREVIEW_INLINE_LIMIT = 300
+DIFF_PREVIEW_TRUNCATE_LINES = 500
+LARGE_DIFF_LINES = 500
+
 
 def run(cmd: list[str], cwd: str | None = None) -> str:
     """Run a command and return stdout, stripped."""
@@ -75,7 +87,7 @@ def get_diff_numstat(cwd: str | None = None) -> list[dict]:
     return stats
 
 
-def get_staged_diff_preview(cwd: str | None = None, max_lines: int = 500) -> str:
+def get_staged_diff_preview(cwd: str | None = None, max_lines: int = DIFF_PREVIEW_TRUNCATE_LINES) -> str:
     """Get a preview of the staged diff (truncated for large changes)."""
     raw = run(["git", "diff", "--cached", "--unified=2"], cwd=cwd)
     lines = raw.splitlines()
@@ -201,7 +213,12 @@ def classify_files(files: list[dict]) -> dict:
 
 
 def infer_change_type(files: list[dict], diff_preview: str) -> dict:
-    """Infer the primary change type from file patterns and diff content."""
+    """Infer the primary change type from file patterns and diff content.
+
+    Uses a scoring model: each candidate type accumulates points from
+    structural signals (file statuses) and keyword signals (diff content).
+    The highest-scoring type wins; ties fall back to a conservative chore.
+    """
     has_new = any(f["status"] == "A" for f in files)
     has_delete = any(f["status"] == "D" for f in files)
     has_modify = any(f["status"] in ("M", "R") for f in files)
@@ -218,46 +235,60 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
     del_paths = {f["path"] for f in files if f["status"] == "D"}
     is_rename_heavy = has_new and has_delete and len(new_paths) > 0 and len(del_paths) > 0
 
-    # Check diff for feature/fix signals
-    feat_signals = len(re.findall(r"^\+.*(?:feat|feature|add|implement|new|create)", diff_preview, re.I | re.M))
-    fix_signals = len(re.findall(r"^\+.*(?:fix|bug|patch|resolve|correct|repair)", diff_preview, re.I | re.M))
+    # Check diff for feature/fix signals. Word boundaries avoid substring
+    # false positives (e.g. "add" in "addition", "fix" in "prefix"). "new" is
+    # intentionally dropped — too noisy (matches new_feature, renew, newest).
+    feat_signals = len(re.findall(r"^\+.*\b(?:feat|feature|add|implement|create)\b", diff_preview, re.I | re.M))
+    fix_signals = len(re.findall(r"^\+.*\b(?:fix|bug|patch|resolve|correct|repair)\b", diff_preview, re.I | re.M))
     refactor_signals = len(
         re.findall(
-            r"^\+.*(?:refactor|rename|move|extract|reorganiz)",
+            r"^\+.*\b(?:refactor|rename|move|extract|reorganiz)\w*\b",
             diff_preview,
             re.I | re.M,
         )
     )
 
-    # Primary inference
+    # Primary inference. Exclusive strong signals (all-docs / all-tests) are
+    # checked first; everything else goes through a scoring model where each
+    # type accumulates points from structural and keyword signals.
+    #   keyword: 2 pts per signal line (weak → low confidence)
+    #   structural: 5 pts (medium confidence, e.g. rename / new file)
+    # Ties fall back to a conservative chore so the LLM makes the call.
     if only_docs:
-        primary = "docs"
-        confidence = "high"
+        primary, confidence = "docs", "high"
     elif only_tests:
-        primary = "test"
-        confidence = "high"
-    elif (has_rename and feat_signals == 0 and fix_signals == 0) or (
-        is_rename_heavy and refactor_signals > feat_signals
-    ):
-        primary = "refactor"
-        confidence = "medium"
-    elif feat_signals > fix_signals and feat_signals > refactor_signals:
-        primary = "feat"
-        confidence = "low"
-    elif fix_signals > feat_signals:
-        primary = "fix"
-        confidence = "low"
-    elif has_new and not has_delete:
-        primary = "feat"
-        confidence = "medium"
-    elif has_modify and not has_new:
-        # A modification-only diff does not establish bug-fix intent. Keep the
-        # type conservative and let the LLM decide from the actual diff.
-        primary = "chore"
-        confidence = "low"
+        primary, confidence = "test", "high"
     else:
-        primary = "chore"
-        confidence = "low"
+        scores = {
+            "feat": feat_signals * 2 + (5 if has_new and not has_delete else 0),
+            "fix": fix_signals * 2,
+            "refactor": (
+                refactor_signals * 2
+                + (5 if has_rename and feat_signals == 0 and fix_signals == 0 else 0)
+                + (5 if is_rename_heavy and refactor_signals > feat_signals else 0)
+            ),
+        }
+        top_score = max(scores.values())
+        if top_score == 0:
+            # No signal of any kind — conservative default.
+            primary, confidence = "chore", "low"
+        else:
+            leaders = [k for k, v in scores.items() if v == top_score]
+            if len(leaders) == 1:
+                primary = leaders[0]
+                # Structural evidence is trustworthy enough for medium;
+                # keyword-only evidence stays low.
+                structural = (
+                    (primary == "feat" and has_new and not has_delete)
+                    or (primary == "refactor" and (
+                        (has_rename and feat_signals == 0 and fix_signals == 0)
+                        or (is_rename_heavy and refactor_signals > feat_signals)
+                    ))
+                )
+                confidence = "medium" if structural else "low"
+            else:
+                # Tie (e.g. feat == fix) — ambiguous, let LLM decide.
+                primary, confidence = "chore", "low"
 
     return {
         "primary_type": primary,
@@ -311,9 +342,9 @@ def build_output(cwd: str | None = None) -> dict:
             "total_files": len(files),
             "total_insertions": total_ins,
             "total_deletions": total_dels,
-            "is_large_diff": total_changes > 500,
+            "is_large_diff": total_changes > LARGE_DIFF_LINES,
         },
-        "diff_preview": diff_preview if total_changes <= 300 else None,
+        "diff_preview": diff_preview if total_changes <= DIFF_PREVIEW_INLINE_LIMIT else None,
         "files": [
             {
                 "path": f["path"],
@@ -329,7 +360,7 @@ def build_output(cwd: str | None = None) -> dict:
         "context": context,
         "warnings": {
             "binary_files": binary_files if binary_files else None,
-            "large_diff": total_ins + total_dels > 500,
+            "large_diff": total_ins + total_dels > LARGE_DIFF_LINES,
             "merge_commit": context["is_merge"],
             "many_unrelated_changes": len(classification["by_directory"]) > 5 and len(files) > 15,
         },
