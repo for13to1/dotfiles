@@ -205,6 +205,7 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
     has_new = any(f["status"] == "A" for f in files)
     has_delete = any(f["status"] == "D" for f in files)
     has_modify = any(f["status"] in ("M", "R") for f in files)
+    has_rename = any(f["status"] == "R" for f in files)
     has_tests = bool(re.search(r"(test[_/]|_test\.|\.test\.)", "\n".join(f["path"] for f in files), re.I))
     has_docs = bool(re.search(r"(\.md$|docs?/)", "\n".join(f["path"] for f in files), re.I))
     only_tests = has_tests and all(
@@ -231,23 +232,41 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
     # Primary inference
     if only_docs:
         primary = "docs"
+        confidence = "high"
     elif only_tests:
         primary = "test"
-    elif is_rename_heavy and refactor_signals > feat_signals:
+        confidence = "high"
+    elif (has_rename and feat_signals == 0 and fix_signals == 0) or (
+        is_rename_heavy and refactor_signals > feat_signals
+    ):
         primary = "refactor"
+        confidence = "medium"
     elif feat_signals > fix_signals and feat_signals > refactor_signals:
         primary = "feat"
+        confidence = "low"
     elif fix_signals > feat_signals:
         primary = "fix"
+        confidence = "low"
     elif has_new and not has_delete:
         primary = "feat"
+        confidence = "medium"
     elif has_modify and not has_new:
-        primary = "fix"
+        # A modification-only diff does not establish bug-fix intent. Keep the
+        # type conservative and let the LLM decide from the actual diff.
+        primary = "chore"
+        confidence = "low"
     else:
         primary = "chore"
+        confidence = "low"
 
     return {
         "primary_type": primary,
+        "confidence": confidence,
+        "note": (
+            "Type is only a heuristic; inspect the diff before composing the message."
+            if confidence == "low"
+            else None
+        ),
         "signals": {
             "new_files": len(new_paths),
             "deleted_files": len(del_paths),

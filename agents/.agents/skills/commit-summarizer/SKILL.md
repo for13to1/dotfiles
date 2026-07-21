@@ -78,6 +78,11 @@ These are known pitfalls. Read before composing the message.
 
 7. **Present**: Provide the message in a code block and offer to run `git commit`.
 
+Treat `change_type_inference.primary_type` as a starting point only. The analysis also
+reports `confidence`; a low-confidence `chore` result is intentional for modification-only
+diffs because file changes alone do not prove a bug fix. Inspect the diff and choose the
+actual Conventional Commit type before presenting the message.
+
 ## Context Awareness
 
 Before generating, check for project-specific conventions:
