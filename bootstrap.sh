@@ -453,6 +453,41 @@ cd "$DOTFILES_DIR"
 if [[ -z "${STOW_MODULES:-}" ]]; then
     warn "没有需要挂载的模块，跳过 Stow"
 else
+    # 按 Stow 的目录折叠边界递归，不进入已经整体链接的目录。
+    check_stow_link_parents() {
+        local mod="$1"
+        local dir="$2"
+        local entry rel target parent source_resolved target_resolved
+
+        while IFS= read -r -d '' entry; do
+            rel="${entry#"$mod"/}"
+            target="$HOME/$rel"
+            parent="$(dirname "$target")"
+            if [[ -L "$parent" ]]; then
+                error "$parent 是软链接，请手动处理后再运行 stow"
+            fi
+
+            if [[ -d "$entry" && ! -L "$entry" ]]; then
+                if [[ -L "$target" ]]; then
+                    source_resolved="$(cd "$entry" 2>/dev/null && pwd -P)"
+                    target_resolved="$(cd "$target" 2>/dev/null && pwd -P || true)"
+                    if [[ "$source_resolved" != "$target_resolved" ]]; then
+                        error "$target 是软链接，请手动处理后再运行 stow"
+                    fi
+                elif [[ -d "$target" ]]; then
+                    check_stow_link_parents "$mod" "$entry"
+                fi
+            fi
+        done < <(find "$dir" -mindepth 1 -maxdepth 1 \
+            ! -name ".stow-local-ignore" ! -name ".DS_Store" ! -name ".git" \
+            \( -type f -o -type l -o -type d \) -print0)
+    }
+
+    for mod in $STOW_MODULES; do
+        if [[ -d "$mod" ]]; then
+            check_stow_link_parents "$mod" "$mod"
+        fi
+    done
     for mod in $STOW_MODULES; do
         if [[ -d "$mod" ]]; then
             backup_module_conflicts "$mod"

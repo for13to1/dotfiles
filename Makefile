@@ -12,6 +12,36 @@ MODULES := agents codestyle zsh git vim nvim tmux ripgrep
 
 # 默认一键同步：Restow 所有模块
 sync:
+	@# 按 Stow 的目录折叠边界递归，确保每个实际链接入口的父目录不是软链接
+	@check_tree() { \
+		local mod="$$1" dir="$$2" entry rel target parent source_resolved target_resolved; \
+		while IFS= read -r -d '' entry; do \
+			rel="$${entry#$$mod/}"; \
+			target="$(HOME)/$$rel"; \
+			parent=$$(dirname "$$target"); \
+			if [ -L "$$parent" ]; then \
+				echo "❌ $$parent 是软链接，请手动处理后再运行 stow"; \
+				return 1; \
+			fi; \
+			if [ -d "$$entry" ] && [ ! -L "$$entry" ]; then \
+				if [ -L "$$target" ]; then \
+					source_resolved=$$(cd "$$entry" 2>/dev/null && pwd -P); \
+					target_resolved=$$(cd "$$target" 2>/dev/null && pwd -P || true); \
+					if [ "$$source_resolved" != "$$target_resolved" ]; then \
+						echo "❌ $$target 是软链接，请手动处理后再运行 stow"; \
+						return 1; \
+					fi; \
+				elif [ -d "$$target" ]; then \
+					check_tree "$$mod" "$$entry" || return 1; \
+				fi; \
+			fi; \
+		done < <(find "$$dir" -mindepth 1 -maxdepth 1 \
+				! -name ".stow-local-ignore" ! -name ".DS_Store" ! -name ".git" \
+				\( -type f -o -type l -o -type d \) -print0); \
+	}; \
+	for mod in $(MODULES); do \
+		[ ! -d "$$mod" ] || check_tree "$$mod" "$$mod" || exit 1; \
+	done
 	@mkdir -p $(HOME)/.config
 	@echo "正在同步模块: $(MODULES) ..."
 	@stow -R $(MODULES)
