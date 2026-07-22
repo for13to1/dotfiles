@@ -1,6 +1,6 @@
 ---
 name: commit-summarizer
-description: Generates a clear and concise git commit message based on currently staged changes. Use when the user says "commit this", "write a commit message", "summarize changes", "帮我写 commit", "提交代码", "generate commit message", or when reviewing staged changes before committing. Also use when the user asks "what changed?" or "review my staged changes".
+description: Analyze staged Git changes and generate a Conventional Commit message. Use when the user asks to summarize or review staged changes, write a commit message from the index, or commit the staged changes. Do not use for generic change questions or unstaged work unless the user explicitly refers to Git staging or committing.
 ---
 
 # Commit Summarizer
