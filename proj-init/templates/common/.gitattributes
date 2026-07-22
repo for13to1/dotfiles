@@ -1,0 +1,75 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Source code
+*.c text diff=c
+*.h text diff=cpp
+*.cpp text diff=cpp
+*.hpp text diff=cpp
+*.py text diff=python
+*.rs text diff=rust
+*.js text diff=javascript
+*.ts text diff=javascript
+*.java text diff=java
+*.go text diff=golang
+*.rb text diff=ruby
+*.sh text diff=bash eol=lf
+*.bash text diff=bash eol=lf
+*.zsh text diff=zsh eol=lf
+
+# Configuration files
+*.toml text
+*.yaml text
+*.yml text
+*.json text
+*.xml text
+*.ini text
+*.cfg text
+*.conf text
+*.env text
+
+# Documentation
+*.md text diff=markdown
+*.txt text
+*.rst text
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+*.gz binary
+*.bz2 binary
+*.xz binary
+*.7z binary
+*.rar binary
+
+# Compiled files
+*.o binary
+*.a binary
+*.so binary
+*.dylib binary
+*.dll binary
+*.exe binary
+*.class binary
+*.pyc binary
+
+# Editor files
+*.swp binary
+*.swo binary
+*~ binary
+
+# Git
+.gitignore text
+.gitattributes text
+
+# Lock files
+package-lock.json text -diff
+yarn.lock text -diff
+Cargo.lock text -diff
+poetry.lock text -diff

@@ -558,7 +558,19 @@ if [[ "$editor_choice" == "2" || "$editor_choice" == "3" ]]; then
     fi
 fi
 
-# ── 9. 完成 ───────────────────────────────────────────────────────
+# ── 9. 自定义脚本部署 ──────────────────────────────────────────────
+info "正在部署自定义脚本..."
+
+# proj-init: 项目初始化工具
+if [[ -f "$DOTFILES_DIR/proj-init/bin/proj-init.sh" ]]; then
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$DOTFILES_DIR/proj-init/bin/proj-init.sh" "$HOME/.local/bin/proj-init"
+    ok "proj-init 已部署到 ~/.local/bin/proj-init"
+else
+    warn "proj-init.sh 未找到，跳过部署"
+fi
+
+# ── 10. 完成 ───────────────────────────────────────────────────────
 echo ""
 ok "🎉 全部搞定！请重启终端，或执行 source ~/.zshrc 使配置生效。"
 echo ""

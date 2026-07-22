@@ -1,0 +1,25 @@
+# 本地私有配置（不入库）
+*.local
+
+# macOS
+**/.DS_Store
+
+# 编辑器临时文件
+*.swp
+*.swo
+*~
+**/*.bak
+
+# 日志与临时状态
+*.log
+.check_failed
+
+# Python 缓存
+__pycache__/
+.venv/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Skill runtime state / logs
+**/history.json
