@@ -42,7 +42,7 @@ These are known pitfalls. Read before composing the message.
    ```bash
    uv run python3 $HOME/.agents/skills/commit-summarizer/scripts/analyze_staged.py
    ```
-   This outputs JSON with file stats, logical groupings, change-type inference, and context hints.
+   This outputs versioned JSON (`schema_version`) with file stats, logical groupings, change-type inference, and context hints.
 
 4. **Review Diff** (if needed): For small diffs (< 200 lines changed), optionally run `git diff --staged` for full context. For large diffs, rely on the script's structured output.
 

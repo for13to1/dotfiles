@@ -34,6 +34,7 @@ from pathlib import Path
 DIFF_PREVIEW_INLINE_LIMIT = 300
 DIFF_PREVIEW_TRUNCATE_LINES = 500
 LARGE_DIFF_LINES = 500
+SCHEMA_VERSION = 1
 
 
 def run(cmd: list[str], cwd: str | None = None) -> str:
@@ -338,6 +339,7 @@ def build_output(cwd: str | None = None) -> dict:
     binary_files = [f["path"] for f in files if f.get("binary")]
 
     return {
+        "schema_version": SCHEMA_VERSION,
         "summary": {
             "total_files": len(files),
             "total_insertions": total_ins,
@@ -375,12 +377,12 @@ def main():
     cwd = args.workdir
 
     if not is_git_repo(cwd):
-        print(json.dumps({"error": "Not inside a git repository."}))
+        print(json.dumps({"schema_version": SCHEMA_VERSION, "error": "Not inside a git repository."}))
         sys.exit(1)
 
     output = build_output(cwd)
     if "error" in output:
-        print(json.dumps(output))
+        print(json.dumps({"schema_version": SCHEMA_VERSION, **output}))
         sys.exit(1)
 
     print(json.dumps(output, indent=2))

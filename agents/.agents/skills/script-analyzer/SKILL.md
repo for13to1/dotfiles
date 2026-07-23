@@ -1,6 +1,6 @@
 ---
 name: script-analyzer
-description: Analyzes scripts to understand functionality, impact scope, and risks before execution. Use when the user says "analyze this script", "what does this script do", "is this script safe", "check this script", "review this script", "分析脚本", "脚本分析", "检查脚本", "脚本安全", or wants a pre-run safety check.
+description: Performs pre-run safety analysis of scripts to explain functionality, impact scope, and execution risks. Use when the user asks whether a script is safe, what it may change before running, or requests "分析脚本", "脚本安全", "执行前检查", "check this script before running". Do not use for ordinary code review when execution risk is not part of the request.
 ---
 
 # Script Analyzer
@@ -41,7 +41,7 @@ python3 $HOME/.agents/skills/script-analyzer/scripts/analyze.py $HOME/.agents/sk
 
 - Languages (heuristic): bash/zsh, python, ruby, perl
 - Hits: file ops, network/package tools, system/privilege ops, a small high-risk pattern set (`curl|sh`, `chmod 777`, `rm -rf /`, `eval`, etc.)
-- Output fields: purpose guess, operations, dependency names, risk level, recommendations, sample matching lines
+- Output fields: `schema_version`, purpose guess, operations, dependency names, risk level, recommendations, and structured findings with line/category/severity/confidence/evidence/reason
 
 ## Report template
 

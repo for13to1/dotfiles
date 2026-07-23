@@ -19,8 +19,22 @@ class RiskLevel(Enum):
     HIGH = "high"
 
 
+SCHEMA_VERSION = 1
+
+
+@dataclass
+class Finding:
+    line: int
+    category: str
+    severity: str
+    confidence: str
+    evidence: str
+    reason: str
+
+
 @dataclass
 class AnalysisResult:
+    schema_version: int
     script_path: str
     language: str
     purpose: str
@@ -32,6 +46,7 @@ class AnalysisResult:
     risk_level: str
     risk_factors: list[str]
     recommendations: list[str]
+    findings: list[Finding]
 
 
 # Pattern definitions for different script languages
@@ -84,7 +99,14 @@ PATTERNS = {
             r"\bpkill\b",
             r"\bkillall\b",
         ],
-        "dangerous": [r"chmod\s+777", r"chmod\s+\+s", r"rm\s+-rf\s+/", r"mkfs", r"dd\s+if=", r":(){ :\|:& };:"],
+        "dangerous": [
+            r"chmod\s+777",
+            r"chmod\s+\+s",
+            r"rm\s+-rf\s+/(?:\s*(?:#.*)?$)",
+            r"mkfs",
+            r"dd\s+if=",
+            r":(){ :\|:& };:",
+        ],
     },
     "python": {
         "file_ops": [
@@ -152,7 +174,7 @@ PATTERNS = {
 HIGH_RISK_PATTERNS = [
     r"curl.*\|\s*(ba)?sh",  # Pipe to shell
     r"wget.*\|\s*(ba)?sh",  # Pipe to shell
-    r"rm\s+-rf\s+/",  # Recursive delete from root
+    r"rm\s+-rf\s+/(?:\s*(?:#.*)?$)",  # Recursive delete from root
     r"chmod\s+777",  # World-writable
     r"chmod\s+\+s",  # Setuid/setgid
     r"eval\s*\(",  # Code evaluation
@@ -219,9 +241,12 @@ def detect_high_risk(content: str) -> list[str]:
     lines = content.split("\n")
 
     for line_num, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("#") or stripped.startswith("//"):
+            continue
         for pattern in HIGH_RISK_PATTERNS:
             if re.search(pattern, line, re.IGNORECASE):
-                risks.append(f"Line {line_num}: {line.strip()[:80]}")
+                risks.append(f"Line {line_num}: {stripped[:80]}")
                 break
 
     return risks
@@ -292,6 +317,33 @@ def assess_risk(analysis: dict) -> tuple[RiskLevel, list[str]]:
         return RiskLevel.LOW, risk_factors
 
 
+def build_findings(analysis: dict[str, list[str]]) -> list[Finding]:
+    """Convert scanner hits into stable structured findings."""
+    metadata = {
+        "dangerous": ("high", "high", "Matches a known high-risk execution or destructive pattern"),
+        "system_ops": ("medium", "medium", "May change system state or require elevated privileges"),
+        "network_ops": ("low", "medium", "Communicates with external services or package sources"),
+        "file_ops": ("low", "medium", "Reads, writes, moves, or changes filesystem content"),
+    }
+    findings = []
+    seen = set()
+
+    for category in ("dangerous", "system_ops", "network_ops", "file_ops"):
+        severity, confidence, reason = metadata[category]
+        for hit in analysis[category]:
+            match = re.match(r"Line (\d+):\s*(.*)", hit)
+            if not match:
+                continue
+            line = int(match.group(1))
+            evidence = match.group(2)
+            key = (line, category, evidence)
+            if key in seen:
+                continue
+            seen.add(key)
+            findings.append(Finding(line, category, severity, confidence, evidence, reason))
+    return findings
+
+
 def generate_recommendations(risk_level: RiskLevel, analysis: dict) -> list[str]:
     """Generate safety recommendations"""
     recommendations = []
@@ -338,6 +390,8 @@ def analyze_script(script_path: str) -> AnalysisResult:
 
     if not path.exists():
         raise FileNotFoundError(f"Script not found: {script_path}")
+    if not path.is_file():
+        raise ValueError(f"Not a regular file: {script_path}")
 
     # Read script content
     with open(path, encoding="utf-8", errors="ignore") as f:
@@ -361,6 +415,7 @@ def analyze_script(script_path: str) -> AnalysisResult:
 
     # Generate recommendations
     recommendations = generate_recommendations(risk_level, analysis)
+    findings = build_findings(analysis)
 
     # Generate purpose summary (simple heuristic)
     purpose = "Unknown purpose"
@@ -386,6 +441,7 @@ def analyze_script(script_path: str) -> AnalysisResult:
         operations.append("System operations")
 
     return AnalysisResult(
+        schema_version=SCHEMA_VERSION,
         script_path=str(path.absolute()),
         language=language,
         purpose=purpose,
@@ -397,6 +453,7 @@ def analyze_script(script_path: str) -> AnalysisResult:
         risk_level=risk_level.value,
         risk_factors=risk_factors,
         recommendations=recommendations,
+        findings=findings,
     )
 
 
@@ -421,6 +478,14 @@ def main():
             print(f"🔧 Language: {result.language}")
             print(f"🎯 Purpose: {result.purpose}")
             print(f"⚠️  Risk Level: {result.risk_level.upper()}")
+
+            if result.findings:
+                print(f"\n🔎 Findings ({len(result.findings)} found):")
+                for finding in result.findings if args.full else result.findings[:5]:
+                    print(
+                        f"  • Line {finding.line} [{finding.severity}/{finding.confidence}] "
+                        f"{finding.category}: {finding.evidence}"
+                    )
 
             print("\n📋 Operations Detected:")
             for op in result.operations:

@@ -1,6 +1,6 @@
 ---
 name: pdf2md-polish
-description: Use when cleaning PDF/OCR-exported markdown (broken paragraphs, heading noise, math/OCR artifacts), or when the user asks for one-sentence-per-line academic markdown cleanup. Prefer this for PDF extraction cleanup rather than general prose editing. Trigger keywords: "pdf2md-polish", "OCR 清洗", "PDF markdown", "one sentence per line", "清洗 OCR", "校对 OCR".
+description: 'Use when cleaning PDF/OCR-exported markdown (broken paragraphs, heading noise, math/OCR artifacts), or when the user asks for one-sentence-per-line academic markdown cleanup. Prefer this for PDF extraction cleanup rather than general prose editing. Trigger keywords: "pdf2md-polish", "OCR 清洗", "PDF markdown", "one sentence per line", "清洗 OCR", "校对 OCR".'
 ---
 
 # Markdown Post-Processing
@@ -22,7 +22,7 @@ Load on demand:
 |-----|---------|-----------------|-------------|
 | `language` | `"auto"` | yes (history only) | Language tag recorded in history |
 
-- **`history.json`**: append-only run log, updated automatically by `polish.py`. LLM should not edit it. Write failures are non-fatal.
+- **`history.json`**: append-only run log stored alongside the Skill. LLM should not edit it. Write failures are non-fatal.
 
 ## Gotchas
 
@@ -51,6 +51,7 @@ Subcommands:
 - `polish` — deterministic pipeline → `<name>-polished.md`
 - `headings` — compact text heading skeleton for hierarchy decisions
 - `apply` — apply heading level mapping and overwrite the polished working copy
+- `finalize` — back up the original and promote the polished working copy
 
 ### Step 2: Adjust Heading Hierarchy
 1. Extract skeleton:
@@ -84,8 +85,8 @@ Review target:
 
 Default finalization:
 1. If `<name>.origin.md` already exists, stop and ask the user before replacing it.
-2. Rename the original `<name>.md` to `<name>.origin.md`.
-3. Rename the polished working copy `<name>-polished.md` to `<name>.md`.
+2. Run `uv run $HOME/.agents/skills/pdf2md-polish/polish.py finalize <name>.md`.
+3. The command backs up the original and promotes the polished copy, rolling back if promotion fails.
 
 Example:
 - `paper.md` → backup as `paper.origin.md`
@@ -94,7 +95,7 @@ Example:
 Rules:
 - The polished file is the final artifact to keep.
 - The original input is backed up by default for traceability; the user may delete `<name>.origin.md` after verification.
-- Step 4 is an operator workflow step, not something `polish.py` performs automatically.
+- Step 4 is explicit: run `finalize` only after reviewing the polished working copy; `polish` and `apply` never finalize automatically.
 
 ### Reference Examples
 - `examples/sample_input.md` — raw OCR/PDF input

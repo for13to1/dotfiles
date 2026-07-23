@@ -10,11 +10,14 @@ With pytest:   pytest test_analyze_staged.py
 """
 
 import os
+import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from analyze_staged import infer_change_type  # noqa: E402
+from analyze_staged import SCHEMA_VERSION, build_output, infer_change_type  # noqa: E402
 
 
 def _f(status, path, raw_status=None):
@@ -174,6 +177,29 @@ def test_word_boundary_filters_substring_matches():
     )
 
 
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+
+def test_build_output_from_real_staged_changes():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        repo = Path(temp_dir) / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-q")
+        (repo / "feature file.py").write_text("def feature():\n    return True\n", encoding="utf-8")
+        (repo / "asset.bin").write_bytes(b"\x00\x01\x02")
+        _git(repo, "add", "feature file.py", "asset.bin")
+
+        output = build_output(str(repo))
+
+        assert output["schema_version"] == SCHEMA_VERSION
+        assert output["summary"]["total_files"] == 2
+        files = {item["path"]: item for item in output["files"]}
+        assert "feature file.py" in files
+        assert files["asset.bin"]["binary"] is True
+        assert output["warnings"]["binary_files"] == ["asset.bin"]
+
+
 def _run(test_fns):
     passed, failed = 0, []
     for fn in test_fns:
@@ -196,6 +222,7 @@ if __name__ == "__main__":
         test_signal_counts,
         test_signal_file_counts,
         test_word_boundary_filters_substring_matches,
+        test_build_output_from_real_staged_changes,
     ]
     passed, failed = _run(tests)
     total = len(tests)

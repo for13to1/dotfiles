@@ -1132,3 +1132,31 @@ class TestIdempotency:
         out1 = polish.process(raw)
         out2 = polish.process(out1)
         assert out2 == out1, f"Not idempotent for: {description!r}\n--- pass1 ---\n{out1}\n--- pass2 ---\n{out2}"
+
+
+class TestFinalization:
+    def test_finalize_promotes_polished_and_backs_up_original(self, tmp_path):
+        source = tmp_path / "paper.md"
+        polished = tmp_path / "paper-polished.md"
+        source.write_text("raw", encoding="utf-8")
+        polished.write_text("clean", encoding="utf-8")
+
+        final_path, origin_path = polish.finalize_files(source)
+
+        assert final_path.read_text(encoding="utf-8") == "clean"
+        assert origin_path.read_text(encoding="utf-8") == "raw"
+        assert not polished.exists()
+
+    def test_finalize_refuses_existing_backup(self, tmp_path):
+        source = tmp_path / "paper.md"
+        polished = tmp_path / "paper-polished.md"
+        origin = tmp_path / "paper.origin.md"
+        source.write_text("raw", encoding="utf-8")
+        polished.write_text("clean", encoding="utf-8")
+        origin.write_text("older", encoding="utf-8")
+
+        with pytest.raises(FileExistsError):
+            polish.finalize_files(source)
+
+        assert source.read_text(encoding="utf-8") == "raw"
+        assert polished.read_text(encoding="utf-8") == "clean"

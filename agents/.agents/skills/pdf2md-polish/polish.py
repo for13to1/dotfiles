@@ -9,6 +9,7 @@ Usage:
     python polish.py polish input.md [-o output.md]
     python polish.py headings input.md [-c CONTEXT] [-o output.md]
     python polish.py apply input.md -m MAPPING [-o output.md]
+    python polish.py finalize input.md
 """
 
 import argparse
@@ -1267,6 +1268,27 @@ def apply_headings(text: str, mapping: dict[int, str]) -> str:
     return "\n".join(lines)
 
 
+def finalize_files(input_path: Path) -> tuple[Path, Path]:
+    """Back up the raw input and promote its polished sibling."""
+    polished_path = input_path.with_name(f"{input_path.stem}-polished{input_path.suffix}")
+    origin_path = input_path.with_name(f"{input_path.stem}.origin{input_path.suffix}")
+
+    if not input_path.is_file():
+        raise FileNotFoundError(f"Original file not found: {input_path}")
+    if not polished_path.is_file():
+        raise FileNotFoundError(f"Polished file not found: {polished_path}")
+    if origin_path.exists():
+        raise FileExistsError(f"Backup already exists: {origin_path}")
+
+    input_path.replace(origin_path)
+    try:
+        polished_path.replace(input_path)
+    except Exception:
+        origin_path.replace(input_path)
+        raise
+    return input_path, origin_path
+
+
 def main():
     parser = argparse.ArgumentParser(description="Deterministic markdown post-processing for PDF-converted documents.")
     sub = parser.add_subparsers(dest="command")
@@ -1312,8 +1334,11 @@ def main():
         help="Output file (default: overwrite input)",
     )
 
+    fin = sub.add_parser("finalize", help="Back up the original and promote the polished working copy")
+    fin.add_argument("input", type=str, help="Original markdown file")
+
     argv = sys.argv[1:]
-    if argv and argv[0] not in {"polish", "headings", "apply", "-h", "--help"}:
+    if argv and argv[0] not in {"polish", "headings", "apply", "finalize", "-h", "--help"}:
         argv = ["polish", *argv]
 
     args = parser.parse_args(argv)
@@ -1405,6 +1430,14 @@ def main():
         output_path = Path(args.output) if args.output else input_path
         output_path.write_text(result, encoding="utf-8")
         print(f"Done. Applied {len(mapping)} heading changes to {output_path}")
+
+    elif args.command == "finalize":
+        try:
+            final_path, origin_path = finalize_files(Path(args.input))
+        except (FileNotFoundError, FileExistsError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Done. Final: {final_path}; backup: {origin_path}")
 
 
 if __name__ == "__main__":
