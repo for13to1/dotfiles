@@ -820,10 +820,20 @@ class TestLatexDelimiterNormalization:
         assert r"\[" not in result and r"\]" not in result
 
     def test_latex_environment_preserved(self):
-        r"""\begin{...} environments are NOT converted (multi-line align etc.)."""
+        r"""\begin{...} environments are NOT converted to $$...$$."""
         result = polish.process("\\begin{align}\na &= b\n\\end{align}")
         assert "\\begin{align}" in result
         assert "\\end{align}" in result
+
+    def test_latex_environment_keeps_environment_form(self):
+        r"""LaTeX environments stay as environments even if internal spacing is normalized."""
+        text = "\\begin{align}\na &= b + c \\\\\n d &= e + f\n\\end{align}"
+        result = polish.process(text)
+        assert "\\begin{align}" in result
+        assert "\\end{align}" in result
+        assert "b+c" in result
+        assert "e+f" in result
+        assert "$$" not in result
 
 
 # ── Block boundary transitions ───────────────────────────────────────────────
@@ -1031,6 +1041,26 @@ class TestDefensiveBlockProcessing:
         text = "- a\n- b\n\nNormal paragraph."
         result = polish.process(text)
         assert "- a\n- b\n\nNormal paragraph." in result
+
+
+# ── Warning accounting ──────────────────────────────────────────────────────
+
+
+class TestWarningAccounting:
+    def test_unbalanced_display_math_increments_warning_count(self):
+        polish.process("$$\n\\frac{a}{\n")
+        assert polish.get_warning_count() == 1
+
+    def test_warning_count_resets_for_next_top_level_process_call(self):
+        polish.process("$$\n\\frac{a}{\n")
+        assert polish.get_warning_count() == 1
+        polish.process("Plain sentence.")
+        assert polish.get_warning_count() == 0
+
+    def test_nested_process_warnings_roll_up_to_outer_call(self):
+        text = "> $$\n> \\frac{a}{\n"
+        polish.process(text)
+        assert polish.get_warning_count() == 1
 
 
 # ── Idempotency ─────────────────────────────────────────────────────────────

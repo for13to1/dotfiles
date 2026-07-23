@@ -43,7 +43,7 @@ The first objective is to design a high-performance classifier, which runs in re
 |---|---|
 | `\(...\)` inline | `$...$` |
 | `\[...\]` display | `$$...$$` |
-| `\begin{...}` environments | **Untouched** (would lose alignment/numbering) |
+| `\begin{...}` environments | Treated as math block boundaries and not rewritten to `$$...$$`; internal whitespace normalization may still apply (rewriting would lose alignment/numbering) |
 
 ### Inline Math Spacing Normalization
 

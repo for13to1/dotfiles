@@ -28,6 +28,14 @@ _SENTINEL_LINK = "\x03"  # Protects markdown links and images
 _SENTINEL_WS = "\x04"  # Protects internal whitespace during inline-whitespace collapse
 
 
+# ── Warning state ───────────────────────────────────────────────────────────
+# process() is used recursively for list items and blockquotes. Keep warning
+# accounting scoped to the outermost call so CLI history can record a truthful
+# count for the full run.
+_WARNING_COUNT = 0
+_PROCESS_DEPTH = 0
+
+
 # ── Abbreviations & tokens that should NOT trigger sentence breaks ──────────
 ABBREVIATIONS = [
     "et al.",
@@ -750,10 +758,16 @@ def parse_blocks(text: str) -> list[Block]:
 
 
 def warn_block(block: Block, message: str) -> None:
+    global _WARNING_COUNT
+    _WARNING_COUNT += 1
     print(
         f"[WARNING] line {block.start_line}-{block.end_line} {block.kind}: {message}",
         file=sys.stderr,
     )
+
+
+def get_warning_count() -> int:
+    return _WARNING_COUNT
 
 
 def _is_cjk_or_punctuation(c: str) -> bool:
@@ -1106,7 +1120,8 @@ def process_display_math_block(block: Block) -> list[str]:
         return cleanup_math_content_spacing(stripped).split("\n")
     if stripped.startswith(r"\[") and stripped.endswith(r"\]"):
         # Normalize \[...\] display delimiters to $$...$$ for a consistent,
-        # widely-rendered output. \begin{...} environments are left untouched.
+        # widely-rendered output. Preserve LaTeX environment boundaries while
+        # allowing their math body to undergo the same whitespace cleanup.
         return ("$$" + cleanup_math_body(stripped[2:-2]) + "$$").split("\n")
     if _LATEX_BEGIN_RE.match(stripped):
         return cleanup_math_body(stripped).split("\n")
@@ -1167,17 +1182,25 @@ def format_processed_blocks(lines: list[str]) -> str:
 
 def process(text: str) -> str:
     """Full deterministic processing pipeline."""
-    text = (
-        text.replace(_SENTINEL_ABBR, "")
-        .replace(_SENTINEL_URL, "")
-        .replace(_SENTINEL_MATH, "")
-        .replace(_SENTINEL_LINK, "")
-        .replace(_SENTINEL_WS, "")
-    )
+    global _PROCESS_DEPTH, _WARNING_COUNT
+    _PROCESS_DEPTH += 1
+    if _PROCESS_DEPTH == 1:
+        _WARNING_COUNT = 0
 
-    blocks = parse_blocks(text)
-    lines = process_blocks(blocks)
-    return format_processed_blocks(lines)
+    try:
+        text = (
+            text.replace(_SENTINEL_ABBR, "")
+            .replace(_SENTINEL_URL, "")
+            .replace(_SENTINEL_MATH, "")
+            .replace(_SENTINEL_LINK, "")
+            .replace(_SENTINEL_WS, "")
+        )
+
+        blocks = parse_blocks(text)
+        lines = process_blocks(blocks)
+        return format_processed_blocks(lines)
+    finally:
+        _PROCESS_DEPTH -= 1
 
 
 # ── Heading tools for LLM ──────────────────────────────────────────────────
@@ -1341,7 +1364,7 @@ def main():
                     "timestamp": datetime.now().isoformat()[:19],
                     "file": input_path.name,
                     "sentences": sentences_count,
-                    "warnings": 0,
+                    "warnings": get_warning_count(),
                     "language": lang,
                     "notes": "Automated run log",
                 }

@@ -49,6 +49,6 @@ The `polish.py` script automatically performs the following deterministic cleanu
 - **Markdown link & image protection**: Preserves markdown link formats (`[text](url)`) and images (`![alt](url)`) during sentence splitting.
 - **Caption handling**: Reflows split figure/table captions.
 - **Recursive list & blockquote processing**: Reflows paragraphs inside list items and blockquotes recursively, preserving original indentation structures.
-- **Math delimiter normalization**: Converts `\(...\)` inline math to `$...$` and `\[...\]` display math to `$$...$$` (LaTeX environments like `\begin{align}` are left untouched to preserve multi-line alignments).
+- **Math delimiter normalization**: Converts `\(...\)` inline math to `$...$` and `\[...\]` display math to `$$...$$`. LaTeX environments like `\begin{align}...\end{align}` are treated as math block boundaries and are not rewritten to `$$...$$`; internal whitespace normalization may still apply.
 - **Block-local math handling (normalizing)**: Isolates math formulas and rewrites internal whitespace (e.g. `x_{ i }`→`x_{i}`, `a + b` -> `a+b`).
 - **One sentence per line**: Sentences end at `.`, `!`, `?`, `。`, `！`, `？` and are placed on their own line. Same-paragraph sentences are adjacent; paragraphs are separated by one blank line.

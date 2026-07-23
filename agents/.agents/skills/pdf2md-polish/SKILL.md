@@ -31,32 +31,38 @@ Load on demand:
 - **Currency vs math**: `$100` vs `$x + y$`; be careful with single-letter math like `$n$`.
 - **Hyphen vs en-dash**: script does not promote `-` to `–`; do that in LLM review when appropriate.
 - **Unbalanced `$$`**: script warns on stderr; fix delimiters manually.
-- **Ligatures / LaTeX envs**: ligatures are normalized; `\\begin{align}`-style blocks are left alone.
+- **Ligatures / LaTeX envs**: ligatures are normalized; `\begin{align}`-style blocks are treated as math block boundaries and are not rewritten to `$$...$$`; internal whitespace normalization may still apply.
 
 ## Workflow
 
 ### Step 1: Run the Polish Script
-Default output is a sibling file, not an in-place overwrite:
+Default output is a sibling working file, not an in-place overwrite:
 ```bash
-uv run $HOME/.agents/skills/pdf2md-polish/polish.py polish <input.md>
+uv run $HOME/.agents/skills/pdf2md-polish/polish.py polish paper.md
 ```
 Fallback: `python3` if `uv` is unavailable.
 
+Artifact convention:
+- Given `<name>.md`, the raw source is `<name>.md`. Do not edit it during review.
+- `<name>-polished.md` is the working copy created by Step 1 and used in Steps 2-3.
+- `<name>.origin.md` is the raw-source backup created during finalization.
+
 Subcommands:
-- `polish` — deterministic pipeline → `<input>-polished.md` (or `-o PATH`)
+- `polish` — deterministic pipeline → `<name>-polished.md`
 - `headings` — compact text heading skeleton for hierarchy decisions
-- `apply` — apply heading level mapping; defaults to overwriting the file passed in (use `-o` to write elsewhere)
+- `apply` — apply heading level mapping and overwrite the polished working copy
 
 ### Step 2: Adjust Heading Hierarchy
 1. Extract skeleton:
    ```bash
-   uv run $HOME/.agents/skills/pdf2md-polish/polish.py headings <polished.md>
+   uv run $HOME/.agents/skills/pdf2md-polish/polish.py headings paper-polished.md
    ```
 2. Choose hierarchy (title `#`, section `##`, subsection `###`) per [formatting-rules.md](references/formatting-rules.md).
 3. Apply mapping with 1-indexed line numbers as JSON keys (`{"148": "##"}`):
    ```bash
-   uv run $HOME/.agents/skills/pdf2md-polish/polish.py apply <polished.md> -m '{"148": "##", "203": "###"}'
+   uv run $HOME/.agents/skills/pdf2md-polish/polish.py apply paper-polished.md -m '{"148": "##", "203": "###"}'
    ```
+   `apply` updates the same polished working copy in place.
 
 ### Step 3: Semantic Review & Output
 
@@ -68,7 +74,27 @@ Only fix items on this checklist. Skip silently if clean:
 - [ ] Math punctuation placed outside/inside `$...$` incorrectly
 - [ ] Unbalanced `$$` reported on stderr
 
-**Output format**: fenced `diff` blocks for changed lines only (not the full document). Then apply with targeted file edits/patches.
+Review target:
+- Produce fenced `diff` blocks against the polished working copy from Steps 1-2, not against the original input file.
+- Apply those edits back to the same polished working copy.
+
+**Output format**: fenced `diff` blocks for changed lines only (not the full document). Then apply with targeted file edits/patches to `<name>-polished.md`.
+
+### Step 4: Finalize Files
+
+Default finalization:
+1. If `<name>.origin.md` already exists, stop and ask the user before replacing it.
+2. Rename the original `<name>.md` to `<name>.origin.md`.
+3. Rename the polished working copy `<name>-polished.md` to `<name>.md`.
+
+Example:
+- `paper.md` → backup as `paper.origin.md`
+- `paper-polished.md` → final deliverable `paper.md`
+
+Rules:
+- The polished file is the final artifact to keep.
+- The original input is backed up by default for traceability; the user may delete `<name>.origin.md` after verification.
+- Step 4 is an operator workflow step, not something `polish.py` performs automatically.
 
 ### Reference Examples
 - `examples/sample_input.md` — raw OCR/PDF input
