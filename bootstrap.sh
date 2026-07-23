@@ -118,8 +118,9 @@ case "$OS" in
 
         install_packages_from_file() {
             local manager="$1"
-            local list_file="${@: -1}"
-            local -a install_cmd=("${@:2:$#-2}")
+            local list_file="$2"
+            shift 2
+            local -a install_cmd=("$@")
             local -a packages=()
             while IFS= read -r pkg; do
                 [[ -n "$pkg" ]] && packages+=("$pkg")
@@ -159,7 +160,9 @@ case "$OS" in
             fi
 
             if [[ -f "$DOTFILES_DIR/_install/linux/apt-list.txt" ]]; then
-                install_packages_from_file "apt" sudo apt install -y "$DOTFILES_DIR/_install/linux/apt-list.txt"
+                install_packages_from_file \
+                    "apt" "$DOTFILES_DIR/_install/linux/apt-list.txt" \
+                    sudo apt install -y
             else
                 warn "未找到 _install/linux/apt-list.txt，跳过其他软件安装"
             fi
@@ -181,7 +184,9 @@ case "$OS" in
             fi
 
             if [[ -f "$DOTFILES_DIR/_install/linux/pacman-list.txt" ]]; then
-                install_packages_from_file "pacman" sudo pacman -S --noconfirm --needed "$DOTFILES_DIR/_install/linux/pacman-list.txt"
+                install_packages_from_file \
+                    "pacman" "$DOTFILES_DIR/_install/linux/pacman-list.txt" \
+                    sudo pacman -S --noconfirm --needed
             else
                 warn "未找到 _install/linux/pacman-list.txt，跳过其他软件安装"
             fi
@@ -236,11 +241,7 @@ ok "SSH 环境配置完成"
 # ── 4. Git 身份与基础配置 ─────────────────────────────────────────
 info "正在配置 Git 环境..."
 
-## 1. 清理可能残留的代理设置
-git config --global --unset http.proxy 2>/dev/null || true
-git config --global --unset https.proxy 2>/dev/null || true
-
-## 2. 初始化 Git LFS
+## 1. 初始化 Git LFS
 if command -v git-lfs &>/dev/null; then
     git lfs install --skip-repo
     info "检测到 Git LFS，正在拉取真实数据文件..."
@@ -248,7 +249,7 @@ if command -v git-lfs &>/dev/null; then
     ok "Git LFS 初始化与同步完毕"
 fi
 
-## 3. Git 本地用户信息 (~/.gitconfig.local)
+## 2. Git 本地用户信息 (~/.gitconfig.local)
 if [[ ! -f "$HOME/.gitconfig.local" ]]; then
     echo ""
     warn "未发现 ~/.gitconfig.local （用于存储 Git 用户名和邮箱）"
@@ -387,6 +388,8 @@ else
     info "从 Makefile 加载模块: $STOW_MODULES"
 fi
 
+read -r -a STOW_MODULE_ARRAY <<< "$STOW_MODULES"
+
 ## 2. 动态备份明确冲突的目标路径
 # 这些是系统共享目录，不能被备份（备份后 stow 会对整个目录进行折叠）
 SHARED_PARENT_DIRS=(".config")
@@ -453,48 +456,15 @@ cd "$DOTFILES_DIR"
 if [[ -z "${STOW_MODULES:-}" ]]; then
     warn "没有需要挂载的模块，跳过 Stow"
 else
-    # 按 Stow 的目录折叠边界递归，不进入已经整体链接的目录。
-    check_stow_link_parents() {
-        local mod="$1"
-        local dir="$2"
-        local entry rel target parent source_resolved target_resolved
-
-        while IFS= read -r -d '' entry; do
-            rel="${entry#"$mod"/}"
-            target="$HOME/$rel"
-            parent="$(dirname "$target")"
-            if [[ -L "$parent" ]]; then
-                error "$parent 是软链接，请手动处理后再运行 stow"
-            fi
-
-            if [[ -d "$entry" && ! -L "$entry" ]]; then
-                if [[ -L "$target" ]]; then
-                    source_resolved="$(cd "$entry" 2>/dev/null && pwd -P)"
-                    target_resolved="$(cd "$target" 2>/dev/null && pwd -P || true)"
-                    if [[ "$source_resolved" != "$target_resolved" ]]; then
-                        error "$target 是软链接，请手动处理后再运行 stow"
-                    fi
-                elif [[ -d "$target" ]]; then
-                    check_stow_link_parents "$mod" "$entry"
-                fi
-            fi
-        done < <(find "$dir" -mindepth 1 -maxdepth 1 \
-            ! -name ".stow-local-ignore" ! -name ".DS_Store" ! -name ".git" \
-            \( -type f -o -type l -o -type d \) -print0)
-    }
-
-    for mod in $STOW_MODULES; do
-        if [[ -d "$mod" ]]; then
-            check_stow_link_parents "$mod" "$mod"
-        fi
-    done
-    for mod in $STOW_MODULES; do
+    bash "$DOTFILES_DIR/_scripts/check-stow-parents.sh" \
+        "$DOTFILES_DIR" "$HOME" "${STOW_MODULE_ARRAY[@]}"
+    for mod in "${STOW_MODULE_ARRAY[@]}"; do
         if [[ -d "$mod" ]]; then
             backup_module_conflicts "$mod"
         fi
     done
     mkdir -p "$HOME/.config"
-    stow -R $STOW_MODULES
+    stow -R "${STOW_MODULE_ARRAY[@]}"
     ok "Stow 挂载完成"
 fi
 

@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # brew_mirror — Homebrew 镜像源切换
 # 用法: brew_mirror [-q] [tuna | ustc | ali | reset]
 #   -q / --quiet  静默模式，不打印切换提示（适合在 .zshrc.local 中调用）

@@ -57,7 +57,7 @@ copy_templates() {
 
     # 检查目录是否有文件
     local has_files=false
-    if [ -n "$(ls -A ${src_dir} 2>/dev/null)" ]; then
+    if [ -n "$(ls -A "$src_dir" 2>/dev/null)" ]; then
         has_files=true
     fi
     [[ "$has_files" == "false" ]] && return 0

@@ -31,7 +31,8 @@ _get_pretty_domain() {
 }
 
 set_default() {
-    local target="$1" key="$2" type="$3" value="$4" desc="${5:-$key}"
+    local target="$1" key="$2" type="$3" value="$4"
+    local desc="${5:-$key}"
     local pretty_domain
     pretty_domain=$(_get_pretty_domain "$target")
     
