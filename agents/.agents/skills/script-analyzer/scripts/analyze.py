@@ -20,6 +20,7 @@ class RiskLevel(Enum):
 
 
 SCHEMA_VERSION = 1
+ROOT_RM_RF_PATTERN = r"rm\s+-rf\s+/(?:\s*(?:--no-preserve-root)?\s*(?:#.*)?$|\*|\s+--no-preserve-root\b)"
 
 
 @dataclass
@@ -102,7 +103,7 @@ PATTERNS = {
         "dangerous": [
             r"chmod\s+777",
             r"chmod\s+\+s",
-            r"rm\s+-rf\s+/(?:\s*(?:#.*)?$)",
+            ROOT_RM_RF_PATTERN,
             r"mkfs",
             r"dd\s+if=",
             r":(){ :\|:& };:",
@@ -174,7 +175,7 @@ PATTERNS = {
 HIGH_RISK_PATTERNS = [
     r"curl.*\|\s*(ba)?sh",  # Pipe to shell
     r"wget.*\|\s*(ba)?sh",  # Pipe to shell
-    r"rm\s+-rf\s+/(?:\s*(?:#.*)?$)",  # Recursive delete from root
+    ROOT_RM_RF_PATTERN,  # Recursive delete from root
     r"chmod\s+777",  # World-writable
     r"chmod\s+\+s",  # Setuid/setgid
     r"eval\s*\(",  # Code evaluation

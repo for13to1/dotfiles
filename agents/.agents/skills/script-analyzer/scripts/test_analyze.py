@@ -78,6 +78,23 @@ def test_tmp_cleanup_is_not_root_delete():
     assert not any(finding.category == "dangerous" for finding in result.findings)
 
 
+def test_root_delete_variants_are_high_risk():
+    cases = [
+        "rm -rf /\n",
+        "rm -rf /*\n",
+        "rm -rf / --no-preserve-root\n",
+    ]
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        for idx, command in enumerate(cases):
+            script = Path(temp_dir) / f"root-delete-{idx}.sh"
+            script.write_text(f"#!/usr/bin/env bash\n{command}", encoding="utf-8")
+            result = analyze_script(str(script))
+
+            assert result.risk_level == RiskLevel.HIGH.value
+            assert any(finding.category == "dangerous" for finding in result.findings)
+
+
 def test_non_regular_file_is_rejected():
     with tempfile.TemporaryDirectory() as temp_dir:
         fifo = Path(temp_dir) / "script.fifo"
@@ -98,6 +115,7 @@ if __name__ == "__main__":
         test_comments_do_not_create_high_risk_findings()
         test_ruby_and_perl_language_detection()
         test_tmp_cleanup_is_not_root_delete()
+        test_root_delete_variants_are_high_risk()
         test_non_regular_file_is_rejected()
         print("\n✓ All tests passed!")
     except Exception as e:
