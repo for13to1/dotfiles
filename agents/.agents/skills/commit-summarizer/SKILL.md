@@ -1,6 +1,6 @@
 ---
 name: commit-summarizer
-description: Analyze staged Git changes and generate a Conventional Commit message. Use when the user asks to summarize or review staged changes, write a commit message from the index, or commit the staged changes. Do not use for generic change questions or unstaged work unless the user explicitly refers to Git staging or committing.
+description: Analyze staged Git changes and generate Conventional Commit messages. Use for `总结暂存修改`, `summarize staged changes`, reviewing staged changes, writing commit messages from the index, or committing staged changes. Avoid generic change reviews or unstaged work unless staging or committing is explicit.
 ---
 
 # Commit Summarizer
