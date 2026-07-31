@@ -41,6 +41,8 @@ dotfiles/
 │       └── setup.sh            # Linux 系统设置
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本
+├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
+├── .gitattributes
 ├── .gitignore
 └── README.md
 ```
