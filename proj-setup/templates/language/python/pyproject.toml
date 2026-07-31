@@ -26,8 +26,8 @@ fix = true
 
 [tool.ruff.lint]
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
+    "E",   # PEP 8 style errors
+    "W",   # PEP 8 style warnings
     "F",   # pyflakes
     "I",   # isort
     "B",   # flake8-bugbear
@@ -39,6 +39,8 @@ select = [
 ]
 ignore = [
     "E501", # line too long (handled by formatter)
+    "RUF002", # ambiguous unicode character in docstring
+    "RUF003", # ambiguous unicode character in comment
 ]
 
 [tool.ruff.lint.isort]

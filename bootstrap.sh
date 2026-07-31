@@ -383,7 +383,7 @@ fi
 
 if [[ -z "${STOW_MODULES:-}" ]]; then
     warn "Makefile 中未发现有效的 MODULES 定义，正在尝试默认列表..."
-    STOW_MODULES="agents codestyle zsh git vim nvim tmux ripgrep"
+    STOW_MODULES="agents zsh git vim nvim tmux ripgrep"
 else
     info "从 Makefile 加载模块: $STOW_MODULES"
 fi
@@ -531,13 +531,13 @@ fi
 # ── 9. 自定义脚本部署 ──────────────────────────────────────────────
 info "正在部署自定义脚本..."
 
-# proj-init: 项目初始化工具
-if [[ -f "$DOTFILES_DIR/proj-init/bin/proj-init.sh" ]]; then
+# proj-setup: 项目初始化工具
+if [[ -f "$DOTFILES_DIR/proj-setup/bin/proj-setup.sh" ]]; then
     mkdir -p "$HOME/.local/bin"
-    ln -sf "$DOTFILES_DIR/proj-init/bin/proj-init.sh" "$HOME/.local/bin/proj-init"
-    ok "proj-init 已部署到 ~/.local/bin/proj-init"
+    ln -sf "$DOTFILES_DIR/proj-setup/bin/proj-setup.sh" "$HOME/.local/bin/proj-setup"
+    ok "proj-setup 已部署到 ~/.local/bin/proj-setup"
 else
-    warn "proj-init.sh 未找到，跳过部署"
+    warn "proj-setup.sh 未找到，跳过部署"
 fi
 
 # ── 10. 完成 ───────────────────────────────────────────────────────

@@ -10,9 +10,6 @@ dotfiles/
 │   └── .agents/
 │       ├── AGENTS.md           # Agent 通用原则
 │       └── skills/             # 可复用专家技能
-├── codestyle/                  # Stow 包：代码风格规范
-│   ├── .clang-format
-│   └── .editorconfig
 ├── zsh/                        # Stow 包：Zsh 配置
 │   ├── .zshrc
 │   └── .zsh.d/
@@ -27,6 +24,9 @@ dotfiles/
 │   └── .vimrc
 ├── vscode/                     # VSCode 配置备份
 │   └── settings.json
+├── proj-setup/                 # 项目配置脚本及模板
+│   ├── bin/
+│   └── templates/
 ├── _install/                   # 平台专属包管理器安装清单
 │   ├── mac/
 │   │   ├── Brewfile            # Homebrew 完整软件清单
