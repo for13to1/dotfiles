@@ -142,11 +142,11 @@ ssh-copy-id <user>@<host>
 
 ### 更新 Brewfile
 
-想要在 macOS 上同步软件安装清单，运行以下指令：
+`_install/mac/Brewfile` 属于按需软件清单，推荐手动维护：
 
 ```bash
-# 1. 导出当前已安装软件清单
-brew bundle dump --file=~/dotfiles/_install/mac/Brewfile --force
+# 1. 编辑清单
+${EDITOR:-vi} ~/dotfiles/_install/mac/Brewfile
 
 # 2. 提交更新
 cd ~/dotfiles && git add -A && git commit -m "feat: update brewfile" && git push
