@@ -1,12 +1,14 @@
--- Neovim version check (0.11+ is required for new LSP APIs)
-if vim.fn.has("nvim-0.11") == 0 then
-  vim.notify("Neovim 0.11+ is required for this configuration!", vim.log.levels.ERROR)
-  return
-end
+-- Neovim version gates: version-sensitive plugins are only registered when the
+-- running Neovim satisfies their minimum requirement, so this single config
+-- works on both old and new Neovim (older versions get a reduced feature set).
+local has_nvim_010 = vim.fn.has("nvim-0.10") == 1
+local has_nvim_011 = vim.fn.has("nvim-0.11") == 1
+local has_nvim_012 = vim.fn.has("nvim-0.12") == 1
 
 -- Bootstrap lazy.nvim (Plugin Manager)
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.uv.fs_stat(lazypath) then
+local uv = vim.uv or vim.loop
+if not uv.fs_stat(lazypath) then
   vim.fn.system({
     "git",
     "clone",
@@ -55,7 +57,8 @@ vim.keymap.set("i", "?", "?<C-g>u")
 vim.keymap.set("i", ";", ";<C-g>u")
 
 -- Plugins Configuration
-require("lazy").setup({
+-- 按 Neovim 版本门控动态构建插件列表，兼容旧版与新版。
+local plugins = {
   -- UI / Theme
   { "sainnhe/sonokai", lazy = false, priority = 1000, config = function() vim.cmd.colorscheme("sonokai") end },
   { "nvim-lualine/lualine.nvim", dependencies = { "nvim-tree/nvim-web-devicons" }, config = true },
@@ -79,11 +82,6 @@ require("lazy").setup({
     },
   },
 
-  -- Syntax Highlighting
-  { "nvim-treesitter/nvim-treesitter", build = ":TSUpdate", config = function()
-    require("nvim-treesitter").setup({ ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" }, auto_install = true })
-  end },
-
   -- Git
   { "lewis6991/gitsigns.nvim", config = true },
   { "tpope/vim-fugitive" },
@@ -95,46 +93,6 @@ require("lazy").setup({
   { "tpope/vim-sleuth" }, -- auto indent
   { "windwp/nvim-autopairs", config = true }, -- auto close brackets
   { "mbbill/undotree", keys = { { "<leader>u", "<cmd>UndotreeToggle<cr>", desc = "Toggle UndoTree" } } },
-
-  -- LSP / Autocompletion (Replacing ALE)
-  { "williamboman/mason.nvim", config = true },
-  { "williamboman/mason-lspconfig.nvim", config = function()
-      require("mason-lspconfig").setup({
-          ensure_installed = { "pylsp", "rust_analyzer", "ts_ls", "bashls" }
-      })
-  end },
-  { "neovim/nvim-lspconfig", config = function()
-      local servers = { "pylsp", "rust_analyzer", "ts_ls", "bashls" }
-      for _, server in ipairs(servers) do
-        vim.lsp.config(server, {})
-      end
-      vim.lsp.enable(servers)
-      -- Keymaps
-      vim.keymap.set('n', 'gd', vim.lsp.buf.definition, {desc="Go to definition"})
-      vim.keymap.set('n', 'K', vim.lsp.buf.hover, {desc="Hover info"})
-      vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, {desc="Rename symbol"})
-      vim.keymap.set('n', '<leader>a', vim.lsp.buf.code_action, {desc="Code action"})
-  end },
-
-  -- Formatting
-  { "stevearc/conform.nvim",
-    event = { "BufWritePre" },
-    cmd = { "ConformInfo" },
-    config = function()
-      require("conform").setup({
-        formatters_by_ft = {
-          lua = { "stylua" },
-          python = { "isort", "black" },
-          rust = { "rustfmt" },
-          javascript = { "prettier" },
-          typescript = { "prettier" },
-          json = { "prettier" },
-          sh = { "shfmt" },
-        },
-        format_on_save = { timeout_ms = 500, lsp_fallback = true },
-      })
-    end
-  },
 
   -- Completion
   { "hrsh7th/nvim-cmp",
@@ -161,5 +119,65 @@ require("lazy").setup({
         }, { { name = 'buffer' }, { name = 'path' } })
       })
     end
-  }
-})
+  },
+}
+
+-- LSP / Formatting (requires Neovim 0.10+)
+if has_nvim_010 then
+  vim.list_extend(plugins, {
+    { "williamboman/mason.nvim", config = true },
+    { "williamboman/mason-lspconfig.nvim", config = function()
+        require("mason-lspconfig").setup({
+            ensure_installed = { "pylsp", "rust_analyzer", "ts_ls", "bashls" }
+        })
+    end },
+    { "neovim/nvim-lspconfig", config = function()
+        local servers = { "pylsp", "rust_analyzer", "ts_ls", "bashls" }
+        if has_nvim_011 then
+          for _, server in ipairs(servers) do
+            vim.lsp.config(server, {})
+          end
+          vim.lsp.enable(servers)
+        else
+          local lspconfig = require("lspconfig")
+          for _, server in ipairs(servers) do
+            lspconfig[server].setup({})
+          end
+        end
+        -- Keymaps
+        vim.keymap.set('n', 'gd', vim.lsp.buf.definition, {desc="Go to definition"})
+        vim.keymap.set('n', 'K', vim.lsp.buf.hover, {desc="Hover info"})
+        vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, {desc="Rename symbol"})
+        vim.keymap.set('n', '<leader>a', vim.lsp.buf.code_action, {desc="Code action"})
+    end },
+    { "stevearc/conform.nvim",
+      event = { "BufWritePre" },
+      cmd = { "ConformInfo" },
+      config = function()
+        require("conform").setup({
+          formatters_by_ft = {
+            lua = { "stylua" },
+            python = { "isort", "black" },
+            rust = { "rustfmt" },
+            javascript = { "prettier" },
+            typescript = { "prettier" },
+            json = { "prettier" },
+            sh = { "shfmt" },
+          },
+          format_on_save = { timeout_ms = 500, lsp_fallback = true },
+        })
+      end
+    },
+  })
+end
+
+-- Syntax Highlighting (requires Neovim 0.12+)
+if has_nvim_012 then
+  vim.list_extend(plugins, {
+    { "nvim-treesitter/nvim-treesitter", build = ":TSUpdate", config = function()
+      require("nvim-treesitter").setup({ ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" }, auto_install = true })
+    end },
+  })
+end
+
+require("lazy").setup(plugins)
