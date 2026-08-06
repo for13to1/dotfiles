@@ -1,4 +1,6 @@
 eza
+bat
+fd-find
 ripgrep
 fzf
 stow

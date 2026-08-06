@@ -1,4 +1,6 @@
 eza
+bat
+fd
 ripgrep
 fzf
 stow
