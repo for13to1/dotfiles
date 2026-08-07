@@ -29,7 +29,9 @@ check_tree() {
         if [[ -d "$entry" && ! -L "$entry" ]]; then
             if [[ -L "$target" ]]; then
                 source_resolved="$(cd "$entry" 2>/dev/null && pwd -P)"
-                target_resolved="$(cd "$target" 2>/dev/null && pwd -P || true)"
+                if ! target_resolved="$(cd "$target" 2>/dev/null && pwd -P)"; then
+                    target_resolved=""
+                fi
                 if [[ "$source_resolved" != "$target_resolved" ]]; then
                     echo "❌ $target 是软链接，请手动处理后再运行 stow" >&2
                     return 1

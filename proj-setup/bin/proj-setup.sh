@@ -20,7 +20,14 @@
 set -euo pipefail
 
 # ── 配置 ──────────────────────────────────────────────────────────
-DOTFILES_DIR="${HOME}/dotfiles"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+DOTFILES_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TEMPLATES_DIR="${DOTFILES_DIR}/proj-setup/templates"
 BASE_TEMPLATES_DIR="${TEMPLATES_DIR}/base"
 VCS_TEMPLATES_DIR="${TEMPLATES_DIR}/vcs"

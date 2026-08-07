@@ -367,7 +367,7 @@ fi
 info "正在使用 Stow 挂载配置文件..."
 
 ## 1. 确定模块列表（单一真值源 SSOT）
-if [[ -f "Makefile" ]]; then
+if [[ -f "$DOTFILES_DIR/Makefile" ]]; then
     STOW_MODULES=$(awk '/^[[:space:]]*MODULES[[:space:]]*[:+]?=/ {
         gsub(/^[[:space:]]*MODULES[[:space:]]*[:+]?=[[:space:]]*/, "");
         line = $0;
@@ -378,7 +378,7 @@ if [[ -f "Makefile" ]]; then
         gsub(/#.*$/, "", line);
         gsub(/\\/, "", line);
         print line;
-    }' Makefile | xargs)
+    }' "$DOTFILES_DIR/Makefile" | xargs)
 fi
 
 if [[ -z "${STOW_MODULES:-}" ]]; then
