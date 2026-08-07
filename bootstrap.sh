@@ -14,12 +14,13 @@ ok()    { echo -e "${GREEN}✅ $*${NC}"; }
 warn()  { echo -e "${YELLOW}⚠️  $*${NC}"; }
 error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
 
-DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# 确保脚本目录直接位于 $HOME 下，否则 stow 软链接会把文件挂载到错误的位置
-if [[ "$(dirname "$DOTFILES_DIR")" != "$HOME" ]]; then
-    error "项目目录必须直接位于您的 Home 目录下（例如 ~/dotfiles）。\n当前路径为: $DOTFILES_DIR\n请将项目移动到 $HOME 目录下再运行。"
-fi
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
+done
+DOTFILES_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 # ── 1. 检测操作系统 ──────────────────────────────────────────────
 OS="$(uname -s)"
@@ -416,7 +417,7 @@ backup_explicit_conflicts() {
                 if [[ "$link_target" != /* ]]; then
                     link_target="$(cd "$(dirname "$p")" && cd "$(dirname "$link_target")" 2>/dev/null && pwd)/$(basename "$link_target")"
                 fi
-                if [[ "$link_target" == "$DOTFILES_DIR"* ]]; then
+                if [[ "$link_target" == "$DOTFILES_DIR" || "$link_target" == "$DOTFILES_DIR/"* ]]; then
                     return 0
                 fi
                 break
@@ -464,7 +465,7 @@ else
         fi
     done
     mkdir -p "$HOME/.config"
-    stow -R "${STOW_MODULE_ARRAY[@]}"
+    stow -t "$HOME" -R "${STOW_MODULE_ARRAY[@]}"
     ok "Stow 挂载完成"
 fi
 

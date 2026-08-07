@@ -4,12 +4,12 @@
 #   -q / --quiet  静默模式，不打印切换提示（适合在 .zshrc.local 中调用）
 function brew_mirror() {
     local quiet=0
-    if [[ "$1" == "-q" || "$1" == "--quiet" ]]; then
+    if [[ "${1:-}" == "-q" || "${1:-}" == "--quiet" ]]; then
         quiet=1
         shift
     fi
 
-    local target=$1
+    local target=${1:-}
 
     # 无参数 → 仅显示当前状态
     if [[ -z "$target" ]]; then

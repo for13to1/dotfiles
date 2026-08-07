@@ -13,9 +13,9 @@ MODULES := agents zsh git vim nvim tmux ripgrep
 # 默认一键同步：Restow 所有模块
 sync:
 	@bash _scripts/check-stow-parents.sh "$(CURDIR)" "$(HOME)" $(MODULES)
-	@mkdir -p $(HOME)/.config
+	@mkdir -p "$(HOME)/.config"
 	@echo "正在同步模块: $(MODULES) ..."
-	@stow -R $(MODULES)
+	@stow -t "$(HOME)" -R $(MODULES)
 	@echo "同步完成！"
 
 # 验证所有模块的软链接是否已正确建立

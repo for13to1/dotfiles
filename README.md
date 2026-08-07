@@ -134,9 +134,9 @@ ssh-copy-id <user>@<host>
 
 ## 🤖 AI Agents 配置
 
-基于 `.agents` 标准，管理可跨工具复用的 AI 专家技能 (Skills) 与自动化工作流 (Workflows)。
+基于 Agent Skills 的目录约定，管理可跨工具复用的 AI 专家技能 (Skills)。
 
-**生态兼容**: 挂载至 `~/.agents` 后，可被 Cursor, Antigravity, Claude Code 等工具自动搜索并启用。
+**生态兼容**: 挂载至 `~/.agents/` 后，可被 GitHub Copilot/VS Code、Gemini CLI、OpenCode、Zed、Warp、Codex CLI 等支持该路径的工具发现。
 
 ## 🔄 日常维护
 

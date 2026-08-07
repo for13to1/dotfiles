@@ -200,7 +200,13 @@ function grnh() {
 
 function base64_encode() { echo -n "$1" | base64; }
 
-function base64_decode() { echo -n "$1" | base64 -d; }
+function base64_decode() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo -n "$1" | base64 -D
+    else
+        echo -n "$1" | base64 -d
+    fi
+}
 
 function csv_shape() {
     if [ "$#" -ne 1 ]; then echo "Usage: csv_shape <csv_file>"; return 1; fi
