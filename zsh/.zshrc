@@ -104,6 +104,10 @@ fi
 # <<< lazy conda loading <<<
 
 # >>> fnm loading >>>
+if [[ "$OSTYPE" == linux* ]] && ! command -v fnm &>/dev/null; then
+    [[ -x "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/fnm" ]] \
+        && export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/fnm:$PATH"
+fi
 if command -v fnm &>/dev/null; then
     eval "$(fnm env --use-on-cd --shell zsh)"
 fi
