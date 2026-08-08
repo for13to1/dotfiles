@@ -3,26 +3,12 @@
 
 set -euo pipefail
 
-# ── 彩色输出 ──────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()  { echo -e "${BLUE}ℹ️  $*${NC}"; }
-ok()    { echo -e "${GREEN}✅ $*${NC}"; }
-warn()  { echo -e "${YELLOW}⚠️  $*${NC}"; }
-error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../../_scripts/common.sh"
 
 # 仅在 Debian / Ubuntu 路线下接管 npm 生态工具链安装。
-is_debian_like=false
-if [[ -r /etc/os-release ]]; then
-    # shellcheck disable=SC1091
-    source /etc/os-release
-    if [[ "${ID:-}" == "ubuntu" || "${ID:-}" == "debian" || "${ID_LIKE:-}" == *"debian"* ]]; then
-        is_debian_like=true
-    fi
-fi
-
-if ! $is_debian_like; then
-    exit 0
-fi
+is_debian_like || exit 0
 
 # ── Node 环境激活 ─────────────────────────────────────────────────
 # 复用本地 fnm 管理的 Node，不自装运行时。fnm 安装时带 --skip-shell，
@@ -83,27 +69,6 @@ node_version_ok() {
     major="${ver%%.*}"; minor="${ver#*.}"; minor="${minor%%.*}"
     [[ -n "$major" && -n "$minor" ]] || return 1
     [[ "$major" -gt 22 ]] || { [[ "$major" -eq 22 ]] && [[ "$minor" -ge 19 ]]; }
-}
-
-install_with_prompt() {
-    local check_cmd="$1"
-    local prompt="$2"
-    local install_fn="$3"
-    local success_msg="$4"
-
-    if command -v "$check_cmd" &>/dev/null; then
-        return 0
-    fi
-
-    warn "$prompt"
-    read -rp "是否现在安装？ [y/N]: " reply
-    if [[ "$reply" =~ ^[Yy]$ ]]; then
-        if "$install_fn"; then
-            ok "$success_msg"
-        else
-            warn "安装未完成，请稍后手动重试"
-        fi
-    fi
 }
 
 install_pi() {

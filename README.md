@@ -39,6 +39,9 @@ dotfiles/
 ├── _setup/                     # 系统底层偏好与权限初始化脚本
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
+├── _scripts/                   # shell 基础设施
+│   ├── common.sh               # 颜色定义、函数定义等
+│   └── check-stow-parents.sh   # Stow 挂载前父目录检查
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
