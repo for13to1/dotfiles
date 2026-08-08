@@ -27,18 +27,17 @@ dotfiles/
 ├── proj-setup/                 # 项目配置脚本及模板
 │   ├── bin/
 │   └── templates/
-├── _install/                   # 平台专属包管理器安装清单
+├── _install/                   # 平台专属软件安装
 │   ├── mac/
 │   │   ├── Brewfile            # Homebrew 完整软件清单
 │   │   └── Brewfile.essential  # Homebrew 必备软件清单
 │   └── linux/
 │       ├── apt-list.txt        # Debian/Ubuntu 软件包清单
-│       └── pacman-list.txt     # Arch Linux 软件包清单
+│       ├── pacman-list.txt     # Arch Linux 软件包清单
+│       └── curl-install.sh     # 非系统包管理器途径的软件安装
 ├── _setup/                     # 系统底层偏好与权限初始化脚本
-│   ├── mac/
-│   │   └── setup.sh            # macOS 系统设置
-│   └── linux/
-│       └── setup.sh            # Linux 系统设置
+│   └── mac/
+│       └── setup.sh            # macOS 系统设置
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
@@ -60,7 +59,7 @@ cd ~/dotfiles && bash bootstrap.sh
 `bootstrap.sh` 会自动引导并处理以下流程：
 
 1. **环境检测**：自动安装 Xcode CLT (macOS) 与 Homebrew，校验核心依赖。
-2. **软件安装**：按清单安装必备工具，应用 macOS/Linux 系统设置。
+2. **软件安装**：按清单安装必备工具，应用 macOS 系统设置。
 3. **SSH 基础设施**：交互式生成/检测 SSH 密钥，加固目录权限。
 4. **Git 身份配置**：初始化 Git LFS，交互式创建本地身份配置。
 5. **Shell 环境**：部署 Oh My Zsh 及其插件生态，自动切换默认 Shell。

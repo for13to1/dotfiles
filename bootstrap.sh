@@ -31,7 +31,12 @@ case "$OS" in
     Darwin*)
         info "🍎 macOS 环境，开始配置..."
 
-        source "$DOTFILES_DIR/zsh/.zsh.d/brew_mirror.sh"
+        if [[ -f "$DOTFILES_DIR/zsh/.zsh.d/brew_mirror.sh" ]]; then
+            # shellcheck disable=SC1091
+            source "$DOTFILES_DIR/zsh/.zsh.d/brew_mirror.sh"
+        else
+            error "未找到 brew_mirror.sh"
+        fi
 
         # 询问是否需要使用镜像源加速
         echo ""
@@ -195,8 +200,8 @@ case "$OS" in
             warn "未识别的 Linux 包管理器，请手动安装 zsh 及所需软件"
         fi
 
-        if [[ -f "$DOTFILES_DIR/_setup/linux/setup.sh" ]]; then
-            bash "$DOTFILES_DIR/_setup/linux/setup.sh"
+        if [[ -f "$DOTFILES_DIR/_install/linux/curl-install.sh" ]]; then
+            bash "$DOTFILES_DIR/_install/linux/curl-install.sh"
         fi
         ;;
 

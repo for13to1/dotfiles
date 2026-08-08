@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _setup/linux/setup.sh — Linux 系统级优化脚本
+# _install/linux/curl-install.sh — 非系统包管理器途径的软件安装
 
 set -euo pipefail
 
