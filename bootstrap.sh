@@ -203,6 +203,10 @@ case "$OS" in
         if [[ -f "$DOTFILES_DIR/_install/linux/curl-install.sh" ]]; then
             bash "$DOTFILES_DIR/_install/linux/curl-install.sh"
         fi
+
+        if [[ -f "$DOTFILES_DIR/_install/linux/npm-install.sh" ]]; then
+            bash "$DOTFILES_DIR/_install/linux/npm-install.sh"
+        fi
         ;;
 
     *)

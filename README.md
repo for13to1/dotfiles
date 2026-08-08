@@ -34,7 +34,8 @@ dotfiles/
 │   └── linux/
 │       ├── apt-list.txt        # Debian/Ubuntu 软件包清单
 │       ├── pacman-list.txt     # Arch Linux 软件包清单
-│       └── curl-install.sh     # 非系统包管理器途径的软件安装
+│       ├── curl-install.sh     # 官方安装器途径的软件安装
+│       └── npm-install.sh      # npm 生态软件安装（基于 fnm Node）
 ├── _setup/                     # 系统底层偏好与权限初始化脚本
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置

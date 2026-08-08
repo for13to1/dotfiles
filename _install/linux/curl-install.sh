@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/linux/curl-install.sh — 非系统包管理器途径的软件安装
+# _install/linux/curl-install.sh — 语言生态包管理器（fnm/rustup/uv）途径的软件安装
 
 set -euo pipefail
 
@@ -22,13 +22,19 @@ fi
 
 install_with_prompt() {
     local check_cmd="$1"
-    local prompt="$2"
-    local install_fn="$3"
-    local success_msg="$4"
+    local known_paths="$2"
+    local prompt="$3"
+    local install_fn="$4"
+    local success_msg="$5"
 
     if command -v "$check_cmd" &>/dev/null; then
         return 0
     fi
+
+    local p
+    for p in $known_paths; do
+        [[ -x "$p" ]] && return 0
+    done
 
     if ! $is_debian_like; then
         return 0
@@ -53,18 +59,24 @@ install_rustup() {
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
 }
 
+install_uv() {
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+}
+
 install_with_prompt \
-    "fnm" \
+    "fnm" "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/fnm" \
     "未检测到 fnm，是否通过官网安装器安装？" \
     "install_fnm" \
     "fnm 安装完成"
 
 install_with_prompt \
-    "rustup" \
+    "rustup" "$HOME/.cargo/bin/rustup" \
     "未检测到 rustup，是否通过官网安装器安装？" \
     "install_rustup" \
     "rustup 安装完成"
 
-if $is_debian_like && ! command -v node &>/dev/null && command -v fnm &>/dev/null; then
-    info "已安装 fnm，但尚未检测到 Node。你之后可以运行: fnm install --lts"
-fi
+install_with_prompt \
+    "uv" "$HOME/.local/bin/uv" \
+    "未检测到 uv，是否通过官网安装器安装？" \
+    "install_uv" \
+    "uv 安装完成"
