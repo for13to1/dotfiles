@@ -28,17 +28,12 @@ while [[ -L "$SCRIPT_PATH" ]]; do
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
 DOTFILES_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# shellcheck disable=SC1091
+source "$DOTFILES_DIR/_scripts/common.sh"
 TEMPLATES_DIR="${DOTFILES_DIR}/proj-setup/templates"
 BASE_TEMPLATES_DIR="${TEMPLATES_DIR}/base"
 VCS_TEMPLATES_DIR="${TEMPLATES_DIR}/vcs"
 LANGUAGE_TEMPLATES_DIR="${TEMPLATES_DIR}/language"
-
-# ── 颜色输出 ──────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()  { echo -e "${BLUE}ℹ️  $*${NC}"; }
-ok()    { echo -e "${GREEN}✅ $*${NC}"; }
-warn()  { echo -e "${YELLOW}⚠️  $*${NC}"; }
-error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
 
 # ── 用法说明 ──────────────────────────────────────────────────────
 usage() {

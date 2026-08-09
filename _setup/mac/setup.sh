@@ -5,12 +5,10 @@
 
 set -euo pipefail
 
-# ── 彩色输出 ──────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()  { echo -e "${BLUE}ℹ️  $*${NC}"; }
-ok()    { echo -e "${GREEN}✅ $*${NC}"; }
-warn()  { echo -e "${YELLOW}⚠️  $*${NC}"; }
-error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
+# ── 共享基础设施（颜色输出等）─────────────────────────────────────
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../../_scripts/common.sh"
 
 echo "正在应用 macOS 系统偏好设置..."
 
@@ -67,8 +65,7 @@ set_default com.apple.finder FXPreferredViewStyle -string "Nlsv" "默认列表�
 
 # ── 重载生效 ──────────────────────────────────────────────────────
 echo ""
-read -rp "是否立即重启 Finder 以使设置生效？ [y/N]: " restart_apps
-if [[ "$restart_apps" =~ ^[Yy]$ ]]; then
+if confirm "是否立即重启 Finder 以使设置生效？ [y/N]: " 1; then
     info "正在重启 Finder..."
     # killall 是 macOS 推荐的重载方式，比 pkill -9 更安全、更体面
     killall Finder 2>/dev/null || true

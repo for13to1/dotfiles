@@ -40,8 +40,13 @@ dotfiles/
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
 ├── _scripts/                   # shell 基础设施
-│   ├── common.sh               # 颜色定义、函数定义等
-│   └── check-stow-parents.sh   # Stow 挂载前父目录检查
+│   ├── common.sh               # 颜色定义、函数定义等
+│   ├── check-links.sh          # Stow 挂载前检查与挂载后校验
+│   ├── list-modules.sh         # Stow 模块列表解析
+│   ├── modules.conf            # Stow 模块列表
+│   ├── stow-sync.sh            # Stow 统一同步入口
+│   ├── test-check-links.sh     # check-links 行为测试
+│   └── test-stow-sync.sh       # stow-sync 集成测试
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
@@ -59,6 +64,14 @@ git clone https://github.com/for13to1/dotfiles.git ~/dotfiles
 # 2. 一键安装
 cd ~/dotfiles && bash bootstrap.sh
 ```
+
+### 非交互模式（CI / 容器 / 无 TTY）
+
+```bash
+cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
+```
+
+该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，编辑器插件默认同步 Neovim。
 
 `bootstrap.sh` 会自动引导并处理以下流程：
 
@@ -166,7 +179,7 @@ mkdir -p ~/dotfiles/tmux
 mv ~/.tmux.conf ~/dotfiles/tmux/.tmux.conf
 # 3. 建立软链接映射
 cd ~/dotfiles && stow tmux
-# 4. 持久化：将 'tmux' 添加到 Makefile 的 MODULES 变量中 (此列表也是 bootstrap.sh 的真值源)
+# 4. 持久化：将 'tmux' 添加到 _scripts/modules.conf 中
 ```
 
 ### Homebrew 镜像管理
@@ -188,7 +201,7 @@ brew_mirror -q <source>  # 静默模式（不打印成功提示），适合放�
 
 ```bash
 cd ~/dotfiles && git pull
-make sync  # 优雅地仅刷新 Makefile 中记录的核心模块
+make sync  # 优雅地仅刷新 _scripts/modules.conf 中记录的核心模块
 ```
 
 ### 增加工具环境依赖

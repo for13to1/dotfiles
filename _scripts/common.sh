@@ -35,6 +35,67 @@ is_installed() {
     return 1
 }
 
+# ── Stow 路径与忽略规则 ───────────────────────────────────────────
+# 这些目录/文件不参与 Stow 检查、备份和挂载。
+STOW_IGNORE_NAMES=(
+    "__pycache__"
+    ".pytest_cache"
+    ".ruff_cache"
+    ".mypy_cache"
+    ".venv"
+    ".stow-local-ignore"
+    ".DS_Store"
+    ".git"
+    ".gitignore"
+    "history.json"
+)
+
+# find 的 Stow 版包装：统一追加忽略规则与 NUL 输出。
+stow_find() {
+    local root="$1"
+    shift
+    local -a args=(find "$root" "$@")
+    local name
+    for name in "${STOW_IGNORE_NAMES[@]}"; do
+        args+=( -name "$name" -prune -o )
+    done
+    args+=( -print0 )
+    "${args[@]}"
+}
+
+physical_path() {
+    local path="$1"
+    printf '%s' "$(cd "$(dirname "$path")" 2>/dev/null && pwd -P)/$(basename "$path")"
+}
+
+resolved_link_target() {
+    local target="$1" link
+    link="$(readlink "$target")"
+    [[ "$link" == /* ]] || link="$(dirname "$target")/$link"
+    physical_path "$link"
+}
+
+# ── 非交互式输入 ──────────────────────────────────────────────────
+# DOTFILES_NON_INTERACTIVE=1 时直接返回默认值，不读取 stdin。
+ask_value() {
+    local prompt="$1" default="$2" reply
+    if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
+        printf '%s\n' "$default"
+        return 0
+    fi
+    read -rp "$prompt" reply || true
+    printf '%s\n' "${reply:-$default}"
+}
+
+confirm() {
+    local prompt="$1" default="$2" reply
+    if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
+        return "$default"
+    fi
+    read -rp "$prompt" reply || return "$default"
+    [[ "$reply" =~ ^[Yy]$ ]]
+}
+
 # ── 交互式安装 ────────────────────────────────────────────────────
 # 用法: install_with_prompt <check_cmd> <prompt> <install_fn> <success_msg> [known_paths...]
 # 已装（command -v 或已知路径存在）则跳过；非 Debian 系也跳过。
@@ -47,8 +108,7 @@ install_with_prompt() {
     is_debian_like || return 0
 
     warn "$prompt"
-    read -rp "是否现在安装？ [y/N]: " reply
-    if [[ "$reply" =~ ^[Yy]$ ]]; then
+    if confirm "是否现在安装？ [y/N]: " 1; then
         if "$install_fn"; then
             ok "$success_msg"
         else

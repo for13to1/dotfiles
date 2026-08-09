@@ -7,13 +7,7 @@
 
 set -euo pipefail
 
-# ── 彩色输出 ──────────────────────────────────────────────────────
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()  { echo -e "${BLUE}ℹ️  $*${NC}"; }
-ok()    { echo -e "${GREEN}✅ $*${NC}"; }
-warn()  { echo -e "${YELLOW}⚠️  $*${NC}"; }
-error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
-
+# ── 脚本路径解析（支持软链接/相对路径调用）─────────────────────────
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 while [[ -L "$SCRIPT_PATH" ]]; do
     SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -21,6 +15,10 @@ while [[ -L "$SCRIPT_PATH" ]]; do
     [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
 done
 DOTFILES_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+
+# ── 共享基础设施（彩色输出等，见 _scripts/common.sh）──────────────
+# shellcheck disable=SC1091
+source "$DOTFILES_DIR/_scripts/common.sh"
 
 # ── 1. 检测操作系统 ──────────────────────────────────────────────
 OS="$(uname -s)"
@@ -45,7 +43,7 @@ case "$OS" in
         echo "   2) 中国科大 (USTC)"
         echo "   3) 阿里巴巴 (Aliyun)"
         echo "   4) 跳过 (使用官方默认源)"
-        read -rp "请输入数字 [1-4]: " mirror_choice
+        mirror_choice="$(ask_value "请输入数字 [1-4]: " "1")"
 
         SELECTED_MIRROR=""
         case "$mirror_choice" in
@@ -224,8 +222,7 @@ mkdir -p "$HOME/.ssh"
 ## 2. 交互式密钥检测与生成
 if [[ ! -f "$HOME/.ssh/id_ed25519" && ! -f "$HOME/.ssh/id_rsa" ]]; then
     warn "未发现 SSH 密钥对"
-    read -rp "是否立即为您生成一个 ed25519 密钥？ [y/N]: " gen_key
-    if [[ "$gen_key" =~ ^[Yy]$ ]]; then
+    if confirm "是否立即为您生成一个 ed25519 密钥？ [y/N]: " 1; then
         ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)" -f "$HOME/.ssh/id_ed25519" -N ""
         ok "SSH 密钥已生成：~/.ssh/id_ed25519"
     else
@@ -263,12 +260,9 @@ fi
 if [[ ! -f "$HOME/.gitconfig.local" ]]; then
     echo ""
     warn "未发现 ~/.gitconfig.local （用于存储 Git 用户名和邮箱）"
-    read -rp "是否立即创建？ [y/N]: " create_local
-    if [[ "$create_local" =~ ^[Yy]$ ]]; then
-        read -rp "请输入 Git 用户名 (默认: for13to1): " git_name
-        git_name=${git_name:-for13to1}
-        read -rp "请输入 Git 邮箱 (默认: for13to1@outlook.com): " git_email
-        git_email=${git_email:-for13to1@outlook.com}
+    if confirm "是否立即创建？ [y/N]: " 1; then
+        git_name="$(ask_value "请输入 Git 用户名 (默认: for13to1): " "for13to1")"
+        git_email="$(ask_value "请输入 Git 邮箱 (默认: for13to1@outlook.com): " "for13to1@outlook.com")"
 
         cat <<EOF > "$HOME/.gitconfig.local"
 [user]
@@ -376,106 +370,29 @@ fi
 # ── 6. 配置文件挂载 (Stow) ──────────────────────────────────────────
 info "正在使用 Stow 挂载配置文件..."
 
-## 1. 确定模块列表（单一真值源 SSOT）
-if [[ -f "$DOTFILES_DIR/Makefile" ]]; then
-    STOW_MODULES=$(awk '/^[[:space:]]*MODULES[[:space:]]*[:+]?=/ {
-        gsub(/^[[:space:]]*MODULES[[:space:]]*[:+]?=[[:space:]]*/, "");
-        line = $0;
-        while (sub(/\\$/, "", line)) {
-            getline next_line;
-            line = line " " next_line;
-        }
-        gsub(/#.*$/, "", line);
-        gsub(/\\/, "", line);
-        print line;
-    }' "$DOTFILES_DIR/Makefile" | xargs)
+## 1. 确定模块列表（单一真值源 SSOT，见 _scripts/modules.conf）
+if [[ -f "$DOTFILES_DIR/_scripts/modules.conf" && -f "$DOTFILES_DIR/_scripts/list-modules.sh" ]]; then
+    STOW_MODULES="$(bash "$DOTFILES_DIR/_scripts/list-modules.sh" "$DOTFILES_DIR/_scripts/modules.conf")"
+else
+    STOW_MODULES=""
 fi
 
 if [[ -z "${STOW_MODULES:-}" ]]; then
-    warn "Makefile 中未发现有效的 MODULES 定义，正在尝试默认列表..."
+    warn "modules.conf 中未发现有效的模块列表，正在尝试默认列表..."
     STOW_MODULES="agents zsh git vim nvim tmux ripgrep"
 else
-    info "从 Makefile 加载模块: $STOW_MODULES"
+    info "从 _scripts/modules.conf 加载模块: $STOW_MODULES"
 fi
 
 read -r -a STOW_MODULE_ARRAY <<< "$STOW_MODULES"
 
-## 2. 动态备份明确冲突的目标路径
-# 这些是系统共享目录，不能被备份（备份后 stow 会对整个目录进行折叠）
-SHARED_PARENT_DIRS=(".config")
-
-backup_explicit_conflicts() {
-    local mod="$1"
-    local rel_path="$2"
-    local full_target="$HOME${rel_path:+/$rel_path}"
-
-    # 跳过共享父目录，防止它们被备份后被 stow 整体折叠
-    for shared in "${SHARED_PARENT_DIRS[@]}"; do
-        if [[ "$rel_path" == "$shared" ]]; then
-            return 0
-        fi
-    done
-
-    if [[ -e "$full_target" && ! -L "$full_target" ]]; then
-        # 检查祖先路径是否已被 stow 管理（折叠后的目录级软链接）
-        # 如果是，子路径全在 stow 管辖范围内，无需备份
-        local p; p=$(dirname "$full_target")
-        while [[ "$p" != "$HOME" ]]; do
-            if [[ -L "$p" ]]; then
-                local link_target; link_target=$(readlink "$p")
-                if [[ "$link_target" != /* ]]; then
-                    link_target="$(cd "$(dirname "$p")" && cd "$(dirname "$link_target")" 2>/dev/null && pwd)/$(basename "$link_target")"
-                fi
-                if [[ "$link_target" == "$DOTFILES_DIR" || "$link_target" == "$DOTFILES_DIR/"* ]]; then
-                    return 0
-                fi
-                break
-            fi
-            p=$(dirname "$p")
-        done
-
-        local timestamp
-        timestamp=$(date +%Y%m%d_%H%M%S)
-        warn "发现冲突文件/目录 ~/$rel_path （非软链接），备份为 ~/$rel_path.bak.$timestamp"
-        mv "$full_target" "$full_target.bak.$timestamp"
-    fi
-}
-
-backup_module_conflicts() {
-    local mod="$1"
-    local path
-
-    if [[ ! -d "$mod" ]]; then
-        return 0
-    fi
-
-    while IFS= read -r -d '' path; do
-        backup_explicit_conflicts "$mod" "${path#"$mod"/}"
-    done < <(find "$mod" -mindepth 1 ! -name "__pycache__" ! -name ".pytest_cache" ! -name ".stow-local-ignore" ! -name ".DS_Store" ! -name ".git" ! -name "history.json" \( -type f -o -type l \) -print0)
-
-    while IFS= read -r -d '' path; do
-        backup_explicit_conflicts "$mod" "${path#"$mod"/}"
-    done < <(find "$mod" -mindepth 1 ! -name "__pycache__" ! -name ".pytest_cache" ! -name ".stow-local-ignore" ! -name ".DS_Store" ! -name ".git" ! -name "history.json" -type d -print0)
-}
-
-cd "$DOTFILES_DIR"
-
-## 3. 执行 Stow 挂载
-# 使用默认折叠：~/.zsh.d、~/.agents、~/.config/nvim 各自折叠为一条软链接。
-# ~/ .config 由 mkdir -p 确保先存在，stow 就不会折叠到 .config 层，只会折叠到 nvim 层。
+## 2. 执行 Stow 挂载
+# 统一入口负责 preflight、冲突备份、共享目录创建、stow -R 和挂载后校验。
 if [[ -z "${STOW_MODULES:-}" ]]; then
     warn "没有需要挂载的模块，跳过 Stow"
 else
-    bash "$DOTFILES_DIR/_scripts/check-stow-parents.sh" \
+    bash "$DOTFILES_DIR/_scripts/stow-sync.sh" \
         "$DOTFILES_DIR" "$HOME" "${STOW_MODULE_ARRAY[@]}"
-    for mod in "${STOW_MODULE_ARRAY[@]}"; do
-        if [[ -d "$mod" ]]; then
-            backup_module_conflicts "$mod"
-        fi
-    done
-    mkdir -p "$HOME/.config"
-    stow -t "$HOME" -R "${STOW_MODULE_ARRAY[@]}"
-    ok "Stow 挂载完成"
 fi
 
 # ── 7. VS Code 配置 ──────────────────────────────────────────────
@@ -509,7 +426,7 @@ echo "   1) Neovim (lazy.nvim) - [默认]"
 echo "   2) Vim (vim-plug)"
 echo "   3) 两者都要"
 echo "   4) 跳过"
-read -rp "请输入数字 [1-4]: " editor_choice
+editor_choice="$(ask_value "请输入数字 [1-4]: " "1")"
 
 ## 1. Neovim 插件 (lazy.nvim)
 if [[ "$editor_choice" == "1" || "$editor_choice" == "3" || -z "$editor_choice" ]]; then
