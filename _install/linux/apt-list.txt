@@ -1,24 +1,75 @@
-eza
-bat
-fd-find
-ripgrep
-fzf
-stow
+# ============================================================
+# Ubuntu/Debian 软件清单（按依赖顺序与场景分组）
+# 以 # 开头的行会被安装脚本跳过
+# ============================================================
+
+# ---- 构建与代码质量 ----
+build-essential
+make
+cmake
+ninja-build
+clang-format
+astyle
+cloc
+
+# ---- 版本控制与密钥 ----
+gnupg
+git
+git-crypt
+git-lfs
+gh
+subversion
+
+# ---- 容器与数据库服务 ----
+docker.io
+docker-compose-v2
+docker-buildx
+mysql-server
+postgresql
+redis-server
+
+# ---- 运行时与语言 ----
+openjdk-21-jdk
+
+# ---- Shell 与终端 ----
 zsh
-neovim
+stow
 tmux
 tmux-plugin-manager
 tree
-aria2
-cloc
-cmake
-git-crypt
-git-lfs
-gnupg
+bat
+eza
+fd-find
+ripgrep
+fzf
+rename
+jq
+zoxide
 shellcheck
 shfmt
-wget
+
+# ---- 编辑器 ----
+neovim
+
+# ---- 开发工具 ----
+scrcpy
+adb
+
+# ---- 网络与下载 ----
 curl
+wget
+aria2
+
+# ---- 媒体与图像 ----
+ffmpeg
+imagemagick
+
+# ---- 科学计算与文档 ----
+octave
+hugo
+
+# ---- 其他工具 ----
 unzip
-make
-build-essential
+7zip
+squashfs-tools
+qrencode
