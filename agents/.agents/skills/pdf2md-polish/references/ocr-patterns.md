@@ -9,7 +9,7 @@ This document catalogs recurring OCR/PDF extraction artifacts that `polish.py` h
 ### Ligature Replacement
 
 | OCR Glyph | Replacement | Unicode |
-|---|---|---|
+| --- | --- | --- |
 | ﬁ | fi | U+FB01 |
 | ﬂ | fl | U+FB02 |
 | ﬃ | ffi | U+FB03 |
@@ -25,9 +25,9 @@ Runs of spaces/tabs in prose and headings → single space. Protected zones: inl
 
 ### Soft Line Break Reflow
 
-PDF/OCR physical line wraps inside prose paragraphs are rejoined before sentence splitting.
+PDF/OCR physical line wraps inside prose paragraphs are rejoined before sentence splitting. Chinese-English mixed prose gets a space at CJK↔ASCII boundaries (`使用 Python`); CJK punctuation and inline math are unaffected.
 
-```
+```markdown
 # Input (OCR physical lines):
 The first objective is to design a high-performance
 classifier, which runs in real-time on
@@ -40,7 +40,7 @@ The first objective is to design a high-performance classifier, which runs in re
 ### Math Delimiter Normalization
 
 | Input | Output |
-|---|---|
+| --- | --- |
 | `\(...\)` inline | `$...$` |
 | `\[...\]` display | `$$...$$` |
 | `\begin{...}` environments | Treated as math block boundaries and not rewritten to `$$...$$`; internal whitespace normalization may still apply (rewriting would lose alignment/numbering) |
@@ -48,7 +48,7 @@ The first objective is to design a high-performance classifier, which runs in re
 ### Inline Math Spacing Normalization
 
 | Input | Output |
-|---|---|
+| --- | --- |
 | `$x _ { i } + y _ { j }$` | `$x_{i}+y_{j}$` |
 | `$\mathrm{r e c t}(t)$` | `$\mathrm{rect}(t)$` |
 | `$a + b$` | `$a+b$` |
@@ -58,7 +58,7 @@ The first objective is to design a high-performance classifier, which runs in re
 ### OCR Number Spaces
 
 | Input | Output |
-|---|---|
+| --- | --- |
 | `3 . 14` | `3.14` |
 
 **Note**: The script attempts to merge these, but complex cases may be missed. Check output.
@@ -71,7 +71,7 @@ The first objective is to design a high-performance classifier, which runs in re
 
 OCR sometimes places images/figure captions mid-sentence.
 
-```
+```markdown
 # Input (broken by image):
 The key components for RFMI-measurement are the
 
@@ -95,7 +95,7 @@ Fig. 1 Scheme of a PMD-array.
 
 OCR may place commas/periods inside math delimiters.
 
-```
+```markdown
 # Input (comma inside math):
 $\\varphi, $
 
@@ -110,11 +110,13 @@ $\\varphi$,
 OCR/PDF extraction frequently converts en-dashes (`–`, U+2013) to hyphens (`-`).
 
 **Promote to en-dash when unambiguously a numeric range**:
+
 - Page ranges: `pp. 12-15` → `pp. 12–15`
 - Year spans: `2010-2020` → `2010–2020`
 - Figure/table ranges: `Figs. 3-5` → `Figs. 3–5`
 
 **Leave as hyphen when in doubt**:
+
 - Identifiers: `COVID-19`, `RTX-4090`
 - Hierarchical labels: `Section 3-2`
 - Compound words: `state-of-the-art`
@@ -125,7 +127,7 @@ OCR/PDF extraction frequently converts en-dashes (`–`, U+2013) to hyphens (`-`
 ### OCR Character Confusion
 
 | Pattern | Example | Fix |
-|---|---|---|
+| --- | --- | --- |
 | `0` vs `O` | `Fig. 0` → `Fig. O` or `10`? | Context-dependent |
 | `1` vs `l` | `lntroduction` → `Introduction` | Usually `I` |
 | `rn` vs `m` | `rnodify` → `modify` | Common in low-res scans |
@@ -140,7 +142,7 @@ If `$$` don't pair up, the script preserves the block unchanged and prints `[WAR
 ## Patterns NOT Handled (Intentional)
 
 | Pattern | Why skipped |
-|---|---|
+| --- | --- |
 | Hyphen → en-dash promotion | Too many legitimate hyphens; LLM judgment required |
 | `\begin{align}` → `$$` | Would lose multi-line alignment and equation numbering |
 | Ligature → ASCII in intentional Unicode | Extremely rare; false positives worse than misses |

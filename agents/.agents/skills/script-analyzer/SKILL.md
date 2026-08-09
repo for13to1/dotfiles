@@ -49,24 +49,30 @@ python3 $HOME/.agents/skills/script-analyzer/scripts/analyze.py $HOME/.agents/sk
 ## Script Analysis Report
 
 ### Summary
+
 [One sentence]
 
 ### Functionality
+
 - **Main purpose**:
 - **Key operations**:
 - **Dependencies**:
 
 ### Impact Assessment
+
 - **Files / system / network / persistence**:
 
 ### Risk Analysis
+
 - **Security / stability / privacy**: Low|Medium|High — reason
 - **Scanner hits worth attention**: [line refs]
 
 ### Recommendations
+
 - Safe way to proceed / backup / sandbox / alternatives
 
 ### Limits
+
 - What static scan likely missed
 ```
 

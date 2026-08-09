@@ -7,12 +7,14 @@ This reference document outlines detailed rules for heading hierarchy, semantic 
 ## 1. Heading Hierarchy Guidelines
 
 Adjusting heading levels ensures the polished document has a clear and logical hierarchy:
+
 - **Title (h1)**: The document title MUST use a single `#`. If the source document lacks a clear title, infer one based on the abstract or introduction rather than pausing to prompt the user (maintaining automated execution flow).
 - **Sections (h2)**: All top-level sections (e.g., Introduction, Methodology, Conclusion) MUST start at `##` (h2).
 - **Subsections**: Subsections under h2 must use `###` (h3), sub-subsections must use `####` (h4), and so on.
 - **Top-level restriction**: Never use `###` as the top-level section heading. If the source begins at `###`, promote it to `##` and shift all nested sub-headings relative to it to preserve nesting depth.
 
-**Example Hierarchy:**
+**Example Hierarchy**:
+
 ```markdown
 # High-Performance Neural Network Classifier      <-- Title (h1)
 
@@ -30,6 +32,7 @@ Adjusting heading levels ensures the polished document has a clear and logical h
 ## 2. Semantic Review Rules
 
 During the semantic review step (Step 3), follow these guidelines to fix OCR remnants without modifying content:
+
 - **No full rewrites**: Do NOT output or rewrite the entire document. Use precise line-replacement or diff-editing tools to make targeted semantic fixes. Do not rephrase or summarize unchanged text.
 - **Verify reflows & splits**: Check the script's paragraph reflows and sentence splits. Merge any false splits or bad joins (e.g., a sentence split at a decimal number, or an OCR line break that should remain structural).
 - **Correct OCR character confusion**: Fix artifacts requiring semantic context (e.g., `0` vs `O`, `1` vs `l`, `rn` vs `m`).
@@ -41,6 +44,7 @@ During the semantic review step (Step 3), follow these guidelines to fix OCR rem
 ## 3. Script Capabilities Reference
 
 The `polish.py` script automatically performs the following deterministic cleanup operations during Step 1:
+
 - **True-ligature cleanup**: Replaces ligatures like `ﬁ`→`fi`, `ﬂ`→`fl`, `ﬃ`→`ffi` (leaves en-dashes `–` intact as they are meaningful punctuation).
 - **OCR/PDF block parsing**: Parses headings, rules, images, HTML tables, pipe tables, code fences, display math, lists, blockquotes, and normal paragraphs as separate processing units.
 - **Inline whitespace normalization**: Collapses multi-spaces/tabs to a single space in prose and headings (protects inline code, inline math, and link/image targets).

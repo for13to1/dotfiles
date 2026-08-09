@@ -785,13 +785,43 @@ def _is_cjk_or_punctuation(c: str) -> bool:
 
 
 def needs_join_space(left: str, right: str) -> bool:
+    """Return True if a space is needed between two reflowed line parts.
+
+    Chinese-English mixed prose uses a space between CJK and ASCII/numbers
+    ("使用 Python"), but no space between two CJK runs or before punctuation.
+    """
     if not left or not right:
         return False
-    if right[0] in ",.;:!?)]}”’%":
+    # No space before punctuation (ASCII and full-width)
+    if right[0] in ",.;:!?)]}”’%，。！？；：”’）】》％、…":
         return False
-    if left[-1] in "([{“‘":
+    # No space after opening brackets (ASCII and full-width)
+    if left[-1] in "([{“‘（【《":
         return False
-    return not (_is_cjk_or_punctuation(left[-1]) or _is_cjk_or_punctuation(right[0]))
+    # No space between two CJK runs; space everywhere else (CJK↔ASCII, CJK↔digit, ASCII↔ASCII)
+    if _is_cjk_or_punctuation(left[-1]) and _is_cjk_or_punctuation(right[0]):
+        return False
+    return True
+
+
+# CJK Han ranges (basic, extension A, compatibility, extension B+); excludes CJK punctuation/full-width forms
+_CJK_HAN = (
+    "\u3400-\u4dbf"  # Extension A
+    "\u4e00-\u9fff"  # Basic
+    "\uf900-\ufaff"  # Compatibility ideographs
+    "\U00020000-\U0003ffff"  # Extension B+
+)
+
+
+def insert_cjk_ascii_spacing(text: str) -> str:
+    """Insert a space between CJK characters and adjacent ASCII letters/digits.
+
+    Chinese-English mixed prose convention: 使用 Python（而不是 使用Python）。
+    CJK punctuation (。，！？) and full-width forms do not trigger spacing.
+    """
+    text = re.sub(rf"(?<=[{_CJK_HAN}])(?=[A-Za-z0-9])", " ", text)
+    text = re.sub(rf"(?<=[A-Za-z0-9])(?=[{_CJK_HAN}])", " ", text)
+    return text
 
 
 def join_soft_wrapped_lines(lines: list[str]) -> str:
@@ -985,6 +1015,7 @@ def process_prose_lines(lines: list[str], block: Block) -> list[str]:
         return []
 
     text = normalize_inline_paren_math(text)
+    text = insert_cjk_ascii_spacing(text)
 
     try:
         protected, math_map = protect_inline_math(text)
@@ -1372,16 +1403,6 @@ def main():
             # Simple sentence count estimation
             sentences_count = len([s for s in re.split(r"[.!?。！？\n]+", result) if s.strip()])
 
-            # Get language from config.json if available
-            lang = "auto"
-            config_path = Path(__file__).parent / "config.json"
-            if config_path.exists():
-                try:
-                    cfg = json.loads(config_path.read_text(encoding="utf-8"))
-                    lang = cfg.get("language", "auto")
-                except Exception:
-                    pass
-
             from datetime import datetime
 
             history_data.append(
@@ -1390,7 +1411,6 @@ def main():
                     "file": input_path.name,
                     "sentences": sentences_count,
                     "warnings": get_warning_count(),
-                    "language": lang,
                     "notes": "Automated run log",
                 }
             )

@@ -16,11 +16,7 @@ Load on demand:
 
 ## Configuration & History
 
-- **`config.json`**: currently only `language` is read by `polish.py` (written into `history.json`).
-
-| Key | Default | Used by script? | Description |
-|-----|---------|-----------------|-------------|
-| `language` | `"auto"` | yes (history only) | Language tag recorded in history |
+- **Language detection**: handled automatically by character rules (CJK / CJK punctuation / full-width forms). No `config.json` is needed; the script auto-detects Chinese-English mixed prose and inserts a space at CJK↔ASCII boundaries (`使用 Python`).
 
 - **`history.json`**: append-only run log stored alongside the Skill. LLM should not edit it. Write failures are non-fatal.
 

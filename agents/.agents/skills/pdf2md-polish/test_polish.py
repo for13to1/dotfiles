@@ -378,10 +378,30 @@ class TestInlineWhitespace:
 
 
 class TestCJK:
-    def test_cjk_no_extra_spaces(self):
-        """No space should be inserted between CJK and ASCII."""
-        left, right = "你好", "world"
-        assert not polish.needs_join_space(left, right)
+    def test_insert_cjk_ascii_spacing(self):
+        """Chinese-English mixed prose gets spaces at CJK↔ASCII boundaries."""
+        assert polish.insert_cjk_ascii_spacing("使用Python和OpenCV") == "使用 Python 和 OpenCV"
+        assert polish.insert_cjk_ascii_spacing("数字123") == "数字 123"
+        assert polish.insert_cjk_ascii_spacing("纯中文文本") == "纯中文文本"
+        assert polish.insert_cjk_ascii_spacing("第一句。第二句") == "第一句。第二句"
+        assert polish.insert_cjk_ascii_spacing("公式$x+y$结束") == "公式$x+y$结束"
+
+    def test_cjk_ascii_spacing(self):
+        """Space is inserted between CJK and ASCII/numbers (Chinese-English mixed prose)."""
+        assert polish.needs_join_space("你好", "world")
+        assert polish.needs_join_space("world", "你好")
+        assert polish.needs_join_space("数字", "123")
+
+    def test_cjk_cjk_no_space(self):
+        """No space between two CJK runs."""
+        assert not polish.needs_join_space("你好", "世界")
+        assert not polish.needs_join_space("第一句", "。第二句")
+
+    def test_cjk_no_space_before_punctuation(self):
+        """No space before ASCII or full-width punctuation."""
+        assert not polish.needs_join_space("hello", ",")
+        assert not polish.needs_join_space("你好", "，")
+        assert not polish.needs_join_space("你好", "。")
 
     def test_cjk_sentence_break_at_period(self):
         text = "他说：好的。然后离开了。"
@@ -511,10 +531,10 @@ class TestEndToEnd:
         assert result == "- item detail\n"
 
     def test_cjk_extensions(self):
-        """Test that rare CJK extensions (e.g. SIP planes) are recognized as CJK and don't insert extra spaces."""
+        """Rare CJK extensions (e.g. SIP planes) are recognized as CJK: space with ASCII, none with CJK."""
         # 𠜎 is U+2070E, which is in SIP
-        left, right = "𠜎", "world"
-        assert not polish.needs_join_space(left, right)
+        assert polish.needs_join_space("𠜎", "world")
+        assert not polish.needs_join_space("𠜎", "文本")
 
 
 # ── Math spacing ────────────────────────────────────────────────────────────

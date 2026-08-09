@@ -11,7 +11,7 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## General
 
 | Abbreviation | Meaning | Breakable? |
-|---|---|---|
+| --- | --- | --- |
 | et al. | et alii (and others) | no |
 | i.e. | id est (that is) | no |
 | e.g. | exempli gratia (for example) | no |
@@ -23,7 +23,7 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## Titles & Honorifics
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | Dr. | Doctor |
 | Mr. | Mister |
 | Mrs. | Mistress |
@@ -35,7 +35,7 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## Academic References
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | Fig. / Figs. | Figure / Figures |
 | Tab. / Tbl. | Table |
 | Eq. / Eqs. | Equation / Equations |
@@ -53,7 +53,7 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## Places & Organizations
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | St. | Street / Saint |
 | Ave. | Avenue |
 | Blvd. | Boulevard |
@@ -65,20 +65,20 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## Months
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | Jan. / Feb. / Mar. / Apr. | January–April |
 | Aug. / Sep. / Oct. / Nov. / Dec. | August–December |
 
 ## Time
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | a.m. / p.m. | ante/post meridiem |
 
 ## Scholarly Latin
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | al. | alii (others) |
 | op. cit. | opere citato (in the work cited) |
 | ibid. | ibidem (in the same place) |
@@ -91,7 +91,7 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## Field Abbreviations
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | natl. / intl. | national / international |
 | assoc. | association |
 | eng. / phys. / math. / chem. / biol. / sci. | engineering, physics, etc. |
@@ -102,7 +102,7 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## German
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | z. B. / z.B. | zum Beispiel (for example) |
 | d. h. / d.h. | das heißt (that is) |
 | u. a. / u.a. | unter anderem (among others) |
@@ -117,7 +117,7 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## German Academic Titles
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | Dipl.-Ing. | Diplom-Ingenieur |
 | Dipl.-Phys. | Diplom-Physiker |
 | Dipl.-Math. | Diplom-Mathematiker |
@@ -136,7 +136,7 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## French
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | c.-à-d. / c-à-d. | c'est-à-dire (that is) |
 | M. | Monsieur |
 | Mme. | Madame |
@@ -145,5 +145,5 @@ If you encounter an abbreviation that causes a false sentence break, add it to t
 ## Spanish
 
 | Abbreviation | Meaning |
-|---|---|
+| --- | --- |
 | p. ej. | por ejemplo (for example) |
