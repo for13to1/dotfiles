@@ -94,19 +94,21 @@ project_name_from_dir() {
     printf '%s\n' "$project_name"
 }
 
-customize_python_template() {
-    local target_dir="$1"
-    local pyproject_file="${target_dir}/pyproject.toml"
+# 替换模板文件中的 __PROJECT_NAME__ 占位符（所有语言通用）
+customize_project_name() {
+    local file="$1"
     local project_name=""
     local tmp_file=""
 
-    [[ -f "$pyproject_file" ]] || return 0
+    [[ -f "$file" ]] || return 0
+    grep -q '__PROJECT_NAME__' "$file" || return 0
 
-    project_name=$(project_name_from_dir "$target_dir")
-    tmp_file=$(mktemp "${TMPDIR:-/tmp}/proj-setup-pyproject.XXXXXX")
-    sed "s/__PROJECT_NAME__/${project_name}/g" "$pyproject_file" > "$tmp_file"
-    mv "$tmp_file" "$pyproject_file"
-    ok "已设置 Python 项目名: ${project_name}"
+    project_name=$(project_name_from_dir "$(dirname "$file")")
+    tmp_file=$(mktemp "${TMPDIR:-/tmp}/proj-setup.XXXXXX")
+    sed "s/__PROJECT_NAME__/${project_name}/g" "$file" > "$tmp_file"
+    cat "$tmp_file" > "$file"
+    rm -f "$tmp_file"
+    ok "已设置项目名: ${project_name}"
 }
 
 # ── 主逻辑 ────────────────────────────────────────────────────────
@@ -205,13 +207,15 @@ main() {
         echo ""
         info "复制 ${lang} 模板..."
         copy_templates "${LANGUAGE_TEMPLATES_DIR}/${lang}" "$target_dir"
-
-        if [[ "$lang" == "python" ]]; then
-            customize_python_template "$target_dir"
-        fi
     fi
 
-    # 4. 初始化版本控制（如果尚未初始化）
+    # 4. 替换模板中的项目名占位符（__PROJECT_NAME__，所有语言通用）
+    customize_project_name "${target_dir}/README.md"
+    if [[ "$lang" == "python" ]]; then
+        customize_project_name "${target_dir}/pyproject.toml"
+    fi
+
+    # 5. 初始化版本控制（如果尚未初始化）
     if [[ "$vcs" == "git" ]]; then
         echo ""
         if [[ -d "${target_dir}/.git" ]]; then

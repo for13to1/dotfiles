@@ -6,13 +6,13 @@ authors = []
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = []
+# license = "MIT"              # PEP 639: SPDX 表达式（按需填写许可证）
+# license-files = ["LICENSE"]  # PEP 639: 随包携带的许可证文件
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=9.1",
-    "pytest-cov>=7.1",
     "ruff>=0.15.22",
-    "mypy>=2.3",
 ]
 
 [build-system]
@@ -38,46 +38,10 @@ select = [
     "RUF", # ruff-specific
 ]
 ignore = [
-    "E501", # line too long (handled by formatter)
+    "E501",   # line too long (handled by formatter)
     "RUF002", # ambiguous unicode character in docstring
     "RUF003", # ambiguous unicode character in comment
 ]
 
-[tool.ruff.lint.isort]
-known-first-party = ["src"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-skip-magic-trailing-comma = false
-line-ending = "auto"
-
-[tool.mypy]
-python_version = "3.14"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-show_error_codes = true
-strict_equality = true
-
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_functions = ["test_*"]
-addopts = [
-    "-ra",
-    "-q",
-    "--strict-markers",
-    "--strict-config",
-    "--tb=short",
-    "--cov=src",
-    "--cov-report=term-missing:skip-covered",
-    "--cov-report=html:htmlcov",
-    "--cov-report=xml:coverage.xml",
-    "--cov-fail-under=80",
-]
+addopts = ["-ra", "-q", "--strict-markers", "--strict-config", "--tb=short"]

@@ -87,13 +87,14 @@ proj-setup myproject --lang=python
 
 模板文件位置：`~/dotfiles/proj-setup/templates/`
 
-```
+```tree
 proj-setup/
 ├── bin/
 │   └── proj-setup.sh
 ├── templates/
 │   ├── base/
-│   │   └── .editorconfig
+│   │   ├── .editorconfig
+│   │   └── README.md
 │   ├── vcs/
 │   │   └── git/
 │   │       ├── .gitattributes
