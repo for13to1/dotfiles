@@ -229,3 +229,19 @@ if [ -n "$VSCODE_ZSH_ACTIVATE" ] && [ "$TERM_PROGRAM" = "vscode" ]; then
     eval "$VSCODE_ZSH_ACTIVATE" || true
 fi
 # <<< vscode python
+
+# =============================================================================
+# 8. Terminal Key Mode Safety Net
+# =============================================================================
+
+# 终端的扩展键模式（modifyOtherKeys/CSI-u）若因 tmux/nvim 异常退出而残留，
+# 普通 zsh 会把 Ctrl+A 的编码 ESC[27;5;97~ 显示成 ";5;97~"。
+# 这里提供手动复位别名，并在非 tmux 环境下新开 shell 时自动清理。
+# 复位同时覆盖 xterm 系（CSI > 4;0m / CSI > 4n）与 kitty 系（CSI < 1 u）协议。
+
+alias fix-kb='printf "\033[>4;0m" && printf "\033[>4n" && printf "\033[<1u"'
+
+if [[ -z "$TMUX" ]]; then
+    printf '\033[>4;0m'
+    printf '\033[<1u'
+fi
