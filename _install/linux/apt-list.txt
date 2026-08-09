@@ -7,6 +7,7 @@ stow
 zsh
 neovim
 tmux
+tmux-plugin-manager
 tree
 aria2
 cloc
