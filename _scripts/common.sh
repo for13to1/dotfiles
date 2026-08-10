@@ -93,6 +93,7 @@ confirm() {
         return "$default"
     fi
     read -rp "$prompt" reply || return "$default"
+    [[ -z "$reply" ]] && return "$default"
     [[ "$reply" =~ ^[Yy]$ ]]
 }
 

@@ -71,7 +71,7 @@ cd ~/dotfiles && bash bootstrap.sh
 cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 ```
 
-该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，编辑器插件默认同步 Neovim。
+该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步。
 
 `bootstrap.sh` 会自动引导并处理以下流程：
 
@@ -202,6 +202,13 @@ brew_mirror -q <source>  # 静默模式（不打印成功提示），适合放�
 ```bash
 cd ~/dotfiles && git pull
 make sync  # 优雅地仅刷新 _scripts/modules.conf 中记录的核心模块
+```
+
+### 运行自检
+
+```bash
+make test   # ShellCheck、bash 语法检查与 Stow 行为测试
+make check  # 验证当前 HOME 下的 Stow 链接状态
 ```
 
 ### 增加工具环境依赖

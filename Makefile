@@ -9,7 +9,7 @@ SHELL := /bin/bash
 # 解析规则见 _scripts/list-modules.sh，Makefile 与 bootstrap.sh 共用同一实现。
 MODULES := $(shell bash _scripts/list-modules.sh _scripts/modules.conf)
 
-.PHONY: sync check help
+.PHONY: sync check test help
 
 # 默认一键同步：Restow 所有模块
 sync:
@@ -19,10 +19,29 @@ sync:
 check:
 	@bash _scripts/check-links.sh verify "$(CURDIR)" "$(HOME)" $(MODULES)
 
+test:
+	@shellcheck bootstrap.sh \
+		_install/linux/curl-install.sh \
+		_install/linux/npm-install.sh \
+		_install/mac/brew-install.sh \
+		_setup/mac/setup.sh \
+		_scripts/common.sh \
+		_scripts/list-modules.sh \
+		_scripts/check-links.sh \
+		_scripts/stow-sync.sh \
+		_scripts/test-check-links.sh \
+		_scripts/test-stow-sync.sh \
+		proj-setup/bin/proj-setup.sh \
+		zsh/.zsh.d/brew_mirror.sh
+	@find . -type f -name '*.sh' -not -path './.git/*' -exec bash -n {} \;
+	@bash _scripts/test-check-links.sh
+	@bash _scripts/test-stow-sync.sh
+
 
 # 简易帮助说明
 help:
 	@echo "可用命令:"
 	@echo "  make sync   - 一键刷新并重新挂载所有核心模块"
 	@echo "  make check  - 验证所有模块的软链接是否正确建立"
+	@echo "  make test   - 运行 shell 静态检查与 Stow 行为测试"
 	@echo "  make help   - 显示此帮助信息"

@@ -60,8 +60,8 @@ proj-setup myproject --lang=python
 
 ### Python 模板
 
-- `pyproject.toml`：项目配置、依赖、工具配置（ruff, mypy, pytest）
-- `project.name` 会根据目标目录名自动生成
+- `pyproject.toml`：项目配置、依赖、工具配置（ruff, pytest）
+- 模板中的 `__PROJECT_NAME__` 会根据目标目录名自动替换
 
 ### Rust 模板
 
@@ -70,17 +70,17 @@ proj-setup myproject --lang=python
 ## 行为说明
 
 - 如果目标目录不存在，会自动创建
-- 如果目标文件已存在，会跳过（不覆盖）
+- 会递归复制模板目录中的文件；如果目标文件已存在，会跳过（不覆盖）
 - 默认使用 `--vcs=git`，会复制 Git 配置并初始化 Git 仓库
 - 使用 `--vcs=none` 时，只复制基础配置和语言模板，不初始化版本控制
 - 如果 Git 仓库已存在，会跳过 `git init`
 - 如果提供多个位置参数，会报错退出
-- 使用 `--lang=python` 时，会把 `pyproject.toml` 中的项目名设置为目标目录名的规范化结果
+- 模板文件中的 `__PROJECT_NAME__` 会替换为目标目录名的规范化结果
 
 ## 添加新语言模板
 
 1. 在 `templates/language/` 下创建新目录（如 `templates/language/go/`）
-2. 添加该语言的配置文件
+2. 添加该语言的配置文件或子目录
 3. 使用 `proj-setup --lang=go` 即可应用该模板，无需修改代码
 
 ## 维护

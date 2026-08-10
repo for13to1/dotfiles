@@ -59,6 +59,7 @@ EOF
 copy_templates() {
     local src_dir="$1"
     local dst_dir="$2"
+    local copied_list="${3:-}"
 
     if [[ ! -d "$src_dir" ]]; then
         return 0
@@ -71,16 +72,20 @@ copy_templates() {
     fi
     [[ "$has_files" == "false" ]] && return 0
 
-    find "${src_dir}" -maxdepth 1 -type f -print0 | while IFS= read -r -d '' src_file; do
-        local filename
-        filename=$(basename "$src_file")
-        local dst_file="${dst_dir}/${filename}"
+    find "${src_dir}" -type f -print0 | while IFS= read -r -d '' src_file; do
+        local rel_path
+        rel_path="${src_file#"$src_dir"/}"
+        local dst_file="${dst_dir}/${rel_path}"
 
         if [[ -e "$dst_file" ]]; then
-            warn "跳过已存在: $filename"
+            warn "跳过已存在: $rel_path"
         else
+            mkdir -p "$(dirname "$dst_file")"
             cp "$src_file" "$dst_file"
-            ok "已复制: $filename"
+            if [[ -n "$copied_list" ]]; then
+                printf '%s\0' "$dst_file" >> "$copied_list"
+            fi
+            ok "已复制: $rel_path"
         fi
     done
 }
@@ -97,15 +102,16 @@ project_name_from_dir() {
 # 替换模板文件中的 __PROJECT_NAME__ 占位符（所有语言通用）
 customize_project_name() {
     local file="$1"
-    local project_name=""
+    local project_name="$2"
+    local escaped_project_name=""
     local tmp_file=""
 
     [[ -f "$file" ]] || return 0
     grep -q '__PROJECT_NAME__' "$file" || return 0
 
-    project_name=$(project_name_from_dir "$(dirname "$file")")
+    escaped_project_name=$(printf '%s\n' "$project_name" | sed 's/[\/&]/\\&/g')
     tmp_file=$(mktemp "${TMPDIR:-/tmp}/proj-setup.XXXXXX")
-    sed "s/__PROJECT_NAME__/${project_name}/g" "$file" > "$tmp_file"
+    sed "s/__PROJECT_NAME__/${escaped_project_name}/g" "$file" > "$tmp_file"
     cat "$tmp_file" > "$file"
     rm -f "$tmp_file"
     ok "已设置项目名: ${project_name}"
@@ -118,6 +124,8 @@ main() {
     local target_dir=""
     local available_vcs=""
     local available_langs=""
+    local project_name=""
+    local copied_files=""
 
     # 解析参数
     while [[ $# -gt 0 ]]; do
@@ -185,6 +193,9 @@ main() {
 
     # 转换为绝对路径
     target_dir="$(cd "$target_dir" && pwd)"
+    project_name="$(project_name_from_dir "$target_dir")"
+    copied_files="$(mktemp "${TMPDIR:-/tmp}/proj-setup-copied.XXXXXX")"
+    trap '[[ -n "${copied_files:-}" ]] && rm -f "$copied_files"' EXIT
 
     info "初始化项目: $target_dir"
     info "版本控制: $vcs"
@@ -193,27 +204,26 @@ main() {
     # 1. 复制基础模板
     echo ""
     info "复制基础配置..."
-    copy_templates "${BASE_TEMPLATES_DIR}" "$target_dir"
+    copy_templates "${BASE_TEMPLATES_DIR}" "$target_dir" "$copied_files"
 
     # 2. 复制版本控制模板
     if [[ "$vcs" != "none" ]]; then
         echo ""
         info "复制 ${vcs} 配置..."
-        copy_templates "${VCS_TEMPLATES_DIR}/${vcs}" "$target_dir"
+        copy_templates "${VCS_TEMPLATES_DIR}/${vcs}" "$target_dir" "$copied_files"
     fi
 
     # 3. 复制语言模板（如果指定）
     if [[ -n "$lang" ]]; then
         echo ""
         info "复制 ${lang} 模板..."
-        copy_templates "${LANGUAGE_TEMPLATES_DIR}/${lang}" "$target_dir"
+        copy_templates "${LANGUAGE_TEMPLATES_DIR}/${lang}" "$target_dir" "$copied_files"
     fi
 
     # 4. 替换模板中的项目名占位符（__PROJECT_NAME__，所有语言通用）
-    customize_project_name "${target_dir}/README.md"
-    if [[ "$lang" == "python" ]]; then
-        customize_project_name "${target_dir}/pyproject.toml"
-    fi
+    while IFS= read -r -d '' file; do
+        customize_project_name "$file" "$project_name"
+    done < "$copied_files"
 
     # 5. 初始化版本控制（如果尚未初始化）
     if [[ "$vcs" == "git" ]]; then

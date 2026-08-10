@@ -17,6 +17,10 @@ if not uv.fs_stat(lazypath) then
     "--branch=stable",
     lazypath,
   })
+  if vim.v.shell_error ~= 0 then
+    vim.notify("Failed to clone lazy.nvim. Check network access and rerun Neovim.", vim.log.levels.ERROR)
+    return
+  end
 end
 vim.opt.rtp:prepend(lazypath)
 

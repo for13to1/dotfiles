@@ -138,7 +138,11 @@ case "$OS" in
             info "正在通过 $manager 安装软件..."
             if ! "${install_cmd[@]}" "${packages[@]}"; then
                 warn "$manager 软件安装过程中有失败项，请稍后根据清单重试"
-                return 1
+                if confirm "是否继续执行后续配置？ [Y/n]: " 0; then
+                    warn "继续执行后续配置"
+                    return 0
+                fi
+                error "已按用户选择停止 bootstrap"
             fi
             ok "$manager 软件安装完毕"
         }
@@ -426,7 +430,11 @@ echo "   1) Neovim (lazy.nvim) - [默认]"
 echo "   2) Vim (vim-plug)"
 echo "   3) 两者都要"
 echo "   4) 跳过"
-editor_choice="$(ask_value "请输入数字 [1-4]: " "1")"
+if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
+    editor_choice="4"
+else
+    editor_choice="$(ask_value "请输入数字 [1-4]: " "1")"
+fi
 
 ## 1. Neovim 插件 (lazy.nvim)
 if [[ "$editor_choice" == "1" || "$editor_choice" == "3" || -z "$editor_choice" ]]; then
