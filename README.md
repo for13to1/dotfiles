@@ -1,5 +1,7 @@
 # Dotfiles
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 我的跨平台开发环境配置，使用 [GNU Stow](https://www.gnu.org/software/stow/) 管理软链接。
 
 ## 📂 目录结构
@@ -7,51 +9,64 @@
 ```text
 dotfiles/
 ├── agents/                     # Stow 包：通用 AI Agent 能力
-│   └── .agents/
-│       ├── AGENTS.md           # Agent 通用原则
-│       └── skills/             # 可复用专家技能
+│   └── .agents/
+│       ├── AGENTS.md           # Agent 通用原则
+│       └── skills/             # 可复用专家技能
 ├── zsh/                        # Stow 包：Zsh 配置
 │   ├── .zshrc
 │   └── .zsh.d/
 │       └── brew_mirror.sh      # Homebrew 镜像源切换
 ├── git/                        # Stow 包：Git 全局配置
-│   └── .gitconfig
-├── nvim/                       # Stow 包：Neovim 配置
-│   └── .config/nvim/
-│       ├── init.lua
-│       └── lazy-lock.json
+│   └── .gitconfig
 ├── vim/                        # Stow 包：Vim 配置
-│   └── .vimrc
+│   └── .vimrc
+├── nvim/                       # Stow 包：Neovim 配置
+│   └── .config/nvim/
+│       ├── init.lua
+│       └── lazy-lock.json
+├── tmux/                       # Stow 包：tmux 配置
+│   └── .tmux.conf
+├── ripgrep/                    # Stow 包：ripgrep 配置
+│   └── .ripgreprc
 ├── vscode/                     # VSCode 配置备份
-│   └── settings.json
-├── proj-setup/                 # 项目配置脚本及模板
-│   ├── bin/
-│   └── templates/
+│   └── settings.json
+├── proj-setup/                 # 项目配置工具及模板
+│   ├── bin/
+│   ├── templates/
+│   └── README.md
 ├── _install/                   # 平台专属软件安装
-│   ├── mac/
-│   │   ├── Brewfile            # Homebrew 完整软件清单
-│   │   └── Brewfile.essential  # Homebrew 必备软件清单
-│   └── linux/
-│       ├── apt-list.txt        # Debian/Ubuntu 软件包清单
-│       ├── pacman-list.txt     # Arch Linux 软件包清单
-│       ├── curl-install.sh     # 官方安装器途径的软件安装
-│       └── npm-install.sh      # npm 生态软件安装（基于 fnm Node）
+│   ├── mac/
+│   │   ├── Brewfile            # Homebrew 完整软件清单
+│   │   ├── Brewfile.essential  # Homebrew 必备软件清单
+│   │   └── brew-install.sh     # 清单安装入口
+│   └── linux/
+│       ├── apt-list.txt        # Debian/Ubuntu 软件包清单
+│       ├── pacman-list.txt     # Arch Linux 软件包清单
+│       ├── curl-install.sh     # 官方安装器途径的软件安装
+│       └── npm-install.sh      # npm 生态软件安装（基于 fnm Node）
 ├── _setup/                     # 系统底层偏好与权限初始化脚本
-│   └── mac/
-│       └── setup.sh            # macOS 系统设置
+│   └── mac/
+│       └── setup.sh            # macOS 系统设置
 ├── _scripts/                   # shell 基础设施
 │   ├── common.sh               # 颜色定义、函数定义等
-│   ├── check-links.sh          # Stow 挂载前检查与挂载后校验
+│   ├── modules.conf            # Stow 模块列表（单一真值源）
 │   ├── list-modules.sh         # Stow 模块列表解析
-│   ├── modules.conf            # Stow 模块列表
 │   ├── stow-sync.sh            # Stow 统一同步入口
+│   ├── check-links.sh          # Stow 挂载前检查与挂载后校验
+│   ├── doctor.sh               # 环境健康诊断
+│   ├── hooks/
+│   │   └── pre-push            # Git 钩子：push 前自动运行 make test
 │   ├── test-check-links.sh     # check-links 行为测试
+│   ├── test-doctor.sh          # doctor 行为测试
+│   ├── test-proj-setup.sh      # proj-setup 行为测试
 │   └── test-stow-sync.sh       # stow-sync 集成测试
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本
+├── opencode.json               # OpenCode 权限配置（本仓库）
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
 ├── .gitattributes
 ├── .gitignore
+├── LICENSE                     # MIT
 └── README.md
 ```
 
@@ -212,6 +227,9 @@ make check  # 验证当前 HOME 下的 Stow 链接状态
 make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 ```
 
+`bootstrap.sh` 会将本仓库的 `core.hooksPath` 指向 `_scripts/hooks`，
+使 `pre-push` 钩子在每次 `git push` 前自动运行 `make test` 拦截回归。
+
 ### 增加工具环境依赖
 
 新增工具 PATH 时，使用条件判断包裹，如：
@@ -227,3 +245,7 @@ make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 - **Git**: 始终优先通过 Homebrew 安装 Git，以解决 macOS 自带版本在某些网络环境下的 SSL 报错问题。
 - **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为 `zsh/.zshrc` 已完全接管）：`rustup-init -y --no-modify-path`
 - **Conda (Miniforge)**: **不用**运行 `conda init`，直接依赖 `lazy loading` 实现加速启动。
+
+## 📄 许可证
+
+[MIT](LICENSE)

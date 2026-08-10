@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# _scripts/hooks/pre-push — git push 前自动运行测试套件
+# 由 bootstrap.sh 通过 `git config core.hooksPath _scripts/hooks` 启用。
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+if ! command -v shellcheck >/dev/null 2>&1; then
+    echo "⚠️  未检测到 shellcheck，跳过 pre-push 测试" >&2
+    exit 0
+fi
+
+make -C "$ROOT" test

@@ -282,6 +282,10 @@ EOF
     fi
 fi
 
+## 3. Git 钩子（pre-push 自动运行 make test）
+git -C "$DOTFILES_DIR" config core.hooksPath "$DOTFILES_DIR/_scripts/hooks"
+info "已启用 Git 钩子: core.hooksPath=$DOTFILES_DIR/_scripts/hooks"
+
 # ── 5. Shell 环境设置 (Oh My Zsh & Plugins) ──────────────────────
 ## 1. 安装 Oh My Zsh
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then

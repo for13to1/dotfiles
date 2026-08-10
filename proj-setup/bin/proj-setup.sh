@@ -94,7 +94,7 @@ project_name_from_dir() {
     local target_dir="$1"
     local project_name
 
-    project_name=$(basename "$target_dir" | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:]_]\+/-/g; s/[^a-z0-9.-]//g; s/^[.-]\+//; s/[.-]\+$//')
+    project_name=$(basename "$target_dir" | tr '[:upper:]' '[:lower:]' | sed -E 's/[[:space:]_]+/-/g; s/[^a-z0-9.-]//g; s/^[.-]+//; s/[.-]+$//')
     [[ -n "$project_name" ]] || error "无法从目录名生成有效的项目名: $target_dir"
     printf '%s\n' "$project_name"
 }

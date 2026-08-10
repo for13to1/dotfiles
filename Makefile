@@ -30,6 +30,7 @@ test:
 		_install/mac/brew-install.sh \
 		_setup/mac/setup.sh \
 		_scripts/common.sh \
+		_scripts/hooks/pre-push \
 		_scripts/list-modules.sh \
 		_scripts/check-links.sh \
 		_scripts/doctor.sh \
