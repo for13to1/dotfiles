@@ -30,11 +30,13 @@ test:
 		_scripts/check-links.sh \
 		_scripts/stow-sync.sh \
 		_scripts/test-check-links.sh \
+		_scripts/test-proj-setup.sh \
 		_scripts/test-stow-sync.sh \
 		proj-setup/bin/proj-setup.sh \
 		zsh/.zsh.d/brew_mirror.sh
 	@find . -type f -name '*.sh' -not -path './.git/*' -exec bash -n {} \;
 	@bash _scripts/test-check-links.sh
+	@bash _scripts/test-proj-setup.sh
 	@bash _scripts/test-stow-sync.sh
 
 
