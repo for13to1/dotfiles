@@ -113,5 +113,9 @@ assert_equals "existing template path should not be overwritten or customized on
 
 assert_fail "multiple positional args should fail" \
     bash "$PROJ_SETUP" "$TMP/work/one" "$TMP/work/two"
+assert_fail "unsupported vcs should fail" \
+    bash "$PROJ_SETUP" --vcs=unknown "$TMP/work/bad-vcs"
+assert_fail "unsupported language should fail" \
+    bash "$PROJ_SETUP" --lang=unknown "$TMP/work/bad-lang"
 
 echo "PASS proj-setup tests"

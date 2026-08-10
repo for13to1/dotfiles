@@ -110,9 +110,15 @@ customize_project_name() {
     grep -q '__PROJECT_NAME__' "$file" || return 0
 
     escaped_project_name=$(printf '%s\n' "$project_name" | sed 's/[\/&]/\\&/g')
-    tmp_file=$(mktemp "${TMPDIR:-/tmp}/proj-setup.XXXXXX")
-    sed "s/__PROJECT_NAME__/${escaped_project_name}/g" "$file" > "$tmp_file"
-    cat "$tmp_file" > "$file"
+    tmp_file=$(mktemp "${TMPDIR:-/tmp}/proj-setup.XXXXXX") || error "无法创建临时文件"
+    if ! sed "s/__PROJECT_NAME__/${escaped_project_name}/g" "$file" > "$tmp_file"; then
+        rm -f "$tmp_file"
+        error "项目名替换失败: $file"
+    fi
+    if ! cat "$tmp_file" > "$file"; then
+        rm -f "$tmp_file"
+        error "写回模板文件失败: $file"
+    fi
     rm -f "$tmp_file"
     ok "已设置项目名: ${project_name}"
 }
