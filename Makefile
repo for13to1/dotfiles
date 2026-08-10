@@ -20,6 +20,7 @@ check:
 	@bash _scripts/check-links.sh verify "$(CURDIR)" "$(HOME)" $(MODULES)
 
 test:
+	@command -v shellcheck >/dev/null || { echo "shellcheck 未安装，请先安装 shellcheck"; exit 1; }
 	@shellcheck bootstrap.sh \
 		_install/linux/curl-install.sh \
 		_install/linux/npm-install.sh \
