@@ -23,9 +23,12 @@ doctor:
 	@bash _scripts/doctor.sh "$(CURDIR)" "$(HOME)"
 
 test:
-	@command -v shellcheck >/dev/null || { echo "shellcheck 未安装，请先安装 shellcheck"; exit 1; }
-	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec shellcheck {} +
-	@shellcheck _scripts/hooks/pre-push
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec shellcheck {} + ; \
+		shellcheck _scripts/hooks/pre-push; \
+	else \
+		echo "⚠️  shellcheck 未安装，跳过 ShellCheck 静态检查（bash -n 与其余测试仍会运行）"; \
+	fi
 	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec bash -n {} \;
 	@bash _scripts/test-check-links.sh
 	@bash _scripts/test-doctor.sh

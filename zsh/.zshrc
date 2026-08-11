@@ -35,7 +35,7 @@ plugins=(
 )
 
 # 第三方插件：检查是否存在再添加
-local missing_plugins=()
+missing_plugins=()
 if [[ -d "$ZSH/custom/plugins/zsh-autosuggestions" ]]; then
     plugins+=(zsh-autosuggestions)
 else

@@ -6,9 +6,5 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 
-if ! command -v shellcheck >/dev/null 2>&1; then
-    echo "⚠️  未检测到 shellcheck，跳过 pre-push 测试" >&2
-    exit 0
-fi
-
+# make test 会统一处理 shellcheck 缺失的情况（提示跳过 shellcheck，但其余测试照常运行）
 make -C "$ROOT" test
