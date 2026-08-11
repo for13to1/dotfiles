@@ -24,28 +24,20 @@ doctor:
 
 test:
 	@command -v shellcheck >/dev/null || { echo "shellcheck 未安装，请先安装 shellcheck"; exit 1; }
-	@shellcheck bootstrap.sh \
-		_install/linux/curl-install.sh \
-		_install/linux/npm-install.sh \
-		_install/mac/brew-install.sh \
-		_setup/mac/setup.sh \
-		_scripts/common.sh \
-		_scripts/hooks/pre-push \
-		_scripts/list-modules.sh \
-		_scripts/check-links.sh \
-		_scripts/doctor.sh \
-		_scripts/stow-sync.sh \
-		_scripts/test-check-links.sh \
-		_scripts/test-doctor.sh \
-		_scripts/test-proj-setup.sh \
-		_scripts/test-stow-sync.sh \
-		proj-setup/bin/proj-setup.sh \
-		zsh/.zsh.d/brew_mirror.sh
+	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec shellcheck {} +
+	@shellcheck _scripts/hooks/pre-push
 	@find . -type f -name '*.sh' -not -path './.git/*' -exec bash -n {} \;
 	@bash _scripts/test-check-links.sh
 	@bash _scripts/test-doctor.sh
 	@bash _scripts/test-proj-setup.sh
 	@bash _scripts/test-stow-sync.sh
+	@python3 agents/.agents/skills/commit-summarizer/scripts/test_analyze_staged.py
+	@python3 agents/.agents/skills/script-analyzer/scripts/test_analyze.py
+	@if command -v pytest >/dev/null 2>&1; then \
+		pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
+	else \
+		echo "⚠️  pytest 未安装，跳过 pdf2md-polish 测试"; \
+	fi
 
 
 # 简易帮助说明
@@ -54,5 +46,5 @@ help:
 	@echo "  make sync   - 一键刷新并重新挂载所有核心模块"
 	@echo "  make check  - 验证所有模块的软链接是否正确建立"
 	@echo "  make doctor - 诊断本机 dotfiles 环境状态"
-	@echo "  make test   - 运行 shell 静态检查与 Stow 行为测试"
+	@echo "  make test   - 运行 shell 静态检查、Stow 行为测试与 skill Python 测试"
 	@echo "  make help   - 显示此帮助信息"

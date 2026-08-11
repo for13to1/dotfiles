@@ -82,7 +82,6 @@ verify_entry() {
     local mod="$1"
     local entry="$2"
     local rel="${entry#"$mod"/}"
-    [[ -z "$rel" ]] && rel="$(basename "$entry")"
     local target="$TARGET_DIR/$rel"
     local src
     src="$(physical_path "$DOTFILES_DIR/$entry")"

@@ -35,6 +35,13 @@ BASE_TEMPLATES_DIR="${TEMPLATES_DIR}/base"
 VCS_TEMPLATES_DIR="${TEMPLATES_DIR}/vcs"
 LANGUAGE_TEMPLATES_DIR="${TEMPLATES_DIR}/language"
 
+# ── 列出模板目录下的可用子模板名（逗号分隔）──────────────
+list_template_names() {
+    local dir="$1"
+    find "$dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; \
+        | sort | tr '\n' ',' | sed 's/,$//; s/,/, /g'
+}
+
 # ── 用法说明 ──────────────────────────────────────────────────────
 usage() {
     cat <<EOF
@@ -163,9 +170,7 @@ main() {
     # 验证版本控制参数
     if [[ "$vcs" != "none" ]]; then
         if [[ ! -d "${VCS_TEMPLATES_DIR}/${vcs}" ]]; then
-            available_vcs=$(
-                find "${VCS_TEMPLATES_DIR}" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ',' | sed 's/,$//; s/,/, /g'
-            )
+            available_vcs="$(list_template_names "$VCS_TEMPLATES_DIR")"
             if [[ -n "$available_vcs" ]]; then
                 available_vcs="${available_vcs}, none"
             else
@@ -178,9 +183,7 @@ main() {
     # 验证语言参数
     if [[ -n "$lang" ]]; then
         if [[ ! -d "${LANGUAGE_TEMPLATES_DIR}/${lang}" ]]; then
-            available_langs=$(
-                find "${LANGUAGE_TEMPLATES_DIR}" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr '\n' ',' | sed 's/,$//; s/,/, /g'
-            )
+            available_langs="$(list_template_names "$LANGUAGE_TEMPLATES_DIR")"
             [[ -n "$available_langs" ]] || available_langs="无"
             error "不支持的语言: $lang (可选: ${available_langs})"
         fi

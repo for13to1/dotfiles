@@ -187,7 +187,7 @@
     "terminal.integrated.profiles.osx": {},
     // 默认终端配置文件
     "terminal.integrated.defaultProfile.windows": "MSVC Prompt",
-    "terminal.integrated.defaultProfile.linux": "bash",
+    "terminal.integrated.defaultProfile.linux": "zsh",
     "terminal.integrated.defaultProfile.osx": "zsh",
     // ====================== 插件与工具集成 ======================
     "jupyter.askForKernelRestart": false,

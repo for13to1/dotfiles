@@ -33,13 +33,13 @@ set_default() {
     local desc="${5:-$key}"
     local pretty_domain
     pretty_domain=$(_get_pretty_domain "$target")
-    
+
     local old_raw
     old_raw=$(defaults read "$target" "$key" 2>/dev/null) || old_raw="(未设置)"
-    
+
     local old_norm="$old_raw"
     [[ "$type" == "-bool" ]] && old_norm=$(_normalize_bool "$old_raw")
-    
+
     local msg="[$pretty_domain] $desc"
     if [[ "$old_norm" == "$value" ]]; then
         echo "  ✓ $msg: $old_norm (无变化)"
@@ -65,7 +65,7 @@ set_default com.apple.finder FXPreferredViewStyle -string "Nlsv" "默认列表�
 
 # ── 重载生效 ──────────────────────────────────────────────────────
 echo ""
-if confirm "是否立即重启 Finder 以使设置生效？ [y/N]: " 1; then
+if confirm "是否立即重启 Finder 以使设置生效？ [y/N]: " 0; then
     info "正在重启 Finder..."
     # killall 是 macOS 推荐的重载方式，比 pkill -9 更安全、更体面
     killall Finder 2>/dev/null || true

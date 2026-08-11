@@ -138,7 +138,7 @@ case "$OS" in
             info "正在通过 $manager 安装软件..."
             if ! "${install_cmd[@]}" "${packages[@]}"; then
                 warn "$manager 软件安装过程中有失败项，请稍后根据清单重试"
-                if confirm "是否继续执行后续配置？ [Y/n]: " 0; then
+                if confirm "是否继续执行后续配置？ [Y/n]: " 1; then
                     warn "继续执行后续配置"
                     return 0
                 fi
@@ -226,7 +226,7 @@ mkdir -p "$HOME/.ssh"
 ## 2. 交互式密钥检测与生成
 if [[ ! -f "$HOME/.ssh/id_ed25519" && ! -f "$HOME/.ssh/id_rsa" ]]; then
     warn "未发现 SSH 密钥对"
-    if confirm "是否立即为您生成一个 ed25519 密钥？ [y/N]: " 1; then
+    if confirm "是否立即为您生成一个 ed25519 密钥？ [y/N]: " 0; then
         ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)" -f "$HOME/.ssh/id_ed25519" -N ""
         ok "SSH 密钥已生成：~/.ssh/id_ed25519"
     else
@@ -264,7 +264,7 @@ fi
 if [[ ! -f "$HOME/.gitconfig.local" ]]; then
     echo ""
     warn "未发现 ~/.gitconfig.local （用于存储 Git 用户名和邮箱）"
-    if confirm "是否立即创建？ [y/N]: " 1; then
+    if confirm "是否立即创建？ [y/N]: " 0; then
         git_name="$(ask_value "请输入 Git 用户名 (默认: for13to1): " "for13to1")"
         git_email="$(ask_value "请输入 Git 邮箱 (默认: for13to1@outlook.com): " "for13to1@outlook.com")"
 
@@ -379,13 +379,12 @@ fi
 info "正在使用 Stow 挂载配置文件..."
 
 ## 1. 确定模块列表（单一真值源 SSOT，见 _scripts/modules.conf）
+STOW_MODULES=""
 if [[ -f "$DOTFILES_DIR/_scripts/modules.conf" && -f "$DOTFILES_DIR/_scripts/list-modules.sh" ]]; then
     STOW_MODULES="$(bash "$DOTFILES_DIR/_scripts/list-modules.sh" "$DOTFILES_DIR/_scripts/modules.conf")"
-else
-    STOW_MODULES=""
 fi
 
-if [[ -z "${STOW_MODULES:-}" ]]; then
+if [[ -z "$STOW_MODULES" ]]; then
     warn "modules.conf 中未发现有效的模块列表，正在尝试默认列表..."
     STOW_MODULES="agents zsh git vim nvim tmux ripgrep"
 else
@@ -396,38 +395,10 @@ read -r -a STOW_MODULE_ARRAY <<< "$STOW_MODULES"
 
 ## 2. 执行 Stow 挂载
 # 统一入口负责 preflight、冲突备份、共享目录创建、stow -R 和挂载后校验。
-if [[ -z "${STOW_MODULES:-}" ]]; then
-    warn "没有需要挂载的模块，跳过 Stow"
-else
-    bash "$DOTFILES_DIR/_scripts/stow-sync.sh" \
-        "$DOTFILES_DIR" "$HOME" "${STOW_MODULE_ARRAY[@]}"
-fi
+bash "$DOTFILES_DIR/_scripts/stow-sync.sh" \
+    "$DOTFILES_DIR" "$HOME" "${STOW_MODULE_ARRAY[@]}"
 
-# ── 7. VS Code 配置 ──────────────────────────────────────────────
-# echo ""
-# info "📋 是否部署 VS Code 个人配置？"
-# echo "   1) 是"
-# echo "   2) 否"
-# read -rp "请输入数字 [1-2]: " vscode_choice
-vscode_choice="2" # 架构哲学：VS Code 这种深埋在 GUI 沙盒目录下的配置，本项目只做备份收纳，不会在此硬性软链接部署。
-
-if [[ "$vscode_choice" == "1" ]]; then
-    info "正在部署 VS Code 配置..."
-    if [[ "$OS" == "Darwin"* ]]; then
-        VSCODE_USER_DIR="$HOME/Library/Application Support/Code/User"
-    elif [[ "$OS" == "Linux"* ]]; then
-        VSCODE_USER_DIR="$HOME/.config/Code/User"
-    else
-        VSCODE_USER_DIR=""
-    fi
-
-    if [[ -n "$VSCODE_USER_DIR" ]]; then
-        mkdir -p "$VSCODE_USER_DIR"
-        ln -sf "$DOTFILES_DIR/vscode/settings.json" "$VSCODE_USER_DIR/settings.json" && ok "VS Code settings.json 已链接"
-    fi
-fi
-
-# ── 8. 编辑器插件同步 ──────────────────────────────────────
+# ── 7. 编辑器插件同步 ──────────────────────────────────────
 echo ""
 info "📋 请选择要同步的编辑器插件："
 echo "   1) Neovim (lazy.nvim) - [默认]"
@@ -441,7 +412,7 @@ else
 fi
 
 ## 1. Neovim 插件 (lazy.nvim)
-if [[ "$editor_choice" == "1" || "$editor_choice" == "3" || -z "$editor_choice" ]]; then
+if [[ "$editor_choice" == "1" || "$editor_choice" == "3" ]]; then
     if command -v nvim &>/dev/null; then
         info "正在同步 Neovim 插件 (lazy.nvim)..."
         nvim --headless "+Lazy! sync" +qa || warn "Neovim 插件同步过程中有报错，请稍后手动打开 nvim 查看"
@@ -467,7 +438,7 @@ if [[ "$editor_choice" == "2" || "$editor_choice" == "3" ]]; then
     fi
 fi
 
-# ── 9. 自定义脚本部署 ──────────────────────────────────────────────
+# ── 8. 自定义脚本部署 ──────────────────────────────────────────────
 info "正在部署自定义脚本..."
 
 # proj-setup: 项目初始化工具
@@ -479,7 +450,7 @@ else
     warn "proj-setup.sh 未找到，跳过部署"
 fi
 
-# ── 10. 完成 ───────────────────────────────────────────────────────
+# ── 9. 完成 ────────────────────────────────────────────────────────
 echo ""
 ok "🎉 全部搞定！请重启终端，或执行 source ~/.zshrc 使配置生效。"
 echo ""

@@ -404,9 +404,10 @@ def analyze_script(script_path: str) -> AnalysisResult:
     # Analyze patterns
     analysis = analyze_patterns(content, language)
 
-    # Detect high-risk patterns
+    # Detect high-risk patterns (dedupe: HIGH_RISK_PATTERNS overlaps several
+    # per-language "dangerous" patterns, e.g. chmod 777 / rm -rf / for bash)
     high_risk = detect_high_risk(content)
-    analysis["dangerous"].extend(high_risk)
+    analysis["dangerous"] = list(dict.fromkeys(analysis["dangerous"] + high_risk))
 
     # Extract dependencies
     dependencies = extract_dependencies(content, language)

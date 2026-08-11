@@ -9,10 +9,26 @@ fi
 
 # ── 彩色输出 ──────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-info()  { echo -e "${BLUE}ℹ️  $*${NC}"; }
-ok()    { echo -e "${GREEN}✅ $*${NC}"; }
-warn()  { echo -e "${YELLOW}⚠️  $*${NC}"; }
-error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
+
+# msg <level> <text>: 统一打印入口，level 取 info|ok|warn|error。
+msg() {
+    local level="$1"
+    shift
+    case "$level" in
+        info)  echo -e "${BLUE}ℹ️  $*${NC}" ;;
+        ok)    echo -e "${GREEN}✅ $*${NC}" ;;
+        warn)  echo -e "${YELLOW}⚠️  $*${NC}" ;;
+        error) echo -e "${RED}❌ $*${NC}" ;;
+        *)     echo -e "$*" ;;
+    esac
+}
+
+info()      { msg 'info'  "$*"; }
+ok()        { msg 'ok'    "$*"; }
+warn()      { msg 'warn'  "$*"; }
+# error_msg 仅打印错误信息不退出；error 在其基础上终止脚本。
+error_msg() { msg 'error' "$*"; }
+error()     { error_msg "$*"; exit 1; }
 
 # ── 发行版检测 ────────────────────────────────────────────────────
 # Debian / Ubuntu 系返回 0。
@@ -87,14 +103,16 @@ ask_value() {
     printf '%s\n' "${reply:-$default}"
 }
 
+# default: 1 = 是（回车/非交互返回 0），0 = 否（返回 1）
 confirm() {
     local prompt="$1" default="$2" reply
+    local default_ret=$((1 - default))
     if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
-        return "$default"
+        return "$default_ret"
     fi
-    read -rp "$prompt" reply || return "$default"
-    [[ -z "$reply" ]] && return "$default"
-    [[ "$reply" =~ ^[Yy]$ ]]
+    read -rp "$prompt" reply || return "$default_ret"
+    [[ -z "$reply" ]] && return "$default_ret"
+    [[ "$reply" =~ ^[Yy](es)?$ ]]
 }
 
 # ── 交互式安装 ────────────────────────────────────────────────────
@@ -109,7 +127,7 @@ install_with_prompt() {
     is_debian_like || return 0
 
     warn "$prompt"
-    if confirm "是否现在安装？ [y/N]: " 1; then
+    if confirm "是否现在安装？ [y/N]: " 0; then
         if "$install_fn"; then
             ok "$success_msg"
         else

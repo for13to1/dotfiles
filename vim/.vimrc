@@ -17,7 +17,7 @@ set autoread                    " 文件在 Vim 之外被修改时自动重新�
 set autowrite                   " 切换缓冲区时自动保存
 set confirm                     " 处理未保存文件时弹出确认
 
-" 持久化 undo：关闭文件后重新打开仍可撤销之前的操作
+" 持久化 undo：默认关闭；如需启用，把下面改成 set undofile 即可
 set noundofile
 if &undofile
     set undodir=~/.vim/undodir
@@ -47,7 +47,6 @@ set smartcase                   " 但如果输入了大写字母，则精确匹�
 " =============================================================================
 
 syntax enable
-syntax on
 set number                      " 显示行号
 set cc=100                      " 在第 100 列显示参考线
 set cursorline                  " 高亮当前行

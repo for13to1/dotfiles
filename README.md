@@ -97,6 +97,7 @@ cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 5. **Shell 环境**：部署 Oh My Zsh 及其插件生态，自动切换默认 Shell。
 6. **配置挂载**：使用 `stow` 构建全局符号链接，原子化处理文件冲突。
 7. **插件同步**：交互式同步开发环境 (Neovim/Vim) 的扩展插件。
+8. **自定义工具**：部署 proj-setup 等自定义工具到 `~/.local/bin`。
 
 ## 🖥️ 本地配置
 
@@ -222,7 +223,7 @@ make sync  # 优雅地仅刷新 _scripts/modules.conf 中记录的核心模块
 ### 运行自检
 
 ```bash
-make test   # ShellCheck、bash 语法检查与 Stow 行为测试
+make test   # ShellCheck、bash 语法检查、Stow 行为测试与 skill Python 测试
 make check  # 验证当前 HOME 下的 Stow 链接状态
 make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 ```
