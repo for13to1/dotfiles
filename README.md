@@ -93,7 +93,7 @@ cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 1. **环境检测**：自动安装 Xcode CLT (macOS) 与 Homebrew，校验核心依赖。
 2. **软件安装**：按清单安装必备工具，应用 macOS 系统设置。
 3. **SSH 基础设施**：交互式生成/检测 SSH 密钥，加固目录权限。
-4. **Git 身份配置**：初始化 Git LFS，交互式创建本地身份配置。
+4. **Git 身份配置**：交互式创建本地身份配置，启用 pre-push 钩子。
 5. **Shell 环境**：部署 Oh My Zsh 及其插件生态，自动切换默认 Shell。
 6. **配置挂载**：使用 `stow` 构建全局符号链接，原子化处理文件冲突。
 7. **插件同步**：交互式同步开发环境 (Neovim/Vim) 的扩展插件。

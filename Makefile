@@ -26,7 +26,7 @@ test:
 	@command -v shellcheck >/dev/null || { echo "shellcheck 未安装，请先安装 shellcheck"; exit 1; }
 	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec shellcheck {} +
 	@shellcheck _scripts/hooks/pre-push
-	@find . -type f -name '*.sh' -not -path './.git/*' -exec bash -n {} \;
+	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec bash -n {} \;
 	@bash _scripts/test-check-links.sh
 	@bash _scripts/test-doctor.sh
 	@bash _scripts/test-proj-setup.sh
@@ -35,8 +35,11 @@ test:
 	@python3 agents/.agents/skills/script-analyzer/scripts/test_analyze.py
 	@if command -v pytest >/dev/null 2>&1; then \
 		pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
+	elif command -v uv >/dev/null 2>&1; then \
+		uv run --offline --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py || \
+		uv run --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
 	else \
-		echo "⚠️  pytest 未安装，跳过 pdf2md-polish 测试"; \
+		echo "⚠️  pytest 与 uv 均未安装，跳过 pdf2md-polish 测试"; \
 	fi
 
 

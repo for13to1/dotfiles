@@ -47,10 +47,10 @@ case "$OS" in
 
         SELECTED_MIRROR=""
         case "$mirror_choice" in
-            1|"") SELECTED_MIRROR="tuna" ;;
-            2)    SELECTED_MIRROR="ustc" ;;
-            3)    SELECTED_MIRROR="ali"  ;;
-            *)    SELECTED_MIRROR=""     ;;
+            1) SELECTED_MIRROR="tuna" ;;
+            2) SELECTED_MIRROR="ustc" ;;
+            3) SELECTED_MIRROR="ali"  ;;
+            *) SELECTED_MIRROR=""     ;;
         esac
 
         if [[ -n "$SELECTED_MIRROR" ]]; then
@@ -252,15 +252,9 @@ ok "SSH 环境配置完成"
 # ── 4. Git 身份与基础配置 ─────────────────────────────────────────
 info "正在配置 Git 环境..."
 
-## 1. 初始化 Git LFS
-if command -v git-lfs &>/dev/null; then
-    git lfs install --skip-repo
-    info "检测到 Git LFS，正在拉取真实数据文件..."
-    git -C "$DOTFILES_DIR" lfs pull || warn "Git LFS 目前无需要拉取的数据或遇到网络阻碍"
-    ok "Git LFS 初始化与同步完毕"
-fi
+# Git LFS 由 git 模块（.gitconfig 的 [filter "lfs"]）全局接管，这里无需额外配置
 
-## 2. Git 本地用户信息 (~/.gitconfig.local)
+## 1. Git 本地用户信息 (~/.gitconfig.local)
 if [[ ! -f "$HOME/.gitconfig.local" ]]; then
     echo ""
     warn "未发现 ~/.gitconfig.local （用于存储 Git 用户名和邮箱）"
@@ -282,7 +276,7 @@ EOF
     fi
 fi
 
-## 3. Git 钩子（pre-push 自动运行 make test）
+## 2. Git 钩子（pre-push 自动运行 make test）
 git -C "$DOTFILES_DIR" config core.hooksPath "$DOTFILES_DIR/_scripts/hooks"
 info "已启用 Git 钩子: core.hooksPath=$DOTFILES_DIR/_scripts/hooks"
 

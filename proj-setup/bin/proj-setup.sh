@@ -72,12 +72,10 @@ copy_templates() {
         return 0
     fi
 
-    # 检查目录是否有文件
-    local has_files=false
-    if [ -n "$(ls -A "$src_dir" 2>/dev/null)" ]; then
-        has_files=true
-    fi
-    [[ "$has_files" == "false" ]] && return 0
+    # 检查目录是否为空
+    local first
+    first="$(find "$src_dir" -mindepth 1 -print -quit 2>/dev/null || true)"
+    [[ -n "$first" ]] || return 0
 
     find "${src_dir}" -type f -print0 | while IFS= read -r -d '' src_file; do
         local rel_path
