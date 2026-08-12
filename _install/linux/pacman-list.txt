@@ -21,6 +21,7 @@ git-crypt
 git-lfs
 subversion
 gh
+lazygit
 
 # ---- 容器与数据库服务 ----
 docker
@@ -34,7 +35,7 @@ redis
 rustup
 fnm
 uv
-jdk21-openjdk
+jdk-openjdk
 
 # ---- Shell 与终端 ----
 zsh

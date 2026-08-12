@@ -19,6 +19,7 @@ git-crypt
 git-lfs
 gh
 subversion
+lazygit
 
 # ---- 容器与数据库服务 ----
 docker.io
@@ -29,7 +30,7 @@ postgresql
 redis-server
 
 # ---- 运行时与语言 ----
-openjdk-21-jdk
+default-jdk
 
 # ---- Shell 与终端 ----
 zsh
