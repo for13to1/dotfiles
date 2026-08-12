@@ -153,6 +153,7 @@ Plug 'tpope/vim-sleuth'                                  " 自动检测缩进风
 " ── Git ──────────────────────────────────────────────────────────
 Plug 'tpope/vim-fugitive'                                " Git 命令集成
 Plug 'airblade/vim-gitgutter'                            " 左侧栏显示 git diff
+Plug 'rbong/vim-flog'                                    " 分支/提交图查看
 
 " ── 语法与格式化 ─────────────────────────────────────────────────
 Plug 'dense-analysis/ale'                                " 异步 Lint
@@ -182,6 +183,14 @@ nnoremap <C-p> :Files<CR>
 nnoremap <C-f> :Rg<CR>
 " 搜索当前打开的 Buffer
 nnoremap <leader>b :Buffers<CR>
+
+" ── Git：分支图 + lazygit ────────────────────────────────────────
+" vim-flog：查看分支/提交图
+nnoremap <leader>gf :Flog<CR>
+" lazygit：外部 TUI（需 Vim 支持 :terminal 且已装才启用）
+if has('terminal') && executable('lazygit')
+  nnoremap <leader>gg :terminal lazygit<CR>
+endif
 
 " ── ALE ──────────────────────────────────────────────────────────
 let g:ale_sign_error = '✘'

@@ -28,6 +28,9 @@ vim.opt.rtp:prepend(lazypath)
 vim.g.mapleader = ","
 vim.g.maplocalleader = ","
 
+-- 启用文件类型检测与插件/缩进（各文件类型插件依赖此设置，如 vim-flog）
+vim.cmd("filetype plugin indent on")
+
 vim.opt.number = true
 vim.opt.relativenumber = true
 vim.opt.cursorline = true
@@ -184,4 +187,29 @@ if has_nvim_012 then
   })
 end
 
+-- Git UI: 按 nvim 版本自适应择路
+--   0.10+   -> neogit（完整原生 Git 界面，含提交图）
+--   <0.10   -> vim-flog（专注分支图，配合已有 fugitive 做操作）
+-- 两者用不同 leader 键，且与 lazygit（外部 TUI）不冲突。
+if has_nvim_010 then
+  vim.list_extend(plugins, {
+    { "NeogitOrg/neogit",
+      config = function() require("neogit").setup({}) end,
+      keys = { { "<leader>gi", "<cmd>Neogit<CR>", desc = "Neogit (git interface)" } } },
+  })
+else
+  vim.list_extend(plugins, {
+    { "rbong/vim-flog",
+      cmd = { "Flog", "Floggit" },
+      keys = { { "<leader>gf", "<cmd>Flog<CR>", desc = "Git log graph (flog)" } } },
+  })
+end
+
 require("lazy").setup(plugins)
+
+-- lazygit（外部 TUI，安装于 vcs 主题 / apt|brew lazygit）
+if vim.fn.executable("lazygit") == 1 then
+  vim.keymap.set("n", "<leader>gg", function()
+    vim.cmd("terminal lazygit")
+  end, { desc = "Open lazygit" })
+end
