@@ -174,6 +174,14 @@ case "$OS" in
             else
                 warn "未找到 _install/linux/apt-list.txt，跳过其他软件安装"
             fi
+
+            # 确保 en_US.UTF-8 locale 存在，避免 stow/perl 等工具报 locale 警告。
+            if command -v locale-gen &>/dev/null \
+               && ! locale -a 2>/dev/null | grep -qiE 'en_US\.utf-?8'; then
+                info "正在生成 en_US.UTF-8 locale..."
+                sudo locale-gen en_US.UTF-8 \
+                    || warn "生成失败，可稍后手动执行: sudo locale-gen en_US.UTF-8"
+            fi
         elif command -v pacman &>/dev/null; then
             sudo pacman -Syu --noconfirm
 
@@ -373,24 +381,28 @@ fi
 info "正在使用 Stow 挂载配置文件..."
 
 ## 1. 确定模块列表（单一真值源 SSOT，见 _scripts/modules.conf）
-STOW_MODULES=""
+# 模块清单以每行一个模块的形式输出，逐行读入数组。
+STOW_MODULES=()
 if [[ -f "$DOTFILES_DIR/_scripts/modules.conf" && -f "$DOTFILES_DIR/_scripts/list-modules.sh" ]]; then
-    STOW_MODULES="$(bash "$DOTFILES_DIR/_scripts/list-modules.sh" "$DOTFILES_DIR/_scripts/modules.conf")"
+    mapfile -t STOW_MODULES < <(bash "$DOTFILES_DIR/_scripts/list-modules.sh" "$DOTFILES_DIR/_scripts/modules.conf")
 fi
 
-if [[ -z "$STOW_MODULES" ]]; then
+if (( ${#STOW_MODULES[@]} == 0 )); then
     warn "modules.conf 中未发现有效的模块列表，正在尝试默认列表..."
-    STOW_MODULES="agents zsh git vim nvim tmux ripgrep"
+    STOW_MODULES=(agents zsh git vim nvim tmux ripgrep)
 else
-    info "从 _scripts/modules.conf 加载模块: $STOW_MODULES"
+    info "从 _scripts/modules.conf 加载模块: ${STOW_MODULES[*]}"
 fi
-
-read -r -a STOW_MODULE_ARRAY <<< "$STOW_MODULES"
 
 ## 2. 执行 Stow 挂载
 # 统一入口负责 preflight、冲突备份、共享目录创建、stow -R 和挂载后校验。
-bash "$DOTFILES_DIR/_scripts/stow-sync.sh" \
-    "$DOTFILES_DIR" "$HOME" "${STOW_MODULE_ARRAY[@]}"
+# 挂载失败仅提示，不阻断后续配置。
+if bash "$DOTFILES_DIR/_scripts/stow-sync.sh" \
+    "$DOTFILES_DIR" "$HOME" "${STOW_MODULES[@]}"; then
+    ok "Stow 配置挂载完成"
+else
+    warn "Stow 配置挂载有失败项（详情见上方报错），可稍后运行 make sync 修复"
+fi
 
 # ── 7. 编辑器插件同步 ──────────────────────────────────────
 echo ""

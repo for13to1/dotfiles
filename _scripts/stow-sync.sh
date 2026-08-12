@@ -43,7 +43,8 @@ fi
 cd "$DOTFILES_DIR"
 info "正在使用 Stow 同步模块: $* ..."
 
-bash "$SCRIPT_DIR/check-links.sh" preflight "$DOTFILES_DIR" "$TARGET_DIR" "$@"
+bash "$SCRIPT_DIR/check-links.sh" preflight "$DOTFILES_DIR" "$TARGET_DIR" "$@" \
+    || warn "挂载前检查有异常，继续尝试备份与挂载"
 
 # 这些是系统共享目录，不能被备份；备份后 stow 会对整个目录进行折叠。
 SHARED_PARENT_DIRS=(".config")
@@ -103,12 +104,25 @@ for shared in "${SHARED_PARENT_DIRS[@]}"; do
     mkdir -p "$TARGET_DIR/$shared"
 done
 
-stow_args=(stow)
+stow_args=()
 for ignore in "${STOW_IGNORE_NAMES[@]}"; do
     stow_args+=( "--ignore=$ignore" )
 done
-stow_args+=( -t "$TARGET_DIR" -R "$@" )
-"${stow_args[@]}"
-bash "$SCRIPT_DIR/check-links.sh" verify "$DOTFILES_DIR" "$TARGET_DIR" "$@"
+stow_args+=( -t "$TARGET_DIR" )
 
+# 逐模块挂载：单个失败不影响其余模块，最后统一汇总。
+FAILED=0
+for mod in "$@"; do
+    stow "${stow_args[@]}" -R "$mod" || { error_msg "挂载失败: $mod"; FAILED=1; }
+done
+
+if (( FAILED == 0 )); then
+    bash "$SCRIPT_DIR/check-links.sh" verify "$DOTFILES_DIR" "$TARGET_DIR" "$@" \
+        || FAILED=1
+fi
+
+if (( FAILED )); then
+    error_msg "Stow 同步有失败项，请运行 make sync 修复"
+    exit 1
+fi
 ok "Stow 同步完成"
