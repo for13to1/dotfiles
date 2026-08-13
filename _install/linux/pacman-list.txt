@@ -55,7 +55,10 @@ shellcheck
 shfmt
 
 # ---- 编辑器 ----
+vim
 neovim
+wl-clipboard
+xclip
 
 # ---- 开发工具 ----
 scrcpy

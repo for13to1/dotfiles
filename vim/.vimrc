@@ -115,6 +115,77 @@ if v:version >= 800
 endif
 
 " =============================================================================
+" 系统剪贴板（macOS / Ubuntu 26.04+ / Arch，最低 vim 9.1）
+"   1. 原生 +clipboard  → unnamedplus（macOS 自带 vim、Arch vim）
+"   2. vim 9.1+         → v:clipproviders + 'clipmethod'（如 Ubuntu vim-nox 的 -clipboard）
+"                         + 官方 osc52 包（SSH/远程无显示环境兜底）
+" 工具检测顺序对齐 nvim：wl-copy（Wayland）→ xclip（X11）→ pbcopy（macOS）。
+" =============================================================================
+
+" 检测可用的系统剪贴板工具，返回 [copy_cmd, paste_cmd]，找不到返回空列表
+function! s:DetectClipTool() abort
+    if executable('wl-copy') && executable('wl-paste') && !empty($WAYLAND_DISPLAY)
+        return ['wl-copy --type text/plain', 'wl-paste --no-newline']
+    elseif executable('xclip') && !empty($DISPLAY)
+        return ['xclip -selection clipboard', 'xclip -selection clipboard -o']
+    elseif executable('pbcopy') && executable('pbpaste')
+        return ['pbcopy', 'pbpaste']
+    endif
+    return []
+endfunction
+
+if has('clipboard')
+    " 原生剪贴板：普通 yy 也写入系统剪贴板
+    set clipboard=unnamedplus
+elseif exists('v:clipproviders') && has('unix')
+    " vim 9.1+ provider 机制
+    let s:clip_tool = s:DetectClipTool()
+    if !empty(s:clip_tool)
+        let s:clip_copy_cmd = s:clip_tool[0]
+        let s:clip_paste_cmd = s:clip_tool[1]
+        function! s:ClipCopy(reg, type, lines) abort
+            let l:text = join(a:lines, "\n")
+            " 行类型寄存器（V/l）在末尾补换行，与原生 +clipboard / nvim 行为一致；
+            " 字符类型（v/c）不加，避免多出换行符。
+            if a:type =~# '^[Vl]'
+                let l:text .= "\n"
+            endif
+            call system(s:clip_copy_cmd, l:text)
+        endfunction
+        function! s:ClipPaste(reg) abort
+            return ['', split(system(s:clip_paste_cmd), "\n")]
+        endfunction
+        " available 回调：运行时重新检查工具+显示环境，SSH/无显示时返回 0，
+        " 让 clipmethod 继续尝试下一个方法（如官方 osc52 包）。
+        function! s:ClipAvailable() abort
+            if s:clip_copy_cmd =~# '^wl-copy'
+                return executable('wl-copy') && executable('wl-paste') && !empty($WAYLAND_DISPLAY)
+            elseif s:clip_copy_cmd =~# '^xclip'
+                return executable('xclip') && !empty($DISPLAY)
+            elseif s:clip_copy_cmd =~# '^pbcopy'
+                return executable('pbcopy') && executable('pbpaste')
+            endif
+            return 0
+        endfunction
+        let v:clipproviders['system'] = {
+            \ 'available': function('s:ClipAvailable'),
+            \ 'copy': { '+': function('s:ClipCopy'), '*': function('s:ClipCopy') },
+            \ 'paste': { '+': function('s:ClipPaste'), '*': function('s:ClipPaste') },
+            \ }
+        if index(split(&clipmethod, ','), 'system') == -1
+            set clipmethod^=system
+        endif
+        set clipboard=unnamedplus
+    endif
+    " 官方 osc52 包（vim 9.1 内置）：SSH/远程无显示环境下的兜底，
+    " 追加到 clipmethod 末尾，仅在本机工具不可用时才生效。
+    silent! packadd osc52
+    if index(split(&clipmethod, ','), 'osc52') == -1
+        set clipmethod+=osc52
+    endif
+endif
+
+" =============================================================================
 " C 语言语法增强
 " =============================================================================
 
