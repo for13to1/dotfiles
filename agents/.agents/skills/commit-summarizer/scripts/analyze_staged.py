@@ -249,6 +249,13 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
         )
     )
 
+    # Large net addition (insertions significantly outweigh deletions) is a
+    # structural signal for "new capability": it covers feats that modify
+    # existing files (no new files) but add substantial config or logic.
+    total_ins = sum(f.get("insertions", 0) for f in files)
+    total_dels = sum(f.get("deletions", 0) for f in files)
+    net_additive = total_ins >= 30 and total_ins >= total_dels * 3
+
     # Primary inference. Exclusive strong signals (all-docs / all-tests) are
     # checked first; everything else goes through a scoring model where each
     # type accumulates points from structural and keyword signals.
@@ -261,7 +268,7 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
         primary, confidence = "test", "high"
     else:
         scores = {
-            "feat": feat_signals * 2 + (5 if has_new and not has_delete else 0),
+            "feat": feat_signals * 2 + (5 if (has_new and not has_delete) or net_additive else 0),
             "fix": fix_signals * 2,
             "refactor": (
                 refactor_signals * 2
@@ -280,7 +287,7 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
                 # Structural evidence is trustworthy enough for medium;
                 # keyword-only evidence stays low.
                 structural = (
-                    (primary == "feat" and has_new and not has_delete)
+                    (primary == "feat" and ((has_new and not has_delete) or net_additive))
                     or (primary == "refactor" and (
                         (has_rename and feat_signals == 0 and fix_signals == 0)
                         or (is_rename_heavy and refactor_signals > feat_signals)
@@ -306,6 +313,8 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
             "feat_signals": feat_signals,
             "fix_signals": fix_signals,
             "refactor_signals": refactor_signals,
+            "total_insertions": total_ins,
+            "total_deletions": total_dels,
         },
     }
 

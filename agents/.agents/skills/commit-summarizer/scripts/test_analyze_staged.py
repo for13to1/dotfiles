@@ -50,6 +50,11 @@ BRANCH_CASES = [
     ("modify_only_no_signal", [_f("M", "main.py")], "+x=1", "chore", "low"),
     # 9. else (only delete, no signal) → chore/low
     ("delete_only", [_f("D", "old.py")], "-x", "chore", "low"),
+    # 10. modify-only but large net addition → feat/medium
+    ("modify_only_large_net_add",
+     [{"status": "M", "path": "config.py", "raw_status": "M",
+       "insertions": 84, "deletions": 10}],
+     "+x", "feat", "medium"),
 ]
 
 # Regression: rename + feat/fix signal must NOT short-circuit to refactor.
