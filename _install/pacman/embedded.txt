@@ -1,0 +1,11 @@
+# embedded 主题
+linux-tools
+hwdata
+dtc
+repo
+flex
+bison
+bc
+openssl
+ncurses
+squashfs-tools

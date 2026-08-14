@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test-stow-sync.sh — stow-sync.sh 集成测试
-# 用法: bash _scripts/test-stow-sync.sh
+# 用法: bash _tests/test-stow-sync.sh
 #
 
 set -euo pipefail

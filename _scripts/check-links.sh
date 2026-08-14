@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 #
 # check-links.sh — Stow 链接检查工具
-# 合并原 check-stow-parents.sh（挂载前检查）与 Makefile check 目标（挂载后校验）。
 #
 # 用法:
 #   check-links.sh preflight <dotfiles-dir> <target-dir> <module>...

@@ -1,0 +1,9 @@
+# vcs 主题
+gnupg
+gh
+git-crypt
+git-lfs
+subversion
+lazygit
+jj
+radicle

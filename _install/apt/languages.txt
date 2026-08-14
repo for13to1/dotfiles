@@ -1,0 +1,2 @@
+# languages 主题
+openjdk-21-jdk

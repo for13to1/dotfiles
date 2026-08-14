@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test-check-links.sh — check-links.sh 行为测试
-# 用法: bash _scripts/test-check-links.sh
+# 用法: bash _tests/test-check-links.sh
 #
 
 set -euo pipefail

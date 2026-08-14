@@ -1,0 +1,11 @@
+# base 主题
+zsh
+stow
+tmux
+tmux-plugin-manager
+git
+curl
+wget
+unzip
+7zip
+qrencode

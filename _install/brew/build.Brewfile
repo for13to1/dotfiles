@@ -1,0 +1,12 @@
+# build 主题
+brew "xcodegen"
+brew "cmake"
+brew "ninja"
+brew "clang-format"
+brew "astyle"
+brew "cling"
+brew "swiftformat"
+brew "cloc"
+brew "llvm"
+brew "pkg-config"
+brew "qt"

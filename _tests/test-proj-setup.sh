@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test-proj-setup.sh - proj-setup.sh behavior tests
-# Usage: bash _scripts/test-proj-setup.sh
+# Usage: bash _tests/test-proj-setup.sh
 #
 
 set -euo pipefail

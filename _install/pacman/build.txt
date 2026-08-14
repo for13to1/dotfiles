@@ -1,0 +1,9 @@
+# build 主题
+base-devel
+make
+cmake
+ninja
+clang
+clang-format
+astyle
+cloc

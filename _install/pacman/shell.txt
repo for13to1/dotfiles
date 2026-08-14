@@ -1,0 +1,15 @@
+# shell 主题
+tree
+bat
+eza
+fd
+ripgrep
+fzf
+rename
+jq
+zoxide
+yazi
+shellcheck
+shfmt
+xclip
+wl-clipboard

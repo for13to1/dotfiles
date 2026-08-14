@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/linux/curl-install.sh — 语言生态包管理器（fnm/rustup/uv）途径的软件安装
+# _install/install-by-curl.sh — 语言生态包管理器（fnm/rustup/uv）途径的软件安装
 
 set -euo pipefail
 

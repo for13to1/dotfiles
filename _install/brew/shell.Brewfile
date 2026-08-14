@@ -1,0 +1,13 @@
+# shell 主题
+brew "tree"
+brew "bat"
+brew "eza"
+brew "fd"
+brew "ripgrep"
+brew "fzf"
+brew "rename"
+brew "jq"
+brew "zoxide"
+brew "yazi"
+brew "shellcheck"
+brew "shfmt"

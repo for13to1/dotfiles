@@ -34,16 +34,14 @@ dotfiles/
 │   ├── bin/
 │   ├── templates/
 │   └── README.md
-├── _install/                   # 平台专属软件安装
-│   ├── mac/
-│   │   ├── Brewfile            # Homebrew 完整软件清单
-│   │   ├── Brewfile.essential  # Homebrew 必备软件清单
-│   │   └── brew-install.sh     # 清单安装入口
-│   └── linux/
-│       ├── apt-list.txt        # Debian/Ubuntu 软件包清单
-│       ├── pacman-list.txt     # Arch Linux 软件包清单
-│       ├── curl-install.sh     # 官方安装器途径的软件安装
-│       └── npm-install.sh      # npm 生态软件安装（基于 fnm Node）
+├── _install/                   # 软件安装：主题清单 + 安装工具
+│   ├── install                 # 按主题安装入口（多选主题 → 合并去重 → 一次性安装）
+│   ├── install-by-curl.sh      # 官方安装器途径的软件安装（fnm/rustup/uv）
+│   ├── install-by-npm.sh       # npm 生态软件安装（基于 fnm Node）
+│   ├── apt/                    # Debian/Ubuntu 主题清单（<theme>.txt）
+│   ├── pacman/                 # Arch Linux 主题清单（<theme>.txt）
+│   ├── brew/                   # Homebrew 主题清单（<theme>.Brewfile）
+│   └── scratch/                # 一次性脚本
 ├── _setup/                     # 系统底层偏好与权限初始化脚本
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
@@ -54,12 +52,14 @@ dotfiles/
 │   ├── stow-sync.sh            # Stow 统一同步入口
 │   ├── check-links.sh          # Stow 挂载前检查与挂载后校验
 │   ├── doctor.sh               # 环境健康诊断
-│   ├── hooks/
-│   │   └── pre-push            # Git 钩子：push 前自动运行 make test
+│   └── hooks/
+│       └── pre-push            # Git 钩子：push 前自动运行 make test
+├── _tests/                     # 行为测试（make test 自动发现）
 │   ├── test-check-links.sh     # check-links 行为测试
 │   ├── test-doctor.sh          # doctor 行为测试
 │   ├── test-proj-setup.sh      # proj-setup 行为测试
-│   └── test-stow-sync.sh       # stow-sync 集成测试
+│   ├── test-stow-sync.sh       # stow-sync 集成测试
+│   └── test-install.sh         # _install/install 行为测试
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本
 ├── opencode.json               # OpenCode 权限配置（本仓库）
@@ -172,16 +172,29 @@ ssh-copy-id <user>@<host>
 
 ## 🔄 日常维护
 
-### 更新 Brewfile
+### 按主题安装软件
 
-`_install/mac/Brewfile` 属于按需软件清单，推荐手动维护：
+`_install/<platform>/<theme>.{txt,Brewfile}` 是主题清单，`_install/install` 是统一安装入口：
 
 ```bash
-# 1. 编辑清单
-${EDITOR:-vi} ~/dotfiles/_install/mac/Brewfile
+# 预览合并去重后的安装清单（不真正安装）
+INSTALL_DRY=1 bash ~/dotfiles/_install/install --brew base shell editor
 
-# 2. 提交更新
-cd ~/dotfiles && git add -A && git commit -m "feat: update brewfile" && git push
+# 实际安装：多选主题，自动合并去重后一次性交给包管理器
+bash ~/dotfiles/_install/install --apt base shell editor
+
+# 不指定主题 = 只装 base 主题（bootstrap 的默认行为）
+bash ~/dotfiles/_install/install --brew
+```
+
+主题清单是唯一的软件数据源，主题间允许重复包名，安装前统一去重。
+
+```bash
+# 编辑某平台的主题清单
+${EDITOR:-vi} ~/dotfiles/_install/brew/base.Brewfile
+
+# 提交更新
+cd ~/dotfiles && git add -A && git commit -m "feat: update brew themes" && git push
 ```
 
 ### 添加新配置模块

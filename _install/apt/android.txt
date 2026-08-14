@@ -1,0 +1,3 @@
+# android 主题
+adb
+scrcpy

@@ -1,0 +1,3 @@
+# editor 主题
+vim-nox
+neovim

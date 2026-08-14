@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/linux/npm-install.sh — npm 生态工具链安装（复用本地 fnm/Node 环境）
+# _install/install-by-npm.sh — npm 生态工具链安装（复用本地 fnm/Node 环境）
 
 set -euo pipefail
 

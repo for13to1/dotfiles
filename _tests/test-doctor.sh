@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # test-doctor.sh - doctor.sh behavior tests
-# Usage: bash _scripts/test-doctor.sh
+# Usage: bash _tests/test-doctor.sh
 #
 
 set -euo pipefail

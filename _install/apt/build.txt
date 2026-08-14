@@ -1,0 +1,8 @@
+# build 主题
+build-essential
+make
+cmake
+ninja-build
+clang-format
+astyle
+cloc

@@ -115,6 +115,32 @@ confirm() {
     [[ "$reply" =~ ^[Yy](es)?$ ]]
 }
 
+# ── 主题清单合并去重 ──────────────────────────────────────────────
+# 主题清单读取：跳过 # 开头的注释行与空行（apt/pacman 纯包名，brew 为 brew/cask 行）。
+theme_list_lines() {
+    grep -v '^[[:space:]]*#' "$1" 2>/dev/null | grep -v '^[[:space:]]*$' || true
+}
+
+# 通用保序去重（stdin → stdout）：按整行去重，保留首次出现的行。
+dedupe_lines() {
+    awk '!seen[$0]++'
+}
+
+# Brewfile 去重（stdin → stdout）：按「brew/cask + 包名」去重，保留首次出现的完整行
+# （含 restart_service 等选项）；非 brew/cask 行原样透传。
+# 仅用 awk 基础特性，兼容 macOS 自带 BSD awk。
+dedupe_brewfile() {
+    awk '
+        /^[[:space:]]*(brew|cask)[[:space:]]+"[^"]+"/ {
+            name = $2
+            sub(/,.*/, "", name)
+            key = $1 " " name
+            if (seen[key]++) next
+        }
+        { print }
+    '
+}
+
 # ── 交互式安装 ────────────────────────────────────────────────────
 # 用法: install_with_prompt <check_cmd> <prompt> <install_fn> <success_msg> [known_paths...]
 # 已装（command -v 或已知路径存在）则跳过；非 Debian 系也跳过。

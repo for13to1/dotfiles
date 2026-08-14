@@ -1,0 +1,6 @@
+# languages 主题
+rustup
+fnm
+uv
+jdk21-openjdk
+python
