@@ -1,3 +1,13 @@
 # network 主题
+# ── 诊断 ──
+brew "mtr"
+brew "nmap"
+brew "iperf3"
+# ── 传输 ──
+brew "rsync"
 brew "aria2"
 brew "croc"
+brew "rclone"
+# ── 远程 ──
+brew "telnet"
+brew "mosh"

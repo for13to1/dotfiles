@@ -2,5 +2,5 @@
 rustup
 fnm
 uv
-jdk21-openjdk
+jdk-openjdk
 python

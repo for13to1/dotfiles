@@ -7,4 +7,3 @@ curl
 wget
 unzip
 7zip
-qrencode

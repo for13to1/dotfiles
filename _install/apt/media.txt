@@ -1,5 +1,5 @@
 # media 主题
 ffmpeg
-opencv
+libopencv-dev
 imagemagick
 gstreamer1.0-tools

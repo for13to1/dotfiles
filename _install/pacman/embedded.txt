@@ -8,4 +8,11 @@ bison
 bc
 openssl
 ncurses
+gperf
+picocom
+minicom
+mtd-utils
+e2fsprogs
+usbutils
+python-pyserial
 squashfs-tools

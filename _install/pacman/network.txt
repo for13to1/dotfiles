@@ -1,3 +1,16 @@
 # network 主题
+# ── 诊断 ──
+mtr
+bind
+nmap
+tcpdump
+iperf3
+openbsd-netcat
+# ── 传输 ──
+rsync
 aria2
 croc
+rclone
+# ── 远程 ──
+inetutils
+mosh

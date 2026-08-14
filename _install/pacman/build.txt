@@ -4,6 +4,5 @@ make
 cmake
 ninja
 clang
-clang-format
-astyle
-cloc
+lib32-glibc
+lib32-gcc-libs

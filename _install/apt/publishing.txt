@@ -1,2 +1,5 @@
 # publishing 主题
 hugo
+doxygen
+python3-sphinx
+python3-breathe

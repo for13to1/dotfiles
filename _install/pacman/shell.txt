@@ -8,8 +8,9 @@ fzf
 rename
 jq
 zoxide
+htop
+btop
+psmisc
 yazi
-shellcheck
-shfmt
 xclip
 wl-clipboard

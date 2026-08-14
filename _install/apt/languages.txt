@@ -1,2 +1,3 @@
 # languages 主题
-openjdk-21-jdk
+default-jdk
+python-is-python3

@@ -8,4 +8,12 @@ bison
 bc
 libssl-dev
 libncurses-dev
+gperf
+picocom
+minicom
+tio
+mtd-utils
+e2fsprogs
+usbutils
+python3-serial
 squashfs-tools

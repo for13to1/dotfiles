@@ -2,4 +2,4 @@
 brew "fnm"
 brew "rustup"
 brew "uv"
-brew "openjdk@21"
+brew "openjdk"
