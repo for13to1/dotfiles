@@ -11,7 +11,7 @@ dotfiles/
 ├── agents/                     # Stow 包：通用 AI Agent 能力
 │   └── .agents/
 │       ├── AGENTS.md           # Agent 通用原则
-│       └── skills/             # 可复用专家技能
+│       └── skills/             # AI agent skills
 ├── zsh/                        # Stow 包：Zsh 配置
 │   ├── .zshrc
 │   └── .zsh.d/
@@ -22,7 +22,7 @@ dotfiles/
 │   └── .vimrc
 ├── nvim/                       # Stow 包：Neovim 配置
 │   └── .config/nvim/
-│       ├── init.lua
+│       └── init.lua
 ├── tmux/                       # Stow 包：tmux 配置
 │   └── .tmux.conf
 ├── ripgrep/                    # Stow 包：ripgrep 配置
@@ -39,8 +39,7 @@ dotfiles/
 │   ├── install-by-npm.sh       # npm 生态软件安装（基于 fnm Node）
 │   ├── apt/                    # Debian/Ubuntu 主题清单（<theme>.txt）
 │   ├── pacman/                 # Arch Linux 主题清单（<theme>.txt）
-│   ├── brew/                   # Homebrew 主题清单（<theme>.Brewfile）
-│   └── scratch/                # 一次性脚本
+│   └── brew/                   # Homebrew 主题清单（<theme>.Brewfile）
 ├── _setup/                     # 系统底层偏好与权限初始化脚本
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
@@ -214,15 +213,12 @@ cd ~/dotfiles && stow tmux
 
 仓库内置了 `brew_mirror` 工具函数（定义于 `zsh/.zsh.d/brew_mirror.sh`），方便在不同镜像源之间快速切换：
 
-切换仅加速 bottle/API 下载，git 仓库始终走官方 GitHub。
-
 ```bash
 brew_mirror              # 查看当前 Homebrew 镜像源状态
 brew_mirror tuna         # 切换至 清华大学 (TUNA) 镜像源
 brew_mirror ustc         # 切换至 中国科大 (USTC) 镜像源
 brew_mirror ali          # 切换至 阿里巴巴 (Aliyun) 镜像源
 brew_mirror reset        # 重置为官方源
-brew_mirror -q <source>  # 静默模式（不打印成功提示），适合放在 .zshrc.local 中使用
 ```
 
 ### 增量更新 dotfiles

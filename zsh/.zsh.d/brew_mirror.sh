@@ -2,8 +2,7 @@
 # brew_mirror — Homebrew 镜像源切换
 # 用法: brew_mirror [-q] [tuna | ustc | ali | reset]
 #   -q / --quiet  静默模式，不打印切换提示（适合在 .zshrc.local 中调用）
-#
-# 切换镜像仅设置 API/BOTTLE 变量；git remote 始终指向官方 GitHub。
+
 function restore_brew_git_remotes() {
     local brew_repo repo url
     brew_repo="$(brew --repo 2>/dev/null)" || return 0
@@ -40,6 +39,7 @@ function brew_mirror() {
         echo -e "当前 Homebrew 镜像源状态:"
         echo -e "  HOMEBREW_API_DOMAIN:      \033[1;33m${HOMEBREW_API_DOMAIN:-[未设置 (官方默认)]}\033[0m"
         echo -e "  HOMEBREW_BOTTLE_DOMAIN:   \033[1;33m${HOMEBREW_BOTTLE_DOMAIN:-[未设置]}\033[0m"
+        echo -e "  HOMEBREW_BREW_GIT_REMOTE: \033[1;33m${HOMEBREW_BREW_GIT_REMOTE:-[未设置]}\033[0m"
         echo -e "  git remote (brew):        \033[1;33m$(git -C "$(brew --repo 2>/dev/null)" remote get-url origin 2>/dev/null || echo '[无法获取]')\033[0m"
         return 0
     fi
@@ -57,21 +57,21 @@ function brew_mirror() {
             return 0
             ;;
         tuna|tsinghua)
-            restore_brew_git_remotes
             export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
             export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
+            export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
             (( quiet )) || echo -e "\033[1;32m✅ 已切换至 清华大学 (TUNA) 镜像源\033[0m"
             ;;
         ustc)
-            restore_brew_git_remotes
             export HOMEBREW_API_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles/api"
             export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles"
+            export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.ustc.edu.cn/brew.git"
             (( quiet )) || echo -e "\033[1;32m✅ 已切换至 中国科学技术大学 (USTC) 镜像源\033[0m"
             ;;
         aliyun|ali)
-            restore_brew_git_remotes
             export HOMEBREW_API_DOMAIN="https://mirrors.aliyun.com/homebrew/homebrew-bottles/api"
             export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.aliyun.com/homebrew/homebrew-bottles"
+            export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.aliyun.com/homebrew/brew.git"
             (( quiet )) || echo -e "\033[1;32m✅ 已切换至 阿里巴巴 (Aliyun) 镜像源\033[0m"
             ;;
         reset|default)
