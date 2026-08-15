@@ -24,7 +24,7 @@ source "$DOTFILES_DIR/_scripts/common.sh"
 OS="$(uname -s)"
 info "检测到操作系统: $OS"
 
-# ── 2. 基础软件安装 ──────────────────────────────────────────────
+# ── 2. 软件安装 ──────────────────────────────────────────────
 case "$OS" in
     Darwin*)
         info "🍎 macOS 环境，开始配置..."
@@ -42,7 +42,7 @@ case "$OS" in
         echo "   1) 清华大学 (TUNA) - [默认]"
         echo "   2) 中国科大 (USTC)"
         echo "   3) 阿里巴巴 (Aliyun)"
-        echo "   4) 跳过 (使用官方默认源)"
+        echo "   4) 跳过 (使用官方源)"
         mirror_choice="$(ask_value "请输入数字 [1-4]: " "1")"
 
         SELECTED_MIRROR=""
@@ -54,8 +54,13 @@ case "$OS" in
         esac
 
         if [[ -n "$SELECTED_MIRROR" ]]; then
-            brew_mirror "$SELECTED_MIRROR"
+            brew_mirror -q "$SELECTED_MIRROR"
             ok "已临时设置 $SELECTED_MIRROR 镜像源以加速安装"
+        elif command -v brew &>/dev/null; then
+            brew_mirror -q reset
+            ok "已重置为 Homebrew 官方源"
+        else
+            info "默认使用 Homebrew 官方源"
         fi
 
         # Xcode 开发工具检测：优先使用完整版 Xcode.app，否则退而安装精简版 CLT
@@ -93,17 +98,24 @@ case "$OS" in
             brew install stow
         fi
 
-        # 按主题安装基础软件（默认 base 主题，其余主题按需手动选装）
-        # brew 安装某些包可能因网络、密码弹窗等原因失败，不应阻断后续步骤，
-        # 失败的包可稍后手动重试。
-        info "正在更新 Homebrew 索引并安装基础软件（base 主题）..."
+        # 安装 base 主题
+        info "正在更新 Homebrew 并安装 base 主题..."
         brew update || warn "Homebrew 索引更新未能全量完成（可能是部分第三方 Tap 连不上），尝试继续安装..."
         if bash "$DOTFILES_DIR/_install/install" --brew; then
-            ok "基础软件安装完毕"
+            ok "base 主题安装完毕"
         else
-            warn "基础软件安装有失败项，可稍后运行 bash _install/install --brew 重试"
+            warn "base 主题部分软件安装失败，可稍后运行 bash _install/install --brew 重试"
         fi
-        info "💡 其余主题请按需选装，例如: bash _install/install --brew editor languages"
+        # 提示其余可选主题：动态读取清单目录（排除默认主题），增删自动跟随
+        _brew_themes=""
+        for _f in "$DOTFILES_DIR"/_install/brew/*.Brewfile; do
+            [[ -f "$_f" ]] || continue
+            _t="$(basename "$_f")"
+            [[ "$_t" == "base.Brewfile" ]] && continue
+            _brew_themes+=" ${_t%.Brewfile}"
+        done
+        info "💡 其余主题请按需选装: bash _install/install --brew$_brew_themes"
+        unset _f _t _brew_themes
 
         # 执行 macOS 偏好设置脚本
         if [[ -f "$DOTFILES_DIR/_setup/mac/setup.sh" ]]; then
@@ -116,13 +128,13 @@ case "$OS" in
     Linux*)
         info "🐧 Linux 环境，开始配置..."
 
-        # 按主题安装基础软件（默认 base 主题）；失败可确认继续/停止
+        # 按主题安装软件
         install_bootstrap_themes() {
             local platform="$1"
             if bash "$DOTFILES_DIR/_install/install" "--$platform"; then
-                ok "$platform 基础软件安装完毕"
+                ok "$platform base 主题安装完毕"
             else
-                warn "$platform 基础软件安装有失败项，可稍后运行 bash _install/install --$platform 重试"
+                warn "$platform base 主题部分软件安装失败，可稍后运行 bash _install/install --$platform 重试"
                 if confirm "是否继续执行后续配置？ [Y/n]: " 1; then
                     warn "继续执行后续配置"
                 else
@@ -356,7 +368,11 @@ info "正在使用 Stow 挂载配置文件..."
 # 模块清单以每行一个模块的形式输出，逐行读入数组。
 STOW_MODULES=()
 if [[ -f "$DOTFILES_DIR/_scripts/modules.conf" && -f "$DOTFILES_DIR/_scripts/list-modules.sh" ]]; then
-    mapfile -t STOW_MODULES < <(bash "$DOTFILES_DIR/_scripts/list-modules.sh" "$DOTFILES_DIR/_scripts/modules.conf")
+    # macOS 自带 bash 3.2 无 mapfile，改用 while read
+    while IFS= read -r _module; do
+        STOW_MODULES+=("$_module")
+    done < <(bash "$DOTFILES_DIR/_scripts/list-modules.sh" "$DOTFILES_DIR/_scripts/modules.conf")
+    unset _module
 fi
 
 if (( ${#STOW_MODULES[@]} == 0 )); then
