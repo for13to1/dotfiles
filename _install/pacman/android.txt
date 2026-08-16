@@ -1,3 +1,0 @@
-# android 主题
-android-tools
-scrcpy

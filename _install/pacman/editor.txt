@@ -1,3 +1,0 @@
-# editor 主题
-vim
-neovim

@@ -1,0 +1,25 @@
+# default 组 — 默认安装的软件
+zsh
+stow
+tmux
+git
+git-lfs
+curl
+wget
+unzip
+7zip
+make
+shellcheck
+shfmt
+lazygit
+ripgrep
+fzf
+bat
+eza
+fd
+jq
+zoxide
+neovim
+rustup
+fnm
+uv

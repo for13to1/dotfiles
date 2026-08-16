@@ -1,0 +1,15 @@
+# shell 组
+tree
+bat
+eza
+fd-find
+ripgrep
+fzf
+rename
+jq
+zoxide
+htop
+btop
+psmisc
+xclip
+wl-clipboard

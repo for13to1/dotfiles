@@ -1,0 +1,5 @@
+# media 组
+ffmpeg
+libopencv-dev
+imagemagick
+gstreamer1.0-tools

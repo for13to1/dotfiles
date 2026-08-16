@@ -1,3 +1,0 @@
-# languages 主题
-default-jdk
-python-is-python3

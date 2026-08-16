@@ -1,5 +1,0 @@
-# media 主题
-ffmpeg
-opencv
-imagemagick
-gstreamer

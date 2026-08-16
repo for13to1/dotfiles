@@ -1,0 +1,14 @@
+# build 组
+build-essential
+make
+cmake
+ninja-build
+automake
+autoconf
+libtool
+pkg-config
+gettext
+texinfo
+gcc-multilib
+g++-multilib
+libc6-dev-i386

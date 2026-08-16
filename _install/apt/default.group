@@ -1,0 +1,24 @@
+# default 组 — 默认安装的软件
+# fnm/rustup/uv 经 install-by-curl.sh 安装（apt 仓库无 fnm/uv 包）。
+zsh
+stow
+tmux
+tmux-plugin-manager
+git
+git-lfs
+curl
+wget
+unzip
+7zip
+make
+shellcheck
+shfmt
+lazygit
+ripgrep
+fzf
+bat
+eza
+fd-find
+jq
+zoxide
+neovim

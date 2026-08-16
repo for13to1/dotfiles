@@ -115,9 +115,9 @@ confirm() {
     [[ "$reply" =~ ^[Yy](es)?$ ]]
 }
 
-# ── 主题清单合并去重 ──────────────────────────────────────────────
-# 主题清单读取：跳过 # 开头的注释行与空行（apt/pacman 纯包名，brew 为 brew/cask 行）。
-theme_list_lines() {
+# ── .group 文件合并去重 ────────────────────────────────────────
+# .group 文件读取：跳过 # 开头的注释行与空行（apt/pacman 纯包名，brew 为 brew/cask 行）。
+group_list_lines() {
     grep -v '^[[:space:]]*#' "$1" 2>/dev/null | grep -v '^[[:space:]]*$' || true
 }
 

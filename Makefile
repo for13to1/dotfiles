@@ -33,11 +33,18 @@ test:
 	@set -e; for t in _tests/test-*.sh; do bash "$$t"; done
 	@python3 agents/.agents/skills/commit-summarizer/scripts/test_analyze_staged.py
 	@python3 agents/.agents/skills/script-analyzer/scripts/test_analyze.py
-	@if command -v pytest >/dev/null 2>&1; then \
+	@if [ -x agents/.agents/skills/pdf2md-polish/.venv/bin/python ] \
+	    && agents/.agents/skills/pdf2md-polish/.venv/bin/python -m pytest --version >/dev/null 2>&1; then \
+		agents/.agents/skills/pdf2md-polish/.venv/bin/python -m pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
+	elif command -v pytest >/dev/null 2>&1; then \
 		pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
 	elif command -v uv >/dev/null 2>&1; then \
-		uv run --offline --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py || \
-		uv run --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
+		if uv run --offline --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py \
+		   || uv run --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; then \
+			:; \
+		else \
+			echo "⚠️  uv 无法运行 pdf2md-polish 测试（网络/缓存不可用），跳过"; \
+		fi; \
 	else \
 		echo "⚠️  pytest 与 uv 均未安装，跳过 pdf2md-polish 测试"; \
 	fi

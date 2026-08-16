@@ -1,0 +1,13 @@
+# build 组
+brew "xcodegen"
+brew "cmake"
+brew "ninja"
+brew "cling"
+brew "llvm"
+brew "pkg-config"
+brew "automake"
+brew "autoconf"
+brew "libtool"
+brew "gettext"
+brew "texinfo"
+brew "qt"

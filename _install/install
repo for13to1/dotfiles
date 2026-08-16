@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
 #
-# _install/install — 按主题安装软件包
+# _install/install — 按组安装软件包
 #
-# 模型: _install/<platform>/<theme>.<ext> 是一个主题清单，
-#       安装 = 多选主题 → 合并去重 → 一次性交给平台包管理器。
+# 未指定时安装 default 组。
 #
 # 用法:
-#   install --<platform> [theme...]
+#   install --<platform> [group...]
 #     --<platform>  --apt | --pacman | --brew
-#     [theme...]  主题名，可多选；缺省时安装 base 主题
+#     [group...]  组名，可多选；缺省时安装 default 组
 #
 # 环境变量:
-#   INSTALL_DRY=1       只输出合并去重后的最终清单，不真正安装（供测试/预览）
-#   INSTALL_BASE_DIR=…  覆盖主题根目录（默认脚本所在目录，测试用）
+#   INSTALL_DRY=1       只输出合并去重后的最终列表，不真正安装（供测试/预览）
+#   INSTALL_BASE_DIR=…  覆盖 .group 文件根目录（默认脚本所在目录，测试用）
 #
 # 约定:
-#   - apt/pacman 清单扩展名为 .txt，每行一个包名（# 开头为注释）。
-#   - brew 清单扩展名为 .Brewfile，使用 Homebrew 的 brew/cask 语法。
-#   - 主题间允许重复包：合并后按包名去重，再一次性安装。
+#   - 每组一个 .group 文件：apt/pacman 每行一个包名，brew 为 brew/cask 行。
+#   - 组间允许重复包：合并后按包名去重，再一次性安装。
 #
 
 set -euo pipefail
@@ -32,16 +30,16 @@ SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/common.sh"
 
-# 进度/警告日志走 stderr，最终清单（DRY 输出）独占 stdout，便于管道与测试断言。
+# 进度/警告日志走 stderr，最终列表（DRY 输出）独占 stdout，便于管道与测试断言。
 info()      { msg 'info'  "$*" >&2; }
 warn()      { msg 'warn'  "$*" >&2; }
 ok()        { msg 'ok'    "$*" >&2; }
 error_msg() { msg 'error' "$*" >&2; }
 
 if (( $# < 1 )); then
-    echo "用法: $0 --<platform> [theme...]" >&2
+    echo "用法: $0 --<platform> [group...]" >&2
     echo "      --<platform>  --apt | --pacman | --brew" >&2
-    echo "      [theme...]  主题名，可多选；缺省时安装 base 主题" >&2
+    echo "      [group...]  组名，可多选；缺省时安装 default 组" >&2
     exit 2
 fi
 
@@ -49,35 +47,35 @@ PLATFORM_FLAG="$1"
 shift
 
 case "$PLATFORM_FLAG" in
-    --apt)    PLATFORM="apt";    ext="txt" ;;
-    --pacman) PLATFORM="pacman"; ext="txt" ;;
-    --brew)   PLATFORM="brew";   ext="Brewfile" ;;
+    --apt)    PLATFORM="apt";    ext="group" ;;
+    --pacman) PLATFORM="pacman"; ext="group" ;;
+    --brew)   PLATFORM="brew";   ext="group" ;;
     *) error "不支持的平台: $PLATFORM_FLAG (可选: --apt | --pacman | --brew)" ;;
 esac
 
 BASE_DIR="${INSTALL_BASE_DIR:-$SCRIPT_DIR}"
 
-# ── 确定主题集合（缺省 = base 主题）──────────────────────────────
-themes=()
+# ── 确定组集合（缺省 = default 组）───────────────────────────────
+groups=()
 if (( $# == 0 )); then
-    themes=(base)
-    info "未指定主题，安装 $PLATFORM 默认主题 base"
+    groups=(default)
+    info "未指定组，安装 $PLATFORM 默认组: ${groups[*]}"
 else
-    themes=("$@")
+    groups=("$@")
 fi
 
-# ── 收集清单 → 合并去重 ──────────────────────────────────────────
+# ── 收集 .group 文件 → 合并去重 ─────────────────────────────────
 declare -a all_lines=()
-for theme in "${themes[@]}"; do
-    file="$BASE_DIR/$PLATFORM/$theme.$ext"
+for group in "${groups[@]}"; do
+    file="$BASE_DIR/$PLATFORM/$group.$ext"
     if [[ ! -f "$file" ]]; then
-        warn "主题清单不存在: ${file}，跳过"
+        warn ".group 文件不存在: ${file}，跳过"
         continue
     fi
-    info "收集主题 [$PLATFORM/$theme]: $file"
+    info "收集组 [$PLATFORM/$group]: $file"
     while IFS= read -r line; do
         all_lines+=("$line")
-    done < <(theme_list_lines "$file")
+    done < <(group_list_lines "$file")
 done
 
 if (( ${#all_lines[@]} == 0 )); then
@@ -96,7 +94,7 @@ if [[ -z "$merged" ]]; then
     exit 0
 fi
 
-# ── 干跑：只输出合并去重后的最终清单 ─────────────────────────────
+# ── 干跑：只输出合并去重后的最终列表 ─────────────────────────────
 if [[ -n "${INSTALL_DRY:-}" ]]; then
     printf '%s\n' "$merged"
     exit 0
@@ -138,4 +136,4 @@ case "$PLATFORM" in
         ;;
 esac
 
-ok "$PLATFORM 主题安装完成: ${themes[*]}"
+ok "$PLATFORM 组安装完成: ${groups[*]}"

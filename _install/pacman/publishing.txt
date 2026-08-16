@@ -1,6 +1,0 @@
-# publishing 主题
-tectonic
-hugo
-doxygen
-python-sphinx
-python-breathe

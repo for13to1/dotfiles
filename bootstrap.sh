@@ -25,9 +25,42 @@ OS="$(uname -s)"
 info "检测到操作系统: $OS"
 
 # ── 2. 软件安装 ──────────────────────────────────────────────
+# ── 可选组提示：枚举某平台除 default 组外的其余组，便于按需选装 ──
+hint_optional_groups() {
+    local platform="$1"
+    local groups=() _f _t
+    for _f in "$DOTFILES_DIR/_install/$platform"/*.group; do
+        [[ -f "$_f" ]] || continue
+        _t="$(basename "$_f")"
+        [[ "$_t" == "default.group" ]] && continue
+        groups+=("${_t%.group}")
+    done
+    if (( ${#groups[@]} > 0 )); then
+        info "💡 其余组请按需选装: bash _install/install --$platform ${groups[*]}"
+    fi
+}
+
 case "$OS" in
     Darwin*)
         info "🍎 macOS 环境，开始配置..."
+
+        # Xcode 开发工具检测：优先使用完整版 Xcode.app，否则退而安装精简版 CLT
+        if [[ -d "/Applications/Xcode.app" ]]; then
+            # 完整版 Xcode 已安装，测试 xcodebuild 是否可用
+            if ! xcodebuild -version &>/dev/null; then
+                info "检测到 Xcode.app 但当前路径未正确指向它，正在切换 xcode-select 路径..."
+                sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+            fi
+            ok "Xcode.app 已就绪"
+        elif ! xcode-select -p &>/dev/null; then
+            # 没有完整版 Xcode，也没有 CLT，安装精简版 CLT
+            info "未检测到 Xcode.app，正在安装 Command Line Tools..."
+            xcode-select --install
+            echo "请在弹出的窗口中点击\"安装\"，安装完成后重新运行本脚本。"
+            exit 0
+        else
+            ok "Xcode Command Line Tools 已就绪"
+        fi
 
         if [[ -f "$DOTFILES_DIR/zsh/.zsh.d/brew_mirror.sh" ]]; then
             # shellcheck disable=SC1091
@@ -63,24 +96,6 @@ case "$OS" in
             info "默认使用 Homebrew 官方源"
         fi
 
-        # Xcode 开发工具检测：优先使用完整版 Xcode.app，否则退而安装精简版 CLT
-        if [[ -d "/Applications/Xcode.app" ]]; then
-            # 完整版 Xcode 已安装，测试 xcodebuild 是否可用
-            if ! xcodebuild -version &>/dev/null; then
-                info "检测到 Xcode.app 但当前路径未正确指向它，正在切换 xcode-select 路径..."
-                sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-            fi
-            ok "Xcode.app 已就绪"
-        elif ! xcode-select -p &>/dev/null; then
-            # 没有完整版 Xcode，也没有 CLT，安装精简版 CLT
-            info "未检测到 Xcode.app，正在安装 Command Line Tools..."
-            xcode-select --install
-            echo "请在弹出的窗口中点击\"安装\"，安装完成后重新运行本脚本。"
-            exit 0
-        else
-            ok "Xcode Command Line Tools 已就绪"
-        fi
-
         # 安装 Homebrew （如果没装过）
         if ! command -v brew &>/dev/null; then
             info "正在安装 Homebrew..."
@@ -98,24 +113,15 @@ case "$OS" in
             brew install stow
         fi
 
-        # 安装 base 主题
-        info "正在更新 Homebrew 并安装 base 主题..."
-        brew update || warn "Homebrew 索引更新未能全量完成（可能是部分第三方 Tap 连不上），尝试继续安装..."
+        # 安装默认组
+        info "正在更新 Homebrew 并安装默认组..."
+        brew update || warn "Homebrew 索引更新未能全量完成，尝试继续安装..."
         if bash "$DOTFILES_DIR/_install/install" --brew; then
-            ok "base 主题安装完毕"
+            ok "默认组安装完毕"
         else
-            warn "base 主题部分软件安装失败，可稍后运行 bash _install/install --brew 重试"
+            warn "默认组部分软件安装失败，可稍后运行 bash _install/install --brew 重试"
         fi
-        # 提示其余可选主题：动态读取清单目录（排除默认主题），增删自动跟随
-        _brew_themes=""
-        for _f in "$DOTFILES_DIR"/_install/brew/*.Brewfile; do
-            [[ -f "$_f" ]] || continue
-            _t="$(basename "$_f")"
-            [[ "$_t" == "base.Brewfile" ]] && continue
-            _brew_themes+=" ${_t%.Brewfile}"
-        done
-        info "💡 其余主题请按需选装: bash _install/install --brew$_brew_themes"
-        unset _f _t _brew_themes
+        hint_optional_groups brew
 
         # 执行 macOS 偏好设置脚本
         if [[ -f "$DOTFILES_DIR/_setup/mac/setup.sh" ]]; then
@@ -128,13 +134,13 @@ case "$OS" in
     Linux*)
         info "🐧 Linux 环境，开始配置..."
 
-        # 按主题安装软件
-        install_bootstrap_themes() {
+        # 按组安装软件
+        install_bootstrap_groups() {
             local platform="$1"
             if bash "$DOTFILES_DIR/_install/install" "--$platform"; then
-                ok "$platform base 主题安装完毕"
+                ok "$platform 默认组安装完毕"
             else
-                warn "$platform base 主题部分软件安装失败，可稍后运行 bash _install/install --$platform 重试"
+                warn "$platform 默认组部分软件安装失败，可稍后运行 bash _install/install --$platform 重试"
                 if confirm "是否继续执行后续配置？ [Y/n]: " 1; then
                     warn "继续执行后续配置"
                 else
@@ -163,7 +169,7 @@ case "$OS" in
                 sudo apt install -y make
             fi
 
-            install_bootstrap_themes apt
+            install_bootstrap_groups apt
 
             # 确保 en_US.UTF-8 locale 存在，避免 stow/perl 等工具报 locale 警告。
             if command -v locale-gen &>/dev/null \
@@ -189,7 +195,7 @@ case "$OS" in
                 sudo pacman -S --noconfirm make
             fi
 
-            install_bootstrap_themes pacman
+            install_bootstrap_groups pacman
         else
             warn "未识别的 Linux 包管理器，请手动安装 zsh 及所需软件"
         fi

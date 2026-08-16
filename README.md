@@ -33,13 +33,14 @@ dotfiles/
 │   ├── bin/
 │   ├── templates/
 │   └── README.md
-├── _install/                   # 软件安装：主题清单 + 安装工具
-│   ├── install                 # 按主题安装入口（多选主题 → 合并去重 → 一次性安装）
+├── _install/                   # 软件安装：.group 文件 + 安装工具
+│   ├── install                 # 安装入口
+│   ├── default.*               # 默认安装列表
 │   ├── install-by-curl.sh      # 官方安装器途径的软件安装（fnm/rustup/uv）
 │   ├── install-by-npm.sh       # npm 生态软件安装（基于 fnm Node）
-│   ├── apt/                    # Debian/Ubuntu 主题清单（<theme>.txt）
-│   ├── pacman/                 # Arch Linux 主题清单（<theme>.txt）
-│   └── brew/                   # Homebrew 主题清单（<theme>.Brewfile）
+│   ├── apt/                    # Debian/Ubuntu 系 .group 文件
+│   ├── pacman/                 # Arch Linux 系 .group 文件
+│   └── brew/                   # Homebrew 系 .group 文件
 ├── _setup/                     # 系统底层偏好与权限初始化脚本
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
@@ -89,7 +90,7 @@ cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 `bootstrap.sh` 会自动引导并处理以下流程：
 
 1. **环境检测**：自动安装 Xcode CLT (macOS) 与 Homebrew，校验核心依赖。
-2. **软件安装**：按清单安装必备工具，应用 macOS 系统设置。
+2. **软件安装**：按组安装软件工具，应用 macOS 系统设置。
 3. **SSH 基础设施**：交互式生成/检测 SSH 密钥，加固目录权限。
 4. **Git 身份配置**：交互式创建本地身份配置，启用 pre-push 钩子。
 5. **Shell 环境**：部署 Oh My Zsh 及其插件生态，自动切换默认 Shell。
@@ -170,29 +171,35 @@ ssh-copy-id <user>@<host>
 
 ## 🔄 日常维护
 
-### 按主题安装软件
+### 按组安装软件
 
-`_install/<platform>/<theme>.{txt,Brewfile}` 是主题清单，`_install/install` 是统一安装入口：
+`_install/<platform>/<group>.group` 是组文件，`_install/install` 是统一安装入口：
 
 ```bash
-# 预览合并去重后的安装清单（不真正安装）
-INSTALL_DRY=1 bash ~/dotfiles/_install/install --brew base shell editor
+# 预览合并去重后的最终列表（不真正安装）
+INSTALL_DRY=1 bash ~/dotfiles/_install/install --brew default shell editor
 
-# 实际安装：多选主题，自动合并去重后一次性交给包管理器
-bash ~/dotfiles/_install/install --apt base shell editor
+# 实际安装：多选组，自动合并去重后一次性交给包管理器
+bash ~/dotfiles/_install/install --apt default shell editor
 
-# 不指定主题 = 只装 base 主题（bootstrap 的默认行为）
+# 不指定组 = 默认安装 default 组（见 _install/<platform>/default.*）
 bash ~/dotfiles/_install/install --brew
 ```
 
-主题清单是唯一的软件数据源，主题间允许重复包名，安装前统一去重。
+.group 文件是唯一的软件数据源，组间允许重复包名，安装前统一去重。
+
+**安装途径边界**：
+
+- .group 文件只包含各平台包管理器可安装的软件；
+- `install-by-curl.sh` 用官方安装器安装包管理器未提供的软件（如 Debian 路线下的 fnm/rustup/uv）；
+- `install-by-npm.sh` 安装 npm 生态软件（Debian 路线）。
 
 ```bash
-# 编辑某平台的主题清单
-${EDITOR:-vi} ~/dotfiles/_install/brew/base.Brewfile
+# 编辑某平台的 .group 文件
+${EDITOR:-vi} ~/dotfiles/_install/brew/vcs.group
 
 # 提交更新
-cd ~/dotfiles && git add -A && git commit -m "feat: update brew themes" && git push
+cd ~/dotfiles && git add -A && git commit -m "feat: update brew groups" && git push
 ```
 
 ### 添加新配置模块

@@ -1,5 +1,0 @@
-# media 主题
-ffmpeg
-libopencv-dev
-imagemagick
-gstreamer1.0-tools

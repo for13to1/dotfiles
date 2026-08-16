@@ -1,0 +1,8 @@
+# build 组
+base-devel
+make
+cmake
+ninja
+clang
+lib32-glibc
+lib32-gcc-libs

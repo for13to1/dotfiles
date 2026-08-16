@@ -1,0 +1,4 @@
+# databases 组
+mysql-server
+postgresql
+redis-server

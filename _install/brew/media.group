@@ -1,0 +1,5 @@
+# media 组
+brew "ffmpeg"
+brew "opencv"
+brew "imagemagick"
+brew "gstreamer"

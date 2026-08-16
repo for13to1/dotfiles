@@ -1,4 +1,0 @@
-# databases 主题
-mysql-server
-postgresql
-redis-server

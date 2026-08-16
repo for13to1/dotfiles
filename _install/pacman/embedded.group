@@ -1,0 +1,18 @@
+# embedded 组
+linux-tools
+hwdata
+dtc
+repo
+flex
+bison
+bc
+openssl
+ncurses
+gperf
+picocom
+minicom
+mtd-utils
+e2fsprogs
+usbutils
+python-pyserial
+squashfs-tools
