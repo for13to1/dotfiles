@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # ── 共享基础设施（颜色输出等）─────────────────────────────────────
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../../_scripts/common.sh"
 

@@ -7,6 +7,17 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 1
 fi
 
+# ── 仓库根路径解析 ────────────────────────────────────────────────
+# common.sh 固定位于 <仓库根>/_scripts/ 下，据此解析仓库根路径。
+DOTFILES_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# dotfiles_dir [override]：解析并输出仓库根（-P 规范化，子 shell 中 cd，不影响调用方）。
+# 无参数用 $DOTFILES_DIR；路径不可访问时输出为空并返回非零。
+dotfiles_dir() {
+    local base="${1:-$DOTFILES_DIR}"
+    ( cd -P -- "$base" 2>/dev/null && pwd -P )
+}
+
 # ── 彩色输出 ──────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 

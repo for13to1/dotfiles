@@ -27,12 +27,12 @@ if (( $# < 3 )); then
     exit 2
 fi
 
-DOTFILES_DIR="$1"
+DOTFILES_DIR="${1:-$DOTFILES_DIR}"
 TARGET_DIR="$2"
 shift 2
 
-# 统一规范化源目录，避免 macOS /tmp、/var 等 symlink 路径导致误判。
-DOTFILES_DIR="$(cd -P -- "$DOTFILES_DIR" 2>/dev/null && pwd -P)" || {
+# 规范化源目录（dotfiles_dir），避免 /tmp、/var 等 symlink 路径误判。
+DOTFILES_DIR="$(dotfiles_dir "$DOTFILES_DIR")" || {
     echo "无法访问 dotfiles 目录: $DOTFILES_DIR" >&2
     exit 1
 }

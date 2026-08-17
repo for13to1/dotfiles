@@ -22,11 +22,11 @@ if (( $# < 2 )); then
     exit 2
 fi
 
-DOTFILES_DIR="$1"
+DOTFILES_DIR="${1:-$DOTFILES_DIR}"
 TARGET_DIR="$2"
 shift 2
 
-DOTFILES_DIR="$(cd -P -- "$DOTFILES_DIR" 2>/dev/null && pwd -P)" || {
+DOTFILES_DIR="$(dotfiles_dir "$DOTFILES_DIR")" || {
     echo "无法访问 dotfiles 目录: $DOTFILES_DIR" >&2
     exit 1
 }

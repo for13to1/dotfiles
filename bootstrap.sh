@@ -14,11 +14,11 @@ while [[ -L "$SCRIPT_PATH" ]]; do
     SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
     [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
 done
-DOTFILES_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
 
 # ── 共享基础设施（彩色输出等，见 _scripts/common.sh）──────────────
 # shellcheck disable=SC1091
-source "$DOTFILES_DIR/_scripts/common.sh"
+source "$SCRIPT_DIR/_scripts/common.sh"
 
 # ── 1. 检测操作系统 ──────────────────────────────────────────────
 OS="$(uname -s)"

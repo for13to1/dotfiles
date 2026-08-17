@@ -3,9 +3,9 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/../../_scripts/common.sh"
+source "$SCRIPT_DIR/../_scripts/common.sh"
 
 # 仅在 Debian / Ubuntu 路线下接管 npm 生态工具链安装。
 is_debian_like || exit 0

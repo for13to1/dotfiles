@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/common.sh"
 
-DOTFILES_DIR="${1:-}"
+DOTFILES_DIR="${1:-$DOTFILES_DIR}"
 TARGET_DIR="${2:-}"
 
 if [[ -z "$DOTFILES_DIR" || -z "$TARGET_DIR" ]]; then
@@ -18,7 +18,7 @@ if [[ -z "$DOTFILES_DIR" || -z "$TARGET_DIR" ]]; then
     exit 2
 fi
 
-DOTFILES_DIR="$(cd -P -- "$DOTFILES_DIR" 2>/dev/null && pwd -P)" || {
+DOTFILES_DIR="$(dotfiles_dir "$DOTFILES_DIR")" || {
     echo "Cannot access dotfiles directory: $DOTFILES_DIR" >&2
     exit 1
 }
