@@ -30,7 +30,7 @@ assert_contains() {
 
 # 读取配置文件中当前保存的代理地址
 conf_addr() {
-    sed -n 's/.*net_proxy_addr="\([^"]*\)".*/\1/p' "$TMP/home/.net_proxy.conf" | head -1
+    sed -n 's/^net_proxy_addr=//p' "$TMP/home/.net_proxy.conf" | head -1 | sed 's/^"//; s/"$//'
 }
 
 mkdir -p "$TMP/home"
@@ -41,7 +41,7 @@ assert_contains "无配置时应显示已关闭" "$out" '已关闭'
 
 # ── set：保存地址到 ~/.net_proxy.conf ─────────────────────────
 run 'net_proxy set 192.168.1.5:8888' >/dev/null || fail "net_proxy set 应成功"
-grep -q 'net_proxy_addr="192.168.1.5:8888"' "$TMP/home/.net_proxy.conf" \
+grep -q '^net_proxy_addr=192.168.1.5:8888$' "$TMP/home/.net_proxy.conf" \
     || fail "配置应包含新地址"
 grep -q 'net_proxy_enabled=0' "$TMP/home/.net_proxy.conf" \
     || fail "未开启时 net_proxy_enabled 应为 0"
@@ -76,7 +76,7 @@ out="$(run 'printf "%s" "${http_proxy:-unset}"')"
 
 # ── 快捷方式：直接传 ip:port 等价于 set ────────────────────────
 run 'net_proxy 127.0.0.1:9999' >/dev/null || fail "net_proxy ip:port 应等价于 set"
-grep -q 'net_proxy_addr="127.0.0.1:9999"' "$TMP/home/.net_proxy.conf" \
+grep -q '^net_proxy_addr=127.0.0.1:9999$' "$TMP/home/.net_proxy.conf" \
     || fail "快捷方式应更新地址"
 
 # ── scheme 切换：http 时 all_proxy 跟随 ────────────────────────
@@ -109,5 +109,13 @@ out="$(conf_addr)"
 
 # 提示符不应出现在保存的地址中（曾发生的 bug）
 [[ "$out" != *"请输入"* ]] || fail "提示符不应污染保存的地址，实际: $out"
+
+# 配置值必须按字面量保存，重新加载时不能执行命令替换。
+marker="$TMP/should-not-exist"
+HOME="$TMP/home" MARKER="$marker" bash -c "source '$NET_PROXY_SH'; addr='\$(touch \"\$MARKER\")'; net_proxy set \"\$addr\"" >/dev/null 2>&1 \
+    || fail "包含 shell 特殊字符的地址应可安全保存"
+HOME="$TMP/home" bash -c "source '$NET_PROXY_SH'; net_proxy status" >/dev/null 2>&1 \
+    || fail "重新加载特殊字符配置不应失败"
+[[ ! -e "$marker" ]] || fail "重新加载配置不应执行地址中的命令"
 
 echo "PASS net_proxy tests"

@@ -61,12 +61,12 @@ net_proxy_save_conf() {
     [[ -d "$fdir" ]] || mkdir -p "$fdir"
     (
         umask 077
-        cat > "$NET_PROXY_CONF_FILE" <<EOF
-# 本文件由 net_proxy 命令维护；如需修改请使用 net_proxy 命令，或编辑后重启终端。
-net_proxy_addr="$net_proxy_addr"
-net_proxy_scheme="$net_proxy_scheme"
-net_proxy_enabled=${net_proxy_enabled:-0}
-EOF
+        {
+            printf '%s\n' '# 本文件由 net_proxy 命令维护；如需修改请使用 net_proxy 命令，或编辑后重启终端。'
+            printf 'net_proxy_addr='; printf '%q\n' "$net_proxy_addr"
+            printf 'net_proxy_scheme='; printf '%q\n' "$net_proxy_scheme"
+            printf 'net_proxy_enabled='; printf '%q\n' "${net_proxy_enabled:-0}"
+        } > "$NET_PROXY_CONF_FILE"
     )
     chmod 600 "$NET_PROXY_CONF_FILE"
 }

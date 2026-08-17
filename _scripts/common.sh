@@ -77,16 +77,16 @@ STOW_IGNORE_NAMES=(
     "history.json"
 )
 
-# find 的 Stow 版包装：统一追加忽略规则与 NUL 输出。
+# find 包装：忽略链前置，用户谓词放入兜底分支，保证 -type 过滤与剪枝同时生效。
 stow_find() {
     local root="$1"
     shift
-    local -a args=(find "$root" "$@")
+    local -a args=(find "$root")
     local name
     for name in "${STOW_IGNORE_NAMES[@]}"; do
         args+=( -name "$name" -prune -o )
     done
-    args+=( -print0 )
+    args+=( '(' "$@" ')' -print0 )
     "${args[@]}"
 }
 

@@ -73,4 +73,26 @@ assert_fail "preflight: wrong parent symlink" \
 assert_fail "preflight: missing module" \
     preflight "$TMP/dotfiles" "$TMP/home" does-not-exist
 
+# ── stow_find 测试：类型过滤与忽略目录 ──
+# shellcheck disable=SC1091
+source "$ROOT/_scripts/common.sh"
+
+SF="$TMP/stowfind"
+mkdir -p "$SF/.venv/bin" "$SF/__pycache__" "$SF/sub"
+printf 'a\n' > "$SF/afile.txt"
+printf 'b\n' > "$SF/.venv/bin/python"
+printf 'c\n' > "$SF/__pycache__/x.pyc"
+printf 'd\n' > "$SF/sub/deep.txt"
+
+sf_list() { stow_find "$SF" "$@" | tr '\0' '\n' | sed "s#^$SF/##" | sort; }
+
+[[ "$(sf_list -mindepth 1 -type d)" == "sub" ]] \
+    || fail "stow_find -type d 应只返回目录: $(sf_list -mindepth 1 -type d | tr '\n' ' ')"
+
+[[ "$(sf_list -mindepth 1 \( -type f -o -type l \))" == $'afile.txt\nsub/deep.txt' ]] \
+    || fail "stow_find -type f 应只返回文件且不进入忽略目录: $(sf_list -mindepth 1 \( -type f -o -type l \) | tr '\n' ' ')"
+
+[[ "$(sf_list -mindepth 1 -maxdepth 1)" == $'afile.txt\nsub' ]] \
+    || fail "stow_find -maxdepth 1 应只返回一级条目: $(sf_list -mindepth 1 -maxdepth 1 | tr '\n' ' ')"
+
 echo "PASS check-links tests"

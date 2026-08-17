@@ -15,7 +15,8 @@ dotfiles/
 ├── zsh/                        # Stow 包：Zsh 配置
 │   ├── .zshrc
 │   └── .zsh.d/
-│       └── brew_mirror.sh      # Homebrew 镜像源切换
+│       ├── brew_mirror.sh      # Homebrew 镜像源切换
+│       └── net_proxy.sh        # 网络代理设置
 ├── git/                        # Stow 包：Git 全局配置
 │   └── .gitconfig
 ├── vim/                        # Stow 包：Vim 配置
@@ -58,6 +59,7 @@ dotfiles/
 │   ├── test-doctor.sh          # doctor 行为测试
 │   ├── test-proj-setup.sh      # proj-setup 行为测试
 │   ├── test-stow-sync.sh       # stow-sync 集成测试
+│   ├── test-net-proxy.sh       # net_proxy 行为测试
 │   └── test-install.sh         # _install/install 行为测试
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本
