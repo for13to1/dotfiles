@@ -11,10 +11,12 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     if command -v brew &>/dev/null; then
         export HOMEBREW_NO_AUTO_UPDATE=1
     fi
-    # 加载 ~/.zsh.d/ 下的所有函数片段（stow 挂载自 zsh/.zsh.d/）
-    for _f in ~/.zsh.d/*.sh; do [[ -f "$_f" ]] && source "$_f"; done
-    unset _f
 fi
+
+# 加载 ~/.zsh.d/ 下的所有函数片段（stow 挂载自 zsh/.zsh.d/，macOS 与 Linux 均加载）
+# 例如: brew_mirror (Homebrew 镜像源)、net_proxy (网络代理开关)
+for _f in ~/.zsh.d/*.sh; do [[ -f "$_f" ]] && source "$_f"; done
+unset _f
 
 # Oh My Zsh
 export ZSH="$HOME/.oh-my-zsh"

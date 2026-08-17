@@ -321,19 +321,6 @@ if [[ ! -f "$HOME/.zshrc.local" ]]; then
 
     cat <<'TEMPLATE_EOF' > "$HOME/.zshrc.local"
 # ~/.zshrc.local — 本地配置，不纳入版本控制，可按需修改
-
-# ==========================================================
-# 网络代理设置（取消注释前请确保代理已启动）
-# ==========================================================
-# export proxy_addr="127.0.0.1:7890"
-# export http_proxy="http://$proxy_addr"
-# export https_proxy="http://$proxy_addr"
-# export all_proxy="socks5://$proxy_addr"
-# export HTTP_PROXY=$http_proxy
-# export HTTPS_PROXY=$https_proxy
-# export ALL_PROXY=$all_proxy
-export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
-export NO_PROXY=$no_proxy
 TEMPLATE_EOF
 
     if [[ "$OS" == "Darwin"* ]]; then

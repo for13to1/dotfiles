@@ -105,18 +105,6 @@ cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 ### 1. `~/.zshrc.local` 示例
 
 ```bash
-# 代理设置（取消注释前请确保本地代理已启动，否则会导致网络请求失败）
-# export proxy_addr="127.0.0.1:7890"
-# export http_proxy="http://$proxy_addr"
-# export https_proxy="http://$proxy_addr"
-# export all_proxy="socks5://$proxy_addr"
-# export HTTP_PROXY=$http_proxy
-# export HTTPS_PROXY=$https_proxy
-# export ALL_PROXY=$all_proxy
-## 必须项：排除本地流量，防止本地服务访问失败
-export no_proxy="localhost,127.0.0.1,0.0.0.0,::1"
-export NO_PROXY=$no_proxy
-
 # Homebrew 镜像源切换 (函数定义见 ~/.zsh.d/brew_mirror.sh)
 brew_mirror -q ustc
 # 可选值: tuna | ustc | ali | reset
@@ -132,6 +120,22 @@ export ANTHROPIC_BASE_URL="https://api.anthropic.com"
 export GEMINI_API_KEY="your-api-key"
 export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
 ```
+
+### 1.1 网络代理开关（`net_proxy` 命令）
+
+无需在这里配置任何代理变量——默认即为关闭，不导出任何环境变量。需要时用 `net_proxy`
+命令开关，配置保存在 `~/.net_proxy.conf`（不纳入版本控制），新终端自动恢复最近状态：
+
+```bash
+net_proxy set 127.0.0.1:7890   # 设置代理地址；也可省略地址交互式输入
+net_proxy on                   # 开启：导出 http_proxy/https_proxy/all_proxy 等
+net_proxy off                  # 关闭：清除上述环境变量
+net_proxy scheme http          # 可选：调整 all_proxy 协议（默认 socks5）
+net_proxy status               # 查看状态
+```
+
+`net_proxy on` 导出 `http_proxy`/`https_proxy`（`http://`）、`all_proxy`（`$scheme://`，
+默认 `socks5://`）及其大写形式，并设置 `no_proxy` 排除本地流量。
 
 ### 2. `~/.gitconfig.local` 示例
 
