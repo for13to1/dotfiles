@@ -1,5 +1,5 @@
 # coding 组
-clang-format
+clang
 astyle
 cloc
 shellcheck

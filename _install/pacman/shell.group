@@ -5,7 +5,7 @@ eza
 fd
 ripgrep
 fzf
-rename
+perl-rename
 jq
 zoxide
 htop

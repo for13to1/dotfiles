@@ -1,4 +1,4 @@
 # databases 组
 mariadb
 postgresql
-redis
+valkey

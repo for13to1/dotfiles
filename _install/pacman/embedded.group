@@ -1,5 +1,5 @@
 # embedded 组
-linux-tools
+linux-tools-meta
 hwdata
 dtc
 repo
