@@ -86,7 +86,11 @@ stow_find() {
     for name in "${STOW_IGNORE_NAMES[@]}"; do
         args+=( -name "$name" -prune -o )
     done
-    args+=( '(' "$@" ')' -print0 )
+    if (( $# )); then
+        args+=( '(' "$@" ')' -print0 )
+    else
+        args+=( -print0 )
+    fi
     "${args[@]}"
 }
 

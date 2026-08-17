@@ -84,7 +84,7 @@ printf 'b\n' > "$SF/.venv/bin/python"
 printf 'c\n' > "$SF/__pycache__/x.pyc"
 printf 'd\n' > "$SF/sub/deep.txt"
 
-sf_list() { stow_find "$SF" "$@" | tr '\0' '\n' | sed "s#^$SF/##" | sort; }
+sf_list() { stow_find "$SF" "$@" | tr '\0' '\n' | sed -e "s#^$SF/##" -e "s#^$SF\$##" | grep -v '^$' | sort; }
 
 [[ "$(sf_list -mindepth 1 -type d)" == "sub" ]] \
     || fail "stow_find -type d 应只返回目录: $(sf_list -mindepth 1 -type d | tr '\n' ' ')"
@@ -94,5 +94,8 @@ sf_list() { stow_find "$SF" "$@" | tr '\0' '\n' | sed "s#^$SF/##" | sort; }
 
 [[ "$(sf_list -mindepth 1 -maxdepth 1)" == $'afile.txt\nsub' ]] \
     || fail "stow_find -maxdepth 1 应只返回一级条目: $(sf_list -mindepth 1 -maxdepth 1 | tr '\n' ' ')"
+
+[[ "$(sf_list)" == $'afile.txt\nsub\nsub/deep.txt' ]] \
+    || fail "stow_find 无谓词应列出全部条目且不进入忽略目录: $(sf_list | tr '\n' ' ')"
 
 echo "PASS check-links tests"
