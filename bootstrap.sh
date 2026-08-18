@@ -342,14 +342,14 @@ TEMPLATE_EOF
 # ==========================================================
 # API Keys
 # ==========================================================
-export OPENAI_API_KEY="sk-..."
-export OPENAI_BASE_URL="https://api.openai.com/v1"
+# export OPENAI_API_KEY="sk-..."
+# export OPENAI_BASE_URL="https://api.openai.com/v1"
 
-export ANTHROPIC_API_KEY="sk-ant-..."
-export ANTHROPIC_BASE_URL="https://api.anthropic.com"
+# export ANTHROPIC_API_KEY="sk-ant-..."
+# export ANTHROPIC_BASE_URL="https://api.anthropic.com"
 
-export GEMINI_API_KEY="your-api-key"
-export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
+# export GEMINI_API_KEY="your-api-key"
+# export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
 TEMPLATE_EOF
     ok "$HOME/.zshrc.local 示例模板已生成"
 fi

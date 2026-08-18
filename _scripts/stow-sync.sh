@@ -83,17 +83,24 @@ backup_explicit_conflicts() {
 
 backup_module_conflicts() {
     local mod="$1"
-    local path
+    local path rel
 
     [[ -d "$mod" ]] || return 0
 
     while IFS= read -r -d '' path; do
-        backup_explicit_conflicts "$mod" "${path#"$mod"/}"
-    done < <(stow_find "$mod" -mindepth 1 \( -type f -o -type l \))
+        rel="${path#"$mod"/}"
+        # 目录冲突按目录整体备份。
+        backup_explicit_conflicts "$mod" "$rel"
+    done < <(stow_find "$mod" -mindepth 1 -type d)
 
     while IFS= read -r -d '' path; do
-        backup_explicit_conflicts "$mod" "${path#"$mod"/}"
-    done < <(stow_find "$mod" -mindepth 1 -type d)
+        rel="${path#"$mod"/}"
+        # 文件冲突按文件路径备份。
+        local parent
+        parent="$TARGET_DIR/$(dirname "$rel")"
+        [[ -e "$parent" || -L "$parent" ]] || continue
+        backup_explicit_conflicts "$mod" "$rel"
+    done < <(stow_find "$mod" -mindepth 1 \( -type f -o -type l \))
 }
 
 for mod in "$@"; do

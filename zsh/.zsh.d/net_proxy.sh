@@ -16,12 +16,35 @@ NET_PROXY_DEFAULT_ADDR="${NET_PROXY_DEFAULT_ADDR:-127.0.0.1:7890}"
 NET_PROXY_DEFAULT_SCHEME="${NET_PROXY_DEFAULT_SCHEME:-socks5}"
 NET_PROXY_NO_PROXY="${NET_PROXY_NO_PROXY:-localhost,127.0.0.1,0.0.0.0,::1}"
 
-# 载入保存的配置（若存在），由命令分发器统一调用
+# 载入保存的配置（若存在）
 net_proxy_load_conf() {
-    if [[ -f "$NET_PROXY_CONF_FILE" ]]; then
-        # shellcheck disable=SC1090
-        source "$NET_PROXY_CONF_FILE"
-    fi
+    net_proxy_addr="$NET_PROXY_DEFAULT_ADDR"
+    net_proxy_scheme="$NET_PROXY_DEFAULT_SCHEME"
+    net_proxy_enabled=0
+
+    [[ -f "$NET_PROXY_CONF_FILE" ]] || return 0
+
+    local key value
+    while IFS='=' read -r key value || [[ -n "$key" ]]; do
+        case "$key" in
+            ''|'#'*) continue ;;
+            net_proxy_addr)
+                if [[ "$value" =~ ^[[:alnum:].:_-]+$ ]]; then
+                    net_proxy_addr="$value"
+                fi
+                ;;
+            net_proxy_scheme)
+                case "$value" in
+                    http|https|socks5) net_proxy_scheme="$value" ;;
+                esac
+                ;;
+            net_proxy_enabled)
+                case "$value" in
+                    0|1) net_proxy_enabled="$value" ;;
+                esac
+                ;;
+        esac
+    done < "$NET_PROXY_CONF_FILE"
 }
 
 # 在当前 shell 导出全部代理环境变量
