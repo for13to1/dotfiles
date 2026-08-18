@@ -71,6 +71,11 @@ install_codex() {
     npm_install_global @openai/codex
 }
 
+# opencode-ai 无 postinstall，平台二进制经 optionalDependencies 分发
+install_opencode() {
+    npm_install_global opencode-ai
+}
+
 if ! ensure_fnm_node_env; then
     exit 0
 fi
@@ -91,3 +96,9 @@ install_with_prompt \
     "未检测到 codex，是否通过 npm 安装？" \
     "install_codex" \
     "codex 安装完成"
+
+install_with_prompt \
+    "opencode" \
+    "未检测到 opencode，是否通过 npm 安装？" \
+    "install_opencode" \
+    "opencode 安装完成"
