@@ -110,12 +110,26 @@ out="$(conf_addr)"
 # 提示符不应出现在保存的地址中（曾发生的 bug）
 [[ "$out" != *"请输入"* ]] || fail "提示符不应污染保存的地址，实际: $out"
 
-# 配置值必须按字面量保存，重新加载时不能执行命令替换。
+# ── IPv6 地址应能保存并在新终端恢复 ────────────────────────────
+run 'net_proxy set "[::1]:1080" >/dev/null; net_proxy on >/dev/null' \
+    || fail "方括号 IPv6 地址应可设置"
+out="$(run 'printf "%s" "$all_proxy"')"
+[[ "$out" == "http://[::1]:1080" ]] || fail "IPv6 地址应在新终端恢复，实际: $out"
+
+# ── 非法地址应立即拒绝，且不能覆盖已有配置 ─────────────────────
+before="$(conf_addr)"
 marker="$TMP/should-not-exist"
-HOME="$TMP/home" MARKER="$marker" bash -c "source '$NET_PROXY_SH'; addr='\$(touch \"\$MARKER\")'; net_proxy set \"\$addr\"" >/dev/null 2>&1 \
-    || fail "包含 shell 特殊字符的地址应可安全保存"
-HOME="$TMP/home" bash -c "source '$NET_PROXY_SH'; net_proxy status" >/dev/null 2>&1 \
-    || fail "重新加载特殊字符配置不应失败"
-[[ ! -e "$marker" ]] || fail "重新加载配置不应执行地址中的命令"
+if HOME="$TMP/home" MARKER="$marker" bash -c "source '$NET_PROXY_SH'; addr='\$(touch \"\$MARKER\")'; net_proxy set \"\$addr\"" >/dev/null 2>&1; then
+    fail "包含 shell 特殊字符的地址应被拒绝"
+fi
+[[ ! -e "$marker" ]] || fail "非法地址不应执行命令"
+[[ "$(conf_addr)" == "$before" ]] || fail "非法地址不应覆盖已有配置"
+
+if run 'net_proxy set host:70000' >/dev/null 2>&1; then
+    fail "超出范围的端口应被拒绝"
+fi
+if run 'net_proxy set user:pass@host:7890' >/dev/null 2>&1; then
+    fail "不支持的认证地址应被明确拒绝"
+fi
 
 echo "PASS net_proxy tests"

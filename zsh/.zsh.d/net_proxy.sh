@@ -16,6 +16,14 @@ NET_PROXY_DEFAULT_ADDR="${NET_PROXY_DEFAULT_ADDR:-127.0.0.1:7890}"
 NET_PROXY_DEFAULT_SCHEME="${NET_PROXY_DEFAULT_SCHEME:-socks5}"
 NET_PROXY_NO_PROXY="${NET_PROXY_NO_PROXY:-localhost,127.0.0.1,0.0.0.0,::1}"
 
+# 接受主机名/IPv4 或方括号 IPv6，端口范围为 1-65535。
+net_proxy_valid_addr() {
+    local addr="$1" port
+    [[ "$addr" =~ ^([[:alnum:]._-]+|\[[[:xdigit:]:]+\]):[[:digit:]]+$ ]] || return 1
+    port="${addr##*:}"
+    (( 10#$port >= 1 && 10#$port <= 65535 ))
+}
+
 # 载入保存的配置（若存在）
 net_proxy_load_conf() {
     net_proxy_addr="$NET_PROXY_DEFAULT_ADDR"
@@ -29,7 +37,7 @@ net_proxy_load_conf() {
         case "$key" in
             ''|'#'*) continue ;;
             net_proxy_addr)
-                if [[ "$value" =~ ^[[:alnum:].:_-]+$ ]]; then
+                if net_proxy_valid_addr "$value"; then
                     net_proxy_addr="$value"
                 fi
                 ;;
@@ -77,7 +85,7 @@ net_proxy_apply() {
     net_proxy_save_conf
 }
 
-# 持久化配置到 ~/.net_proxy.conf（文件权限收紧为 600，可能包含凭据）
+# 持久化配置到 ~/.net_proxy.conf（纯数据文件，权限收紧为 600）
 net_proxy_save_conf() {
     local fdir
     fdir="$(dirname "$NET_PROXY_CONF_FILE")"
@@ -86,9 +94,9 @@ net_proxy_save_conf() {
         umask 077
         {
             printf '%s\n' '# 本文件由 net_proxy 命令维护；如需修改请使用 net_proxy 命令，或编辑后重启终端。'
-            printf 'net_proxy_addr='; printf '%q\n' "$net_proxy_addr"
-            printf 'net_proxy_scheme='; printf '%q\n' "$net_proxy_scheme"
-            printf 'net_proxy_enabled='; printf '%q\n' "${net_proxy_enabled:-0}"
+            printf 'net_proxy_addr=%s\n' "$net_proxy_addr"
+            printf 'net_proxy_scheme=%s\n' "$net_proxy_scheme"
+            printf 'net_proxy_enabled=%s\n' "${net_proxy_enabled:-0}"
         } > "$NET_PROXY_CONF_FILE"
     )
     chmod 600 "$NET_PROXY_CONF_FILE"
@@ -109,7 +117,10 @@ net_proxy_set() {
     if [[ -z "$addr" ]]; then
         addr="$(net_proxy_prompt "请输入代理地址 (默认: ${net_proxy_addr:-$NET_PROXY_DEFAULT_ADDR}): " "${net_proxy_addr:-$NET_PROXY_DEFAULT_ADDR}")"
     fi
-    [[ -n "$addr" ]] || { echo "错误: 代理地址不能为空" >&2; return 1; }
+    if ! net_proxy_valid_addr "$addr"; then
+        echo "错误: 代理地址应为 host:port 或 [IPv6]:port，端口范围 1-65535" >&2
+        return 1
+    fi
     net_proxy_addr="$addr"
     net_proxy_apply
     if (( net_proxy_enabled == 1 )); then
