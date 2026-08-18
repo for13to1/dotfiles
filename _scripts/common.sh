@@ -79,8 +79,8 @@ STOW_IGNORE_NAMES=(
 
 # find 包装，最终命令形如：
 #   find ROOT [-mindepth N -maxdepth M] -name IGN -prune -o … -o '(' 用户谓词 ')' -print0
-# 依赖 -a 高于 -o：忽略项命中时 -prune 短路，后续分支不再求值，
-# 用户谓词必须放进最后的兜底分支，否则会被吞掉，-type 过滤与剪枝不能同时生效。
+# 依赖 -a 高于 -o：命中忽略项时 -prune 为真并短路，后续分支不再求值，
+# 因此用户谓词必须放在 -o 链末端的兜底分支，否则 -prune 与 -type 过滤无法同时生效。
 # -mindepth/-maxdepth 是全局选项（对前后所有测试生效），须紧跟 ROOT 置于所有测试之前，
 # 混在谓词里会触发 GNU find 的 "global option … after the argument …" 告警。
 stow_find() {
