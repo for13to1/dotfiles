@@ -47,15 +47,28 @@ ensure_fnm_node_env() {
     return 1
 }
 
-install_pi() {
-    # npm >= 11.10 引入 release-age 门禁，官方安装器用 --min-release-age=0 绕过
+# npm >= 11.10 引入 release-age 门禁，官方安装器用 --min-release-age=0 绕过
+release_age_flag() {
     local npm_version
-    local -a extra=()
     npm_version="$(fnm_exec npm --version)"
-    if awk -F. '{ exit !($1 > 11 || ($1 == 11 && $2 >= 10)) }' <<<"$npm_version"; then
+    awk -F. '{ exit !($1 > 11 || ($1 == 11 && $2 >= 10)) }' <<<"$npm_version"
+}
+
+npm_install_global() {
+    local -a extra=()
+    if release_age_flag; then
         extra=(--min-release-age=0)
     fi
-    fnm_exec npm install -g --ignore-scripts "${extra[@]}" @earendil-works/pi-coding-agent
+    fnm_exec npm install -g --ignore-scripts "${extra[@]}" "$@"
+}
+
+install_pi() {
+    npm_install_global @earendil-works/pi-coding-agent
+}
+
+# @openai/codex 无 postinstall，平台二进制经 optionalDependencies 分发
+install_codex() {
+    npm_install_global @openai/codex
 }
 
 if ! ensure_fnm_node_env; then
@@ -72,3 +85,9 @@ install_with_prompt \
     "未检测到 pi，是否通过 npm 安装？" \
     "install_pi" \
     "pi 安装完成"
+
+install_with_prompt \
+    "codex" \
+    "未检测到 codex，是否通过 npm 安装？" \
+    "install_codex" \
+    "codex 安装完成"
