@@ -77,17 +77,35 @@ STOW_IGNORE_NAMES=(
     "history.json"
 )
 
-# find 包装：忽略链前置，用户谓词放入兜底分支，保证 -type 过滤与剪枝同时生效。
+# find 包装，最终命令形如：
+#   find ROOT [-mindepth N -maxdepth M] -name IGN -prune -o … -o '(' 用户谓词 ')' -print0
+# 依赖 -a 高于 -o：忽略项命中时 -prune 短路，后续分支不再求值，
+# 用户谓词必须放进最后的兜底分支，否则会被吞掉，-type 过滤与剪枝不能同时生效。
+# -mindepth/-maxdepth 是全局选项（对前后所有测试生效），须紧跟 ROOT 置于所有测试之前，
+# 混在谓词里会触发 GNU find 的 "global option … after the argument …" 告警。
 stow_find() {
     local root="$1"
     shift
     local -a args=(find "$root")
+    local -a preds=()
+    local arg prev=""
+    for arg in "$@"; do
+        if [[ "$arg" == -mindepth || "$arg" == -maxdepth ]]; then
+            prev="$arg"
+        elif [[ -n "$prev" ]]; then
+            args+=( "$prev" "$arg" )
+            prev=""
+        else
+            preds+=( "$arg" )
+        fi
+    done
+    [[ -z "$prev" ]] || preds+=( "$prev" )
     local name
     for name in "${STOW_IGNORE_NAMES[@]}"; do
         args+=( -name "$name" -prune -o )
     done
-    if (( $# )); then
-        args+=( '(' "$@" ')' -print0 )
+    if (( ${#preds[@]} )); then
+        args+=( '(' "${preds[@]}" ')' -print0 )
     else
         args+=( -print0 )
     fi
