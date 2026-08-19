@@ -64,6 +64,9 @@ if has('termguicolors') && ($COLORTERM == 'truecolor' || $COLORTERM == '24bit')
     set termguicolors
 endif
 
+set background=dark
+colorscheme retrobox
+
 " =============================================================================
 " 缩进
 " =============================================================================
