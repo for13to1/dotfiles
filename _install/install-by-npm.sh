@@ -59,11 +59,11 @@ npm_install_global() {
     if release_age_flag; then
         extra=(--min-release-age=0)
     fi
-    fnm_exec npm install -g --ignore-scripts "${extra[@]}" "$@"
+    fnm_exec npm install -g "${extra[@]}" "$@"
 }
 
 install_pi() {
-    npm_install_global @earendil-works/pi-coding-agent
+    npm_install_global --ignore-scripts @earendil-works/pi-coding-agent
 }
 
 # @openai/codex 无 postinstall，平台二进制经 optionalDependencies 分发
@@ -71,7 +71,6 @@ install_codex() {
     npm_install_global @openai/codex
 }
 
-# opencode-ai 无 postinstall，平台二进制经 optionalDependencies 分发
 install_opencode() {
     npm_install_global opencode-ai
 }
