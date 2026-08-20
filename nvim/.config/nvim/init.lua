@@ -157,8 +157,16 @@ if has_nvim_011 then
         vim.keymap.set('n', '<leader>a', vim.lsp.buf.code_action, {desc="Code action"})
     end },
     { "stevearc/conform.nvim",
-      event = { "BufWritePre" },
       cmd = { "ConformInfo" },
+      keys = {
+        {
+          "<leader>f",
+          function()
+            require("conform").format({ async = true, lsp_fallback = false })
+          end,
+          desc = "Format buffer",
+        },
+      },
       config = function()
         require("conform").setup({
           formatters_by_ft = {
@@ -170,7 +178,7 @@ if has_nvim_011 then
             json = { "prettier" },
             sh = { "shfmt" },
           },
-          format_on_save = { timeout_ms = 500, lsp_fallback = true },
+          format_on_save = nil,
         })
       end
     },

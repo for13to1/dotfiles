@@ -261,11 +261,8 @@ let g:ale_lint_on_insert_leave = 0
 let g:ale_lint_on_save = 1
 
 " ── Neoformat ────────────────────────────────────────────────────
-" 保存时自动格式化
-augroup fmt
-    autocmd!
-    autocmd BufWritePre * undojoin | Neoformat
-augroup END
+" 手动格式化：:Neoformat（或绑定快捷键）
+nnoremap <silent> <leader>f :Neoformat<CR>
 " 优先使用项目本地的 formatter 配置
 let g:neoformat_try_node_exe = 1
 
