@@ -136,7 +136,7 @@ if has_nvim_011 then
     { "williamboman/mason.nvim", config = true },
     { "williamboman/mason-lspconfig.nvim", config = function()
         require("mason-lspconfig").setup({
-            ensure_installed = { "pyright", "rust_analyzer", "ts_ls", "bashls" }
+            ensure_installed = { "pyright", "rust_analyzer", "ts_ls", "bashls", "clangd" }
         })
     end },
     { "WhoIsSethDaniel/mason-tool-installer.nvim", config = function()
@@ -145,7 +145,7 @@ if has_nvim_011 then
         })
     end },
     { "neovim/nvim-lspconfig", config = function()
-        local servers = { "pyright", "rust_analyzer", "ts_ls", "bashls" }
+        local servers = { "pyright", "rust_analyzer", "ts_ls", "bashls", "clangd" }
         for _, server in ipairs(servers) do
           vim.lsp.config(server, {})
         end
