@@ -4,3 +4,4 @@ astyle
 cloc
 shellcheck
 shfmt
+clangd
