@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/install-by-curl.sh — 语言生态包管理器（fnm/rustup/uv）途径的软件安装
+# _install/install-by-curl.sh — 官方安装器途径的工具管理器安装
 
 set -euo pipefail
 
@@ -19,23 +19,31 @@ install_uv() {
     curl -LsSf https://astral.sh/uv/install.sh | sh
 }
 
-install_with_prompt \
-    "fnm" \
-    "未检测到 fnm，是否通过官网安装器安装？" \
-    "install_fnm" \
-    "fnm 安装完成" \
-    "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/fnm"
+main() {
+    is_debian_like || return 0
 
-install_with_prompt \
-    "rustup" \
-    "未检测到 rustup，是否通过官网安装器安装？" \
-    "install_rustup" \
-    "rustup 安装完成" \
-    "$HOME/.cargo/bin/rustup"
+    install_with_prompt \
+        "fnm" \
+        "未检测到 fnm，是否通过官网安装器安装？" \
+        "install_fnm" \
+        "fnm 安装完成" \
+        "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/fnm"
 
-install_with_prompt \
-    "uv" \
-    "未检测到 uv，是否通过官网安装器安装？" \
-    "install_uv" \
-    "uv 安装完成" \
-    "$HOME/.local/bin/uv"
+    install_with_prompt \
+        "rustup" \
+        "未检测到 rustup，是否通过官网安装器安装？" \
+        "install_rustup" \
+        "rustup 安装完成" \
+        "$HOME/.cargo/bin/rustup"
+
+    install_with_prompt \
+        "uv" \
+        "未检测到 uv，是否通过官网安装器安装？" \
+        "install_uv" \
+        "uv 安装完成" \
+        "$HOME/.local/bin/uv"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

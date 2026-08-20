@@ -13,7 +13,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     fi
 fi
 
-# 加载 ~/.zsh.d/ 下的所有函数片段（stow 挂载自 zsh/.zsh.d/，macOS 与 Linux 均加载）
+# 加载 ~/.zsh.d/ 下的所有函数片段（macOS 与 Linux 均加载）
 # 例如: brew_mirror (Homebrew 镜像源)、net_proxy (网络代理开关)
 for _f in ~/.zsh.d/*.sh; do [[ -f "$_f" ]] && source "$_f"; done
 unset _f
@@ -51,10 +51,14 @@ else
 fi
 
 if (( ${#missing_plugins[@]} > 0 )); then
-    echo -e "\033[1;33m⚠️  提醒: 发现缺失插件 ${missing_plugins[*]}，请运行 bootstrap.sh 进行补全\033[0m"
+    echo -e "\033[1;33m⚠️  提醒: Oh My Zsh 缺少插件 ${missing_plugins[*]}，请安装后重新加载 Shell\033[0m"
 fi
 
-source "$ZSH/oh-my-zsh.sh"
+if [[ -r "$ZSH/oh-my-zsh.sh" ]]; then
+    source "$ZSH/oh-my-zsh.sh"
+else
+    echo -e "\033[1;33m⚠️  提醒: 未找到 Oh My Zsh，已跳过框架加载\033[0m"
+fi
 
 # =============================================================================
 # 2. Environment Variables

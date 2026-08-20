@@ -11,6 +11,11 @@ unzip
 make
 shellcheck
 shfmt
+clang
+biome
+ruff
+stylua
+python-pytest
 lazygit
 ripgrep
 fzf

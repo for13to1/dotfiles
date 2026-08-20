@@ -197,7 +197,8 @@ endif
 "   :PlugUpdate    更新插件
 "   :PlugClean     清理未使用的插件
 
-call plug#begin('~/.vim/plugged')
+if exists('*plug#begin') || !empty(globpath(&runtimepath, 'autoload/plug.vim'))
+    call plug#begin('~/.vim/plugged')
 
 " ── 文件与导航 ───────────────────────────────────────────────────
 Plug 'tpope/vim-vinegar'                                 " 增强内置 netrw 文件浏览
@@ -223,7 +224,12 @@ Plug 'rust-lang/rust.vim'                                " Rust 语法支持
 " ── 外观 ─────────────────────────────────────────────────────────
 Plug 'itchyny/lightline.vim'                             " 轻量状态栏
 
-call plug#end()
+    call plug#end()
+else
+    echohl WarningMsg
+    echom 'vim-plug not found: starting Vim without plugins'
+    echohl None
+endif
 
 " =============================================================================
 " 插件配置
@@ -236,17 +242,41 @@ let mapleader = ","
 " I 切换隐藏文件显示
 let g:netrw_liststyle = 3               " 树形视图
 
-" ── fzf.vim 快捷键 ──────────────────────────────────────────────
-" Ctrl+P 搜索文件（替代已过时的 ctrlp.vim）
-nnoremap <C-p> :Files<CR>
-" Ctrl+F 全局搜索文件内容（需要系统安装 ripgrep: brew install ripgrep）
-nnoremap <C-f> :Rg<CR>
-" 搜索当前打开的 Buffer
-nnoremap <leader>b :Buffers<CR>
+" ── 插件快捷键 ──────────────────────────────────────────────────
+" plugin/*.vim 晚于 vimrc 加载，因此等 VimEnter 后再检测插件命令。
+function! s:setup_plugin_mappings() abort
+    " Ctrl+P 搜索文件（替代已过时的 ctrlp.vim）
+    if exists(':Files')
+        nnoremap <C-p> :Files<CR>
+    endif
+    " Ctrl+F 全局搜索文件内容（需要 PATH 中存在 ripgrep）
+    if exists(':Rg')
+        nnoremap <C-f> :Rg<CR>
+    endif
+    " 搜索当前打开的 Buffer
+    if exists(':Buffers')
+        nnoremap <leader>b :Buffers<CR>
+    endif
+    " vim-flog：查看分支/提交图
+    if exists(':Flog')
+        nnoremap <leader>gf :Flog<CR>
+    endif
+    " 手动格式化当前 Buffer
+    if exists(':Neoformat')
+        nnoremap <silent> <leader>f :Neoformat<CR>
+    endif
+endfunction
+
+if v:vim_did_enter
+    call s:setup_plugin_mappings()
+else
+    augroup plugin_mappings
+        autocmd!
+        autocmd VimEnter * ++once call <SID>setup_plugin_mappings()
+    augroup END
+endif
 
 " ── Git：分支图 + lazygit ────────────────────────────────────────
-" vim-flog：查看分支/提交图
-nnoremap <leader>gf :Flog<CR>
 " lazygit：外部 TUI（需 Vim 支持 :terminal 且已装才启用）
 if has('terminal') && executable('lazygit')
   nnoremap <leader>gg :terminal lazygit<CR>
@@ -261,10 +291,18 @@ let g:ale_lint_on_insert_leave = 0
 let g:ale_lint_on_save = 1
 
 " ── Neoformat ────────────────────────────────────────────────────
-" 手动格式化：:Neoformat（或绑定快捷键）
-nnoremap <silent> <leader>f :Neoformat<CR>
-" 优先使用项目本地的 formatter 配置
+" 优先使用项目 node_modules/.bin 中的格式化工具
 let g:neoformat_try_node_exe = 1
+let g:neoformat_enabled_lua = ['stylua']
+let g:neoformat_enabled_python = ['ruff']
+let g:neoformat_enabled_javascript = ['biome']
+let g:neoformat_enabled_javascriptreact = ['biome']
+let g:neoformat_enabled_typescript = ['biome']
+let g:neoformat_enabled_typescriptreact = ['biome']
+let g:neoformat_enabled_json = ['biome']
+let g:neoformat_enabled_jsonc = ['biome']
+let g:neoformat_enabled_c = ['clangformat']
+let g:neoformat_enabled_cpp = ['clangformat']
 
 " ── Lightline ────────────────────────────────────────────────────
 set laststatus=2                        " 始终显示状态栏

@@ -136,18 +136,15 @@ if has_nvim_011 then
     { "williamboman/mason.nvim", config = true },
     { "williamboman/mason-lspconfig.nvim", config = function()
         require("mason-lspconfig").setup({
-            ensure_installed = { "pyright", "rust_analyzer", "ts_ls", "bashls", "clangd" }
-        })
-    end },
-    { "WhoIsSethDaniel/mason-tool-installer.nvim", config = function()
-        require("mason-tool-installer").setup({
-            ensure_installed = { "ruff" }
+            -- clangd is resolved directly from PATH.
+            ensure_installed = { "pyright", "rust_analyzer", "ts_ls", "bashls" }
         })
     end },
     { "neovim/nvim-lspconfig", config = function()
         local servers = { "pyright", "rust_analyzer", "ts_ls", "bashls", "clangd" }
+        local capabilities = require("cmp_nvim_lsp").default_capabilities()
         for _, server in ipairs(servers) do
-          vim.lsp.config(server, {})
+          vim.lsp.config(server, { capabilities = capabilities })
         end
         vim.lsp.enable(servers)
         -- Keymaps
@@ -169,14 +166,20 @@ if has_nvim_011 then
       },
       config = function()
         require("conform").setup({
+          -- Formatters are resolved from PATH.
           formatters_by_ft = {
             lua = { "stylua" },
-            python = { "ruff_fix", "ruff_format" },
+            python = { "ruff_format" },
             rust = { "rustfmt" },
-            javascript = { "prettier" },
-            typescript = { "prettier" },
-            json = { "prettier" },
+            javascript = { "biome" },
+            javascriptreact = { "biome" },
+            typescript = { "biome" },
+            typescriptreact = { "biome" },
+            json = { "biome" },
+            jsonc = { "biome" },
             sh = { "shfmt" },
+            c = { "clang-format" },
+            cpp = { "clang-format" },
           },
           format_on_save = nil,
         })

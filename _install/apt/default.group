@@ -1,5 +1,5 @@
 # default 组 — 默认安装的软件
-# fnm/rustup/uv 经 install-by-curl.sh 安装（apt 仓库无 fnm/uv 包）。
+# apt 缺失的工具由 fnm/rustup/uv 生态安装脚本补齐：biome、ruff、stylua
 zsh
 stow
 tmux
@@ -13,6 +13,9 @@ unzip
 make
 shellcheck
 shfmt
+clang-format
+clangd
+python3-pytest
 lazygit
 ripgrep
 fzf

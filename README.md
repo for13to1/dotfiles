@@ -36,12 +36,13 @@ dotfiles/
 │   └── README.md
 ├── _install/                   # 软件安装：.group 文件 + 安装工具
 │   ├── install                 # 安装入口
-│   ├── default.*               # 默认安装列表
-│   ├── install-by-curl.sh      # 官方安装器途径的软件安装（fnm/rustup/uv）
-│   ├── install-by-npm.sh       # npm 生态软件安装（基于 fnm Node）
-│   ├── apt/                    # Debian/Ubuntu 系 .group 文件
-│   ├── pacman/                 # Arch Linux 系 .group 文件
-│   └── brew/                   # Homebrew 系 .group 文件
+│   ├── install-by-curl.sh      # 官方安装器途径的工具管理器安装
+│   ├── install-by-npm.sh       # npm 途径的 Node.js CLI 安装
+│   ├── install-by-uv.sh        # uv tool 途径的 Python CLI 安装
+│   ├── install-by-cargo.sh     # Cargo 途径的 Rust CLI 安装
+│   ├── apt/                    # Debian 系平台的 .group 文件
+│   ├── pacman/                 # Arch Linux 平台 .group 文件
+│   └── brew/                   # macOS 平台 .group 文件
 ├── _setup/                     # 系统底层偏好与权限初始化脚本
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
@@ -188,17 +189,21 @@ INSTALL_DRY=1 bash ~/dotfiles/_install/install --brew default shell editor
 # 实际安装：多选组，自动合并去重后一次性交给包管理器
 bash ~/dotfiles/_install/install --apt default shell editor
 
-# 不指定组 = 默认安装 default 组（见 _install/<platform>/default.*）
+# 不指定组 = 默认安装 default 组（见 _install/<platform>/default.group）
 bash ~/dotfiles/_install/install --brew
 ```
 
-.group 文件是唯一的软件数据源，组间允许重复包名，安装前统一去重。
+`.group` 文件是各平台系统包的唯一数据源，组间允许重复包名，安装前统一去重。
 
 **安装途径边界**：
 
-- .group 文件只包含各平台包管理器可安装的软件；
-- `install-by-curl.sh` 用官方安装器安装包管理器未提供的软件（如 Debian 路线下的 fnm/rustup/uv）；
-- `install-by-npm.sh` 安装 npm 生态软件（Debian 路线）。
+- `.group` 文件只包含各平台包管理器可安装的软件；
+- `install-by-curl.sh` 通过官方安装器安装 fnm、rustup、uv（Debian 系平台）；
+- `install-by-npm.sh` 通过 npm 安装 Node.js CLI（Debian 系平台）；
+- `install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（Debian 系平台）；
+- `install-by-cargo.sh` 通过 Cargo 安装 Rust CLI（Debian 系平台）。
+
+Vim 和 Neovim 从 `PATH` 或项目本地环境解析 formatter，不自行下载；平台默认组和上述生态安装脚本负责提供全局命令。
 
 ```bash
 # 编辑某平台的 .group 文件

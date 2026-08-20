@@ -200,12 +200,21 @@ case "$OS" in
             warn "未识别的 Linux 包管理器，请手动安装 zsh 及所需软件"
         fi
 
+        # Debian 系平台先准备工具管理器，再按 npm/uv/Cargo 渠道安装 CLI。
         if [[ -f "$DOTFILES_DIR/_install/install-by-curl.sh" ]]; then
             bash "$DOTFILES_DIR/_install/install-by-curl.sh"
         fi
 
         if [[ -f "$DOTFILES_DIR/_install/install-by-npm.sh" ]]; then
             bash "$DOTFILES_DIR/_install/install-by-npm.sh"
+        fi
+
+        if [[ -f "$DOTFILES_DIR/_install/install-by-uv.sh" ]]; then
+            bash "$DOTFILES_DIR/_install/install-by-uv.sh"
+        fi
+
+        if [[ -f "$DOTFILES_DIR/_install/install-by-cargo.sh" ]]; then
+            bash "$DOTFILES_DIR/_install/install-by-cargo.sh"
         fi
         ;;
 
@@ -428,9 +437,17 @@ if [[ "$editor_choice" == "2" || "$editor_choice" == "3" ]]; then
     fi
 
     if command -v vim &>/dev/null; then
-        info "正在安装/更新 Vim 插件..."
-        vim +PlugInstall +PlugUpdate +qall
-        ok "Vim 插件就绪"
+        if vim -Nu "$HOME/.vimrc" -n -es \
+            '+if !exists(":PlugInstall") | cquit 2 | endif' '+qa!'; then
+            info "正在安装/更新 Vim 插件..."
+            if vim -Nu "$HOME/.vimrc" -n -es '+PlugUpdate --sync' '+qa!'; then
+                ok "Vim 插件就绪"
+            else
+                warn "Vim 插件同步失败，请检查上方输出后重试"
+            fi
+        else
+            warn "vim-plug 未能加载，请检查 ~/.vimrc 与 runtimepath"
+        fi
     fi
 fi
 

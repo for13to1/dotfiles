@@ -132,6 +132,16 @@ check_optional_command rg
 check_optional_command fnm
 
 echo ""
+info "Editor toolchain"
+check_optional_command biome
+check_optional_command ruff
+check_optional_command stylua
+check_optional_command shfmt
+check_optional_command clang-format
+check_optional_command clangd
+check_optional_command rustfmt
+
+echo ""
 info "Local private config"
 check_local_file "$TARGET_DIR/.zshrc.local" "zsh local config"
 check_local_file "$TARGET_DIR/.gitconfig.local" "git local config"

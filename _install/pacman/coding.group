@@ -5,3 +5,5 @@ cloc
 shellcheck
 shfmt
 biome
+ruff
+stylua

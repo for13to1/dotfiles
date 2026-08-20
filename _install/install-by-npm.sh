@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# _install/install-by-npm.sh — npm 生态工具链安装（复用本地 fnm/Node 环境）
+# _install/install-by-npm.sh — npm 途径的 Node.js CLI 安装
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/common.sh"
-
-# 仅在 Debian / Ubuntu 路线下接管 npm 生态工具链安装。
-is_debian_like || exit 0
 
 # ── Node 环境激活 ─────────────────────────────────────────────────
 # 复用本地 fnm 管理的 Node，不自装运行时。所有 Node/npm 调用都通过
@@ -30,7 +27,7 @@ fnm_exec() {
 ensure_fnm_node_env() {
     FNM_BIN="$(find_fnm_bin || true)"
     if [[ -z "$FNM_BIN" ]]; then
-        warn "未检测到 fnm，npm 生态工具链安装跳过"
+        warn "未检测到 fnm，npm CLI 安装跳过"
         return 1
     fi
 
@@ -55,11 +52,11 @@ release_age_flag() {
 }
 
 npm_install_global() {
-    local -a extra=()
     if release_age_flag; then
-        extra=(--min-release-age=0)
+        fnm_exec npm install -g --min-release-age=0 "$@"
+    else
+        fnm_exec npm install -g "$@"
     fi
-    fnm_exec npm install -g "${extra[@]}" "$@"
 }
 
 install_pi() {
@@ -75,29 +72,49 @@ install_opencode() {
     npm_install_global opencode-ai
 }
 
-if ! ensure_fnm_node_env; then
-    exit 0
+install_biome() {
+    npm_install_global --prefix "$HOME/.local" @biomejs/biome
+}
+
+main() {
+    # 仅在 Debian 系平台接管 npm CLI 安装。
+    is_debian_like || return 0
+
+    if ! ensure_fnm_node_env; then
+        return 0
+    fi
+
+    if ! fnm_exec npm --version &>/dev/null; then
+        warn "未检测到 npm，npm CLI 安装跳过"
+        return 0
+    fi
+
+    install_with_prompt \
+        "biome" \
+        "未检测到 biome，是否通过 npm 安装到 ~/.local？" \
+        "install_biome" \
+        "biome 安装完成" \
+        "$HOME/.local/bin/biome"
+
+    install_with_prompt \
+        "pi" \
+        "未检测到 pi，是否通过 npm 安装？" \
+        "install_pi" \
+        "pi 安装完成"
+
+    install_with_prompt \
+        "codex" \
+        "未检测到 codex，是否通过 npm 安装？" \
+        "install_codex" \
+        "codex 安装完成"
+
+    install_with_prompt \
+        "opencode" \
+        "未检测到 opencode，是否通过 npm 安装？" \
+        "install_opencode" \
+        "opencode 安装完成"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
 fi
-
-if ! fnm_exec npm --version &>/dev/null; then
-    warn "未检测到 npm，npm 生态工具链安装跳过"
-    exit 0
-fi
-
-install_with_prompt \
-    "pi" \
-    "未检测到 pi，是否通过 npm 安装？" \
-    "install_pi" \
-    "pi 安装完成"
-
-install_with_prompt \
-    "codex" \
-    "未检测到 codex，是否通过 npm 安装？" \
-    "install_codex" \
-    "codex 安装完成"
-
-install_with_prompt \
-    "opencode" \
-    "未检测到 opencode，是否通过 npm 安装？" \
-    "install_opencode" \
-    "opencode 安装完成"

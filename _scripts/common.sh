@@ -42,7 +42,7 @@ error_msg() { msg 'error' "$*"; }
 error()     { error_msg "$*"; exit 1; }
 
 # ── 发行版检测 ────────────────────────────────────────────────────
-# Debian / Ubuntu 系返回 0。
+# Debian 系平台返回 0。
 is_debian_like() {
     [[ -r /etc/os-release ]] || return 1
     # shellcheck disable=SC1091
