@@ -247,7 +247,7 @@ if has_nvim_012 then
         treesitter.setup({
           install_dir = vim.fn.stdpath("data") .. "/site",
         })
-        treesitter.install(parsers):wait(300000)
+        treesitter.install(parsers)
 
         vim.api.nvim_create_autocmd("FileType", {
           desc = "Enable Treesitter highlighting when a parser is available",
