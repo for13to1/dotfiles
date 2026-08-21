@@ -19,7 +19,10 @@ if not uv.fs_stat(lazypath) then
     lazypath,
   })
   if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to clone lazy.nvim. Check network access and rerun Neovim.", vim.log.levels.ERROR)
+    vim.notify(
+      "Failed to clone lazy.nvim. Check network access and rerun Neovim.",
+      vim.log.levels.ERROR
+    )
     return
   end
 end
@@ -68,14 +71,25 @@ vim.keymap.set("i", ";", ";<C-g>u")
 -- 按 Neovim 版本门控动态构建插件列表，兼容旧版与新版。
 local plugins = {
   -- UI / Theme
-  { "sainnhe/sonokai", lazy = false, priority = 1000, config = function() vim.cmd.colorscheme("sonokai") end },
+  {
+    "sainnhe/sonokai",
+    lazy = false,
+    priority = 1000,
+    config = function()
+      vim.cmd.colorscheme("sonokai")
+    end,
+  },
   { "nvim-lualine/lualine.nvim", dependencies = { "nvim-tree/nvim-web-devicons" }, config = true },
 
   -- File Explorer
   {
     "nvim-neo-tree/neo-tree.nvim",
     branch = "v3.x",
-    dependencies = { "nvim-lua/plenary.nvim", "nvim-tree/nvim-web-devicons", "MunifTanjim/nui.nvim" },
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      "nvim-tree/nvim-web-devicons",
+      "MunifTanjim/nui.nvim",
+    },
     keys = { { "<leader>n", "<cmd>Neotree toggle<cr>", desc = "NeoTree" } },
   },
 
@@ -100,33 +114,56 @@ local plugins = {
   { "numToStr/Comment.nvim", config = true }, -- gcc / gc
   { "tpope/vim-sleuth" }, -- auto indent
   { "windwp/nvim-autopairs", config = true }, -- auto close brackets
-  { "mbbill/undotree", keys = { { "<leader>u", "<cmd>UndotreeToggle<cr>", desc = "Toggle UndoTree" } } },
+  {
+    "mbbill/undotree",
+    keys = { { "<leader>u", "<cmd>UndotreeToggle<cr>", desc = "Toggle UndoTree" } },
+  },
 
   -- Completion
-  { "hrsh7th/nvim-cmp",
-    dependencies = { "hrsh7th/cmp-nvim-lsp", "hrsh7th/cmp-buffer", "hrsh7th/cmp-path", "saadparwaiz1/cmp_luasnip", "L3MON4D3/LuaSnip" },
+  {
+    "hrsh7th/nvim-cmp",
+    dependencies = {
+      "hrsh7th/cmp-nvim-lsp",
+      "hrsh7th/cmp-buffer",
+      "hrsh7th/cmp-path",
+      "saadparwaiz1/cmp_luasnip",
+      "L3MON4D3/LuaSnip",
+    },
     config = function()
       local cmp = require("cmp")
       cmp.setup({
-        snippet = { expand = function(args) require('luasnip').lsp_expand(args.body) end },
+        snippet = {
+          expand = function(args)
+            require("luasnip").lsp_expand(args.body)
+          end,
+        },
         mapping = cmp.mapping.preset.insert({
-          ['<C-b>'] = cmp.mapping.scroll_docs(-4),
-          ['<C-f>'] = cmp.mapping.scroll_docs(4),
-          ['<C-Space>'] = cmp.mapping.complete(),
-          ['<C-e>'] = cmp.mapping.abort(),
-          ['<CR>'] = cmp.mapping.confirm({ select = true }), -- Accept currently selected item.
-          ['<Tab>'] = cmp.mapping(function(fallback)
-            if cmp.visible() then cmp.select_next_item() else fallback() end
+          ["<C-b>"] = cmp.mapping.scroll_docs(-4),
+          ["<C-f>"] = cmp.mapping.scroll_docs(4),
+          ["<C-Space>"] = cmp.mapping.complete(),
+          ["<C-e>"] = cmp.mapping.abort(),
+          ["<CR>"] = cmp.mapping.confirm({ select = true }), -- Accept currently selected item.
+          ["<Tab>"] = cmp.mapping(function(fallback)
+            if cmp.visible() then
+              cmp.select_next_item()
+            else
+              fallback()
+            end
           end, { "i", "s" }),
-          ['<S-Tab>'] = cmp.mapping(function(fallback)
-            if cmp.visible() then cmp.select_prev_item() else fallback() end
+          ["<S-Tab>"] = cmp.mapping(function(fallback)
+            if cmp.visible() then
+              cmp.select_prev_item()
+            else
+              fallback()
+            end
           end, { "i", "s" }),
         }),
         sources = cmp.config.sources({
-          { name = 'nvim_lsp' }, { name = 'luasnip' }
-        }, { { name = 'buffer' }, { name = 'path' } })
+          { name = "nvim_lsp" },
+          { name = "luasnip" },
+        }, { { name = "buffer" }, { name = "path" } }),
       })
-    end
+    end,
   },
 }
 
@@ -134,13 +171,18 @@ local plugins = {
 if has_nvim_011 then
   vim.list_extend(plugins, {
     { "williamboman/mason.nvim", config = true },
-    { "williamboman/mason-lspconfig.nvim", config = function()
+    {
+      "williamboman/mason-lspconfig.nvim",
+      config = function()
         require("mason-lspconfig").setup({
-            -- clangd is resolved directly from PATH.
-            ensure_installed = { "pyright", "rust_analyzer", "ts_ls", "bashls" }
+          -- clangd is resolved directly from PATH.
+          ensure_installed = { "pyright", "rust_analyzer", "ts_ls", "bashls" },
         })
-    end },
-    { "neovim/nvim-lspconfig", config = function()
+      end,
+    },
+    {
+      "neovim/nvim-lspconfig",
+      config = function()
         local servers = { "pyright", "rust_analyzer", "ts_ls", "bashls", "clangd" }
         local capabilities = require("cmp_nvim_lsp").default_capabilities()
         for _, server in ipairs(servers) do
@@ -148,12 +190,14 @@ if has_nvim_011 then
         end
         vim.lsp.enable(servers)
         -- Keymaps
-        vim.keymap.set('n', 'gd', vim.lsp.buf.definition, {desc="Go to definition"})
-        vim.keymap.set('n', 'K', vim.lsp.buf.hover, {desc="Hover info"})
-        vim.keymap.set('n', '<leader>r', vim.lsp.buf.rename, {desc="Rename symbol"})
-        vim.keymap.set('n', '<leader>a', vim.lsp.buf.code_action, {desc="Code action"})
-    end },
-    { "stevearc/conform.nvim",
+        vim.keymap.set("n", "gd", vim.lsp.buf.definition, { desc = "Go to definition" })
+        vim.keymap.set("n", "K", vim.lsp.buf.hover, { desc = "Hover info" })
+        vim.keymap.set("n", "<leader>r", vim.lsp.buf.rename, { desc = "Rename symbol" })
+        vim.keymap.set("n", "<leader>a", vim.lsp.buf.code_action, { desc = "Code action" })
+      end,
+    },
+    {
+      "stevearc/conform.nvim",
       cmd = { "ConformInfo" },
       keys = {
         {
@@ -183,7 +227,7 @@ if has_nvim_011 then
           },
           format_on_save = nil,
         })
-      end
+      end,
     },
   })
 end
@@ -235,9 +279,13 @@ end
 -- lazygit（外部 TUI）独立于 neogit，两者入口不冲突。
 if has_nvim_010 then
   vim.list_extend(plugins, {
-    { "NeogitOrg/neogit",
-      config = function() require("neogit").setup({}) end,
-      keys = { { "<leader>gi", "<cmd>Neogit<CR>", desc = "Neogit (git interface)" } } },
+    {
+      "NeogitOrg/neogit",
+      config = function()
+        require("neogit").setup({})
+      end,
+      keys = { { "<leader>gi", "<cmd>Neogit<CR>", desc = "Neogit (git interface)" } },
+    },
   })
 end
 
