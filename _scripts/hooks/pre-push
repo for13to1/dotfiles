@@ -6,5 +6,5 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 
-# make test 会统一处理 shellcheck 缺失的情况（提示跳过 shellcheck，但其余测试照常运行）
+# make test 要求所有检查依赖可用，避免跳过检查后仍允许 push。
 make -C "$ROOT" test

@@ -59,9 +59,17 @@ postgres_lines="$(grep -c 'postgresql@18' "$TMP/b2")"
 grep -q 'restart_service' "$TMP/b2" || fail "应保留首个完整行（含 restart_service 选项）"
 grep -qx 'brew "mysql"' "$TMP/b2" || fail "db 的 mysql 应出现"
 
-# ── 缺失组：警告跳过而不报错 ───────────────────────────────────
-run --apt doesnotexist > "$TMP/a2" 2>&1
-grep -q '不存在' "$TMP/a2" || fail "缺失组应给出警告"
+# ── 缺失组：明确报错，避免拼写错误导致静默漏装 ─────────────────
+if run --apt doesnotexist > "$TMP/a2" 2>&1; then
+    fail "缺失组应报错退出"
+fi
+grep -q '未知的 apt 安装组: doesnotexist' "$TMP/a2" || fail "缺失组应给出明确错误"
+
+# 有效组与缺失组混用时也必须失败，不能执行不完整安装。
+if run --apt core doesnotexist > "$TMP/a2-mixed" 2>&1; then
+    fail "混用有效组和缺失组时应报错退出"
+fi
+grep -q '未知的 apt 安装组: doesnotexist' "$TMP/a2-mixed" || fail "混用时应指出缺失组"
 
 # ── 无效平台应报错 ───────────────────────────────────────────────
 if run --foo core > /dev/null 2>&1; then
@@ -84,8 +92,8 @@ grep -qx 'zsh' "$TMP/a5" || fail "core+default 应含 core 的 zsh"
 
 
 # ── 无可用包：警告且退出 0 ───────────────────────────────────────
-mkdir -p "$TMP/empty"
-printf '# 只有注释\n' > "$TMP/empty/core.group"
+mkdir -p "$TMP/empty/apt"
+printf '# 只有注释\n' > "$TMP/empty/apt/core.group"
 if INSTALL_DRY=1 INSTALL_BASE_DIR="$TMP/empty" bash "$ROOT/_install/install" --apt core > "$TMP/a4" 2>&1; then
     :
 else

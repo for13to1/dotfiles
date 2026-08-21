@@ -66,10 +66,11 @@ fi
 
 # ── 收集 .group 文件 → 合并去重 ─────────────────────────────────
 declare -a all_lines=()
+missing_groups=()
 for group in "${groups[@]}"; do
     file="$BASE_DIR/$PLATFORM/$group.$ext"
     if [[ ! -f "$file" ]]; then
-        warn ".group 文件不存在: ${file}，跳过"
+        missing_groups+=("$group")
         continue
     fi
     info "收集组 [$PLATFORM/$group]: $file"
@@ -77,6 +78,10 @@ for group in "${groups[@]}"; do
         all_lines+=("$line")
     done < <(group_list_lines "$file")
 done
+
+if (( ${#missing_groups[@]} > 0 )); then
+    error "未知的 $PLATFORM 安装组: ${missing_groups[*]}"
+fi
 
 if (( ${#all_lines[@]} == 0 )); then
     warn "没有可安装的包，跳过安装"

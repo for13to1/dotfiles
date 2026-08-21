@@ -27,7 +27,8 @@ test:
 		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec shellcheck {} + ; \
 		shellcheck _scripts/hooks/pre-push; \
 	else \
-		echo "⚠️  shellcheck 未安装，跳过 ShellCheck 静态检查（bash -n 与其余测试仍会运行）"; \
+		echo "❌ shellcheck 未安装，无法运行完整测试" >&2; \
+		exit 1; \
 	fi
 	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec bash -n {} \;
 	@set -e; for t in _tests/test-*.sh; do bash "$$t"; done
@@ -39,14 +40,11 @@ test:
 	elif command -v pytest >/dev/null 2>&1; then \
 		pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
 	elif command -v uv >/dev/null 2>&1; then \
-		if uv run --offline --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py \
-		   || uv run --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; then \
-			:; \
-		else \
-			echo "⚠️  uv 无法运行 pdf2md-polish 测试（网络/缓存不可用），跳过"; \
-		fi; \
+		uv run --offline --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py \
+		|| uv run --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
 	else \
-		echo "⚠️  pytest 与 uv 均未安装，跳过 pdf2md-polish 测试"; \
+		echo "❌ pytest 与 uv 均未安装，无法运行 pdf2md-polish 测试" >&2; \
+		exit 1; \
 	fi
 
 
