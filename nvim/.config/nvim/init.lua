@@ -189,18 +189,45 @@ if has_nvim_011 then
 end
 
 -- Syntax Highlighting
--- 0.12+ 用 master；0.10–0.11 固定 v0.10.0（API 不同）
+-- 0.12+ 使用重写后的 main API；0.10-0.11 固定使用兼容旧 API 的 v0.10.0。
 if has_nvim_012 then
   vim.list_extend(plugins, {
-    { "nvim-treesitter/nvim-treesitter", build = ":TSUpdate", config = function()
-      require("nvim-treesitter").setup({ ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" }, auto_install = true })
-    end },
+    {
+      "nvim-treesitter/nvim-treesitter",
+      lazy = false,
+      build = ":TSUpdate",
+      config = function()
+        local treesitter = require("nvim-treesitter")
+        local parsers = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" }
+
+        treesitter.setup({
+          install_dir = vim.fn.stdpath("data") .. "/site",
+        })
+        treesitter.install(parsers):wait(300000)
+
+        vim.api.nvim_create_autocmd("FileType", {
+          desc = "Enable Treesitter highlighting when a parser is available",
+          callback = function(args)
+            pcall(vim.treesitter.start, args.buf)
+          end,
+        })
+      end,
+    },
   })
 elseif has_nvim_010 then
   vim.list_extend(plugins, {
-    { "nvim-treesitter/nvim-treesitter", tag = "v0.10.0", build = ":TSUpdate", config = function()
-      require("nvim-treesitter.configs").setup({ ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" }, auto_install = true })
-    end },
+    {
+      "nvim-treesitter/nvim-treesitter",
+      tag = "v0.10.0",
+      build = ":TSUpdate",
+      config = function()
+        require("nvim-treesitter.configs").setup({
+          ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" },
+          auto_install = true,
+          highlight = { enable = true },
+        })
+      end,
+    },
   })
 end
 
