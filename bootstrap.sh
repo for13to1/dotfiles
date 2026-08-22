@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# bootstrap.sh — 一键装机入口脚本
+# bootstrap.sh — 开发环境部署入口
 # 用法: git clone https://github.com/for13to1/dotfiles.git ~/dotfiles
 #       cd ~/dotfiles && bash bootstrap.sh
 #
@@ -223,145 +223,10 @@ case "$OS" in
         ;;
 esac
 
-# ── 3. SSH 基础设施与密钥 ───────────────────────────────────────
-info "正在检查 SSH 环境..."
-
-## 1. 基础设施：确保目录和基础文件存在
-mkdir -p "$HOME/.ssh"
-[[ ! -f "$HOME/.ssh/config" ]] && touch "$HOME/.ssh/config"
-
-## 2. 交互式密钥检测与生成
-if [[ ! -f "$HOME/.ssh/id_ed25519" && ! -f "$HOME/.ssh/id_rsa" ]]; then
-    warn "未发现 SSH 密钥对"
-    if confirm "是否立即为您生成一个 ed25519 密钥？ [y/N]: " 0; then
-        ssh-keygen -t ed25519 -C "$(whoami)@$(hostname)" -f "$HOME/.ssh/id_ed25519" -N ""
-        ok "SSH 密钥已生成：~/.ssh/id_ed25519"
-    else
-        info "💡 您稍后可以手动执行：ssh-keygen -t ed25519 -C \"$(whoami)@$(hostname)\""
-    fi
-else
-    ok "SSH 密钥已就绪"
-fi
-
-## 3. 权限加固
-info "正在加固 SSH 目录及文件权限..."
-chmod 700 "$HOME/.ssh"
-# 私钥与核心配置 (600)
-find "$HOME/.ssh" -type f \( -name "id_*" -o -name "*.pem" \) ! -name "*.pub" -exec chmod 600 {} +
-for f in config authorized_keys known_hosts known_hosts.old; do
-    [[ -f "$HOME/.ssh/$f" ]] && chmod 600 "$HOME/.ssh/$f"
-done
-# 公钥标准权限 (644)
-find "$HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} +
-
-ok "SSH 环境配置完成"
-
-# ── 4. Git 身份与基础配置 ─────────────────────────────────────────
-info "正在配置 Git 环境..."
-
-# Git LFS 由 git 模块（.gitconfig 的 [filter "lfs"]）全局接管，这里无需额外配置
-
-## 1. Git 本地用户信息 (~/.gitconfig.local)
-if [[ ! -f "$HOME/.gitconfig.local" ]]; then
-    echo ""
-    warn "未发现 ~/.gitconfig.local （用于存储 Git 用户名和邮箱）"
-    if confirm "是否立即创建？ [y/N]: " 0; then
-        git_name="$(ask_value "请输入 Git 用户名 (默认: for13to1): " "for13to1")"
-        git_email="$(ask_value "请输入 Git 邮箱 (默认: for13to1@outlook.com): " "for13to1@outlook.com")"
-
-        cat <<EOF > "$HOME/.gitconfig.local"
-[user]
-    name = $git_name
-    email = $git_email
-EOF
-        ok ".gitconfig.local 已生成"
-    else
-        info "已跳过。您稍后可以手动创建并填入以下内容："
-        info "  [user]"
-        info "      name = for13to1"
-        info "      email = for13to1@outlook.com"
-    fi
-fi
-
-## 2. Git 钩子（pre-push 自动运行 make test）
-git -C "$DOTFILES_DIR" config core.hooksPath "$DOTFILES_DIR/_scripts/hooks"
-info "已启用 Git 钩子: core.hooksPath=$DOTFILES_DIR/_scripts/hooks"
-
-# ── 5. Shell 环境设置 (Oh My Zsh & Plugins) ──────────────────────
-## 1. 安装 Oh My Zsh
-if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
-    info "正在安装 Oh My Zsh..."
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
-    ok "Oh My Zsh 安装完毕"
-else
-    ok "Oh My Zsh 已存在，跳过"
-fi
-
-## 2. 切换默认 Shell
-if [[ "$SHELL" != *"zsh"* ]] && command -v zsh &>/dev/null; then
-    info "检测到当前默认 Shell 不是 zsh，正在尝试为您切换..."
-    ZSH_PATH="$(command -v zsh)"
-    if ! grep -Fxq "$ZSH_PATH" /etc/shells; then
-        warn "Zsh 路径 ($ZSH_PATH) 不在 /etc/shells 中，正在添加..."
-        echo "$ZSH_PATH" | sudo tee -a /etc/shells >/dev/null
-    fi
-    chsh -s "$ZSH_PATH" || warn "切换默认 Shell 失败，您可以稍后手动执行: chsh -s $ZSH_PATH"
-    ok "已退出 chsh 流程"
-fi
-
-## 3. 安装 Oh My Zsh 第三方插件
-ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
-omz_install_plugin() {
-    local name="$1" url="$2"
-    if [[ ! -d "$ZSH_CUSTOM/plugins/$name" ]]; then
-        info "正在安装 OMZ 插件: $name..."
-        git clone "$url" "$ZSH_CUSTOM/plugins/$name"
-        ok "$name 安装完毕"
-    else
-        ok "$name 已存在，跳过"
-    fi
-}
-omz_install_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions
-omz_install_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting
-
-## 4. 初始化 ~/.zshrc.local
-if [[ ! -f "$HOME/.zshrc.local" ]]; then
-    info "正在生成 ~/.zshrc.local 示例模板..."
-
-    cat <<'TEMPLATE_EOF' > "$HOME/.zshrc.local"
-# ~/.zshrc.local — 本地配置，不纳入版本控制，可按需修改
-TEMPLATE_EOF
-
-    if [[ "$OS" == "Darwin"* ]]; then
-        cat <<'TEMPLATE_EOF' >> "$HOME/.zshrc.local"
-
-# ==========================================================
-# Homebrew 镜像源切换 (函数定义见 ~/.zsh.d/brew_mirror.sh)
-# ==========================================================
-TEMPLATE_EOF
-        if [[ -n "${SELECTED_MIRROR:-}" ]]; then
-            echo "brew_mirror -q $SELECTED_MIRROR" >> "$HOME/.zshrc.local"
-        else
-            echo "# brew_mirror -q ustc  # 取消注释以启用 USTC 镜像源" >> "$HOME/.zshrc.local"
-        fi
-    fi
-
-    cat <<'TEMPLATE_EOF' >> "$HOME/.zshrc.local"
-
-# ==========================================================
-# API Keys
-# ==========================================================
-# export OPENAI_API_KEY="sk-..."
-# export OPENAI_BASE_URL="https://api.openai.com/v1"
-
-# export ANTHROPIC_API_KEY="sk-ant-..."
-# export ANTHROPIC_BASE_URL="https://api.anthropic.com"
-
-# export GEMINI_API_KEY="your-api-key"
-# export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
-TEMPLATE_EOF
-    ok "$HOME/.zshrc.local 示例模板已生成"
-fi
+# ── 3-5. 主机基础配置 ────────────────────────────────────────────
+bash "$DOTFILES_DIR/_bootstrap/ssh.sh"
+bash "$DOTFILES_DIR/_bootstrap/git.sh" "$DOTFILES_DIR"
+bash "$DOTFILES_DIR/_bootstrap/shell.sh" "$OS" "${SELECTED_MIRROR:-}"
 
 # ── 6. 配置文件挂载 (Stow) ──────────────────────────────────────────
 info "正在使用 Stow 挂载配置文件..."
@@ -403,65 +268,12 @@ else
     warn "tmux 插件同步过程中有报错，可稍后运行 bash _scripts/tmux-plugins.sh 重试"
 fi
 
-# ── 8. 编辑器插件同步 ──────────────────────────────────────
+# ── 8. 编辑器插件同步 ────────────────────────────────────────────
 echo ""
-info "📋 请选择要同步的编辑器插件："
-echo "   1) Neovim (lazy.nvim) - [默认]"
-echo "   2) Vim (vim-plug)"
-echo "   3) 两者都要"
-echo "   4) 跳过"
-if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
-    editor_choice="4"
-else
-    editor_choice="$(ask_value "请输入数字 [1-4]: " "1")"
-fi
-
-## 1. Neovim 插件 (lazy.nvim)
-if [[ "$editor_choice" == "1" || "$editor_choice" == "3" ]]; then
-    if command -v nvim &>/dev/null; then
-        info "正在同步 Neovim 插件 (lazy.nvim)..."
-        nvim --headless "+Lazy! sync" +qa || warn "Neovim 插件同步过程中有报错，请稍后手动打开 nvim 查看"
-        ok "Neovim 插件就绪"
-    fi
-fi
-
-## 2. Vim 插件 (vim-plug)
-if [[ "$editor_choice" == "2" || "$editor_choice" == "3" ]]; then
-    if [[ ! -f "$HOME/.vim/autoload/plug.vim" ]]; then
-        info "正在安装 vim-plug..."
-        curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
-            https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-        ok "vim-plug 安装完毕"
-    else
-        ok "vim-plug 已存在，跳过"
-    fi
-
-    if command -v vim &>/dev/null; then
-        if vim -Nu "$HOME/.vimrc" -n -es \
-            '+if !exists(":PlugInstall") | cquit 2 | endif' '+qa!'; then
-            info "正在安装/更新 Vim 插件..."
-            if vim -Nu "$HOME/.vimrc" -n -es '+PlugUpdate --sync' '+qa!'; then
-                ok "Vim 插件就绪"
-            else
-                warn "Vim 插件同步失败，请检查上方输出后重试"
-            fi
-        else
-            warn "vim-plug 未能加载，请检查 ~/.vimrc 与 runtimepath"
-        fi
-    fi
-fi
+bash "$DOTFILES_DIR/_bootstrap/editors.sh"
 
 # ── 9. 自定义脚本部署 ──────────────────────────────────────────────
-info "正在部署自定义脚本..."
-
-# proj-setup: 项目初始化工具
-if [[ -f "$DOTFILES_DIR/proj-setup/bin/proj-setup.sh" ]]; then
-    mkdir -p "$HOME/.local/bin"
-    ln -sf "$DOTFILES_DIR/proj-setup/bin/proj-setup.sh" "$HOME/.local/bin/proj-setup"
-    ok "proj-setup 已部署到 ~/.local/bin/proj-setup"
-else
-    warn "proj-setup.sh 未找到，跳过部署"
-fi
+bash "$DOTFILES_DIR/_bootstrap/tools.sh" "$DOTFILES_DIR"
 
 # ── 10. 完成 ────────────────────────────────────────────────────────
 echo ""

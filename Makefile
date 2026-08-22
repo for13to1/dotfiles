@@ -9,7 +9,7 @@ SHELL := /bin/bash
 # 解析规则见 _scripts/list-modules.sh，Makefile 与 bootstrap.sh 共用同一实现。
 MODULES := $(shell bash _scripts/list-modules.sh _scripts/modules.conf)
 
-.PHONY: sync check doctor test help
+.PHONY: sync check doctor test lint-shell test-shell test-skills help
 
 # 默认一键同步：Restow 所有模块
 sync:
@@ -22,7 +22,9 @@ check:
 doctor:
 	@bash _scripts/doctor.sh "$(CURDIR)" "$(HOME)"
 
-test:
+test: lint-shell test-shell test-skills
+
+lint-shell:
 	@if command -v shellcheck >/dev/null 2>&1; then \
 		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec shellcheck {} + ; \
 		shellcheck _scripts/hooks/pre-push; \
@@ -30,8 +32,12 @@ test:
 		echo "❌ shellcheck 未安装，无法运行完整测试" >&2; \
 		exit 1; \
 	fi
+
+test-shell:
 	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec bash -n {} \;
 	@set -e; for t in _tests/test-*.sh; do bash "$$t"; done
+
+test-skills:
 	@python3 agents/.agents/skills/commit-summarizer/scripts/test_analyze_staged.py
 	@python3 agents/.agents/skills/script-analyzer/scripts/test_analyze.py
 	@if [ -x agents/.agents/skills/pdf2md-polish/.venv/bin/python ] \
@@ -54,5 +60,8 @@ help:
 	@echo "  make sync   - 一键刷新并重新挂载所有核心模块"
 	@echo "  make check  - 验证所有模块的软链接是否正确建立"
 	@echo "  make doctor - 诊断本机 dotfiles 环境状态"
-	@echo "  make test   - 运行 shell 静态检查、Stow 行为测试与 skill Python 测试"
+	@echo "  make test   - 运行全部静态检查与行为测试"
+	@echo "  make lint-shell  - 运行 ShellCheck"
+	@echo "  make test-shell  - 运行 bash 语法检查与 shell 行为测试"
+	@echo "  make test-skills - 运行 skill Python 测试"
 	@echo "  make help   - 显示此帮助信息"

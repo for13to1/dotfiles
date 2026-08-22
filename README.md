@@ -43,7 +43,8 @@ dotfiles/
 │   ├── apt/                    # Debian 系平台的 .group 文件
 │   ├── pacman/                 # Arch Linux 平台 .group 文件
 │   └── brew/                   # macOS 平台 .group 文件
-├── _setup/                     # 系统底层偏好与权限初始化脚本
+├── _bootstrap/                 # 环境部署阶段（SSH/Git/Shell/编辑器/工具）
+├── _setup/                     # 操作系统级设置
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
 ├── _scripts/                   # shell 基础设施
@@ -56,6 +57,7 @@ dotfiles/
 │   └── hooks/
 │       └── pre-push            # Git 钩子：push 前自动运行 make test
 ├── _tests/                     # 行为测试（make test 自动发现）
+│   ├── test-bootstrap-components.sh # bootstrap 领域组件行为测试
 │   ├── test-check-links.sh     # check-links 行为测试
 │   ├── test-doctor.sh          # doctor 行为测试
 │   ├── test-proj-setup.sh      # proj-setup 行为测试
@@ -90,7 +92,7 @@ cd ~/dotfiles && bash bootstrap.sh
 cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 ```
 
-该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步。
+该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换。其余安装和系统设置仍会正常执行。
 
 `bootstrap.sh` 会自动引导并处理以下流程：
 
@@ -98,7 +100,7 @@ cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 2. **软件安装**：按组安装软件工具，应用 macOS 系统设置。
 3. **SSH 基础设施**：交互式生成/检测 SSH 密钥，加固目录权限。
 4. **Git 身份配置**：交互式创建本地身份配置，启用 pre-push 钩子。
-5. **Shell 环境**：部署 Oh My Zsh 及其插件生态，自动切换默认 Shell。
+5. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
 6. **配置挂载**：使用 `stow` 构建全局符号链接，自动备份文件冲突。
 7. **插件同步**：交互式同步开发环境 (Neovim/Vim) 的扩展插件。
 8. **自定义工具**：部署 proj-setup 等自定义工具到 `~/.local/bin`。
@@ -254,6 +256,9 @@ make sync  # 优雅地仅刷新 _scripts/modules.conf 中记录的核心模块
 
 ```bash
 make test   # ShellCheck、bash 语法检查、Stow 行为测试与 skill Python 测试
+make lint-shell  # 仅运行 ShellCheck
+make test-shell  # bash 语法检查与 shell 行为测试
+make test-skills # skill Python 测试
 make check  # 验证当前 HOME 下的 Stow 链接状态
 make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 ```
