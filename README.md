@@ -207,6 +207,9 @@ bash ~/dotfiles/_install/install --brew
 - `install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（Debian 系平台）；
 - `install-by-cargo.sh` 通过 Cargo 安装 Rust CLI（Debian 系平台）。
 
+Debian 系发行版的软件仓库中部分开发工具版本较旧或缺失，因此在该平台由上述生态渠道
+提供较新的版本；macOS 与 Arch Linux 仍优先使用各自的系统包管理器。
+
 Vim 和 Neovim 从 `PATH` 或项目本地环境解析 formatter，不自行下载；平台默认组和上述生态安装脚本负责提供全局命令。
 
 ```bash
