@@ -13,46 +13,46 @@ main() {
     local editor_choice
 
     if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
-        info "非交互模式，跳过编辑器插件同步"
+        info "Non-interactive mode; skipping editor plugin sync"
         return 0
     fi
 
-    info "📋 请选择要同步的编辑器插件："
-    echo "   1) Neovim (lazy.nvim) - [默认]"
+    info "📋 Select the editor plugins to sync:"
+    echo "   1) Neovim (lazy.nvim) - [default]"
     echo "   2) Vim (vim-plug)"
-    echo "   3) 两者都要"
-    echo "   4) 跳过"
-    editor_choice="$(ask_value "请输入数字 [1-4]: " "1")"
+    echo "   3) Both"
+    echo "   4) Skip"
+    editor_choice="$(ask_value "Enter a number [1-4]: " "1")"
 
     if [[ "$editor_choice" == "1" || "$editor_choice" == "3" ]]; then
         if command -v nvim &>/dev/null; then
-            info "正在同步 Neovim 插件 (lazy.nvim)..."
-            nvim --headless "+Lazy! sync" +qa || warn "Neovim 插件同步过程中有报错，请稍后手动打开 nvim 查看"
-            ok "Neovim 插件就绪"
+            info "Syncing Neovim plugins (lazy.nvim)..."
+            nvim --headless "+Lazy! sync" +qa || warn "Neovim plugin sync had errors; open nvim manually to inspect"
+            ok "Neovim plugins ready"
         fi
     fi
 
     if [[ "$editor_choice" == "2" || "$editor_choice" == "3" ]]; then
         if [[ ! -f "$HOME/.vim/autoload/plug.vim" ]]; then
-            info "正在安装 vim-plug..."
+            info "Installing vim-plug..."
             curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs \
                 https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-            ok "vim-plug 安装完毕"
+            ok "vim-plug installed"
         else
-            ok "vim-plug 已存在，跳过"
+            ok "vim-plug already present; skipping"
         fi
 
         if command -v vim &>/dev/null; then
             if vim -Nu "$HOME/.vimrc" -n -es \
                 '+if !exists(":PlugInstall") | cquit 2 | endif' '+qa!'; then
-                info "正在安装/更新 Vim 插件..."
+                info "Installing/updating Vim plugins..."
                 if vim -Nu "$HOME/.vimrc" -n -es '+PlugUpdate --sync' '+qa!'; then
-                    ok "Vim 插件就绪"
+                    ok "Vim plugins ready"
                 else
-                    warn "Vim 插件同步失败，请检查上方输出后重试"
+                    warn "Vim plugin sync failed; check the output above and retry"
                 fi
             else
-                warn "vim-plug 未能加载，请检查 ~/.vimrc 与 runtimepath"
+                warn "vim-plug failed to load; check ~/.vimrc and runtimepath"
             fi
         fi
     fi

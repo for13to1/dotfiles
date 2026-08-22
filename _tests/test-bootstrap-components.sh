@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# test-bootstrap-components.sh — _bootstrap/*.sh 组件行为测试
-# 用法: bash _tests/test-bootstrap-components.sh
+# test-bootstrap-components.sh — behavior tests for _bootstrap/*.sh components
+# Usage: bash _tests/test-bootstrap-components.sh
 
 set -euo pipefail
-# shellcheck disable=SC1091  # helpers.sh 动态路径
+# shellcheck disable=SC1091  # helpers.sh is sourced via a dynamic path
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,7 +75,7 @@ grep -qx 'brew_mirror -q tuna' "$TEST_HOME/.zshrc.local" || fail "macOS local sh
 HOME="$TEST_HOME" SHELL=/bin/bash ZSH_CUSTOM="$TEST_HOME/.oh-my-zsh/custom" \
     DOTFILES_NON_INTERACTIVE=1 MOCK_LOG="$MOCK_LOG" PATH="$MOCK_BIN:$PATH" \
     bash "$ROOT/_bootstrap/shell.sh" Linux > "$TMP/shell-non-interactive.out"
-grep -q '跳过默认 Shell 切换' "$TMP/shell-non-interactive.out" \
+grep -q 'Skipping the default shell switch' "$TMP/shell-non-interactive.out" \
     || fail "Non-interactive shell setup must explain that default shell switching is skipped"
 [[ ! -e "$MOCK_LOG/sudo" && ! -e "$MOCK_LOG/chsh" ]] \
     || fail "Non-interactive shell setup must not invoke sudo or chsh"
@@ -109,8 +109,8 @@ EDITOR_HOME="$TMP/editor-home"
 mkdir -p "$EDITOR_HOME"
 HOME="$EDITOR_HOME" DOTFILES_NON_INTERACTIVE=1 MOCK_LOG="$MOCK_LOG" PATH="$MOCK_BIN:$PATH" \
     bash "$ROOT/_bootstrap/editors.sh" > "$TMP/editors-skip.out"
-grep -q '跳过编辑器插件同步' "$TMP/editors-skip.out" || fail "Non-interactive editor setup must report the skip"
-grep -q '请选择' "$TMP/editors-skip.out" && fail "Non-interactive editor setup must not print an interactive menu"
+grep -q 'skipping editor plugin sync' "$TMP/editors-skip.out" || fail "Non-interactive editor setup must report the skip"
+grep -q 'Select the editor plugins' "$TMP/editors-skip.out" && fail "Non-interactive editor setup must not print an interactive menu"
 [[ ! -e "$EDITOR_HOME/.vim/autoload/plug.vim" ]] || fail "Non-interactive editor setup must not install vim-plug"
 [[ ! -e "$MOCK_LOG/nvim" && ! -e "$MOCK_LOG/vim" && ! -e "$MOCK_LOG/curl" ]] \
     || fail "Non-interactive editor setup must not invoke editor or download commands"
@@ -133,7 +133,7 @@ grep -q 'PlugUpdate --sync' "$MOCK_LOG/vim" || fail "Choice 2 must update Vim pl
 : > "$MOCK_LOG/vim"
 printf '2\n' | HOME="$EDITOR_HOME" MOCK_LOG="$MOCK_LOG" MOCK_VIM_PROBE_FAIL=1 PATH="$MOCK_BIN:$PATH" \
     bash "$ROOT/_bootstrap/editors.sh" > "$TMP/editors-probe-fail.out"
-grep -q 'vim-plug 未能加载' "$TMP/editors-probe-fail.out" || fail "Vim probe failure must be reported"
+grep -q 'vim-plug failed to load' "$TMP/editors-probe-fail.out" || fail "Vim probe failure must be reported"
 [[ "$(wc -l < "$MOCK_LOG/vim" | tr -d ' ')" == 1 ]] || fail "Failed Vim probe must skip plugin update"
 
 # Choice 3 composes both editor workflows.

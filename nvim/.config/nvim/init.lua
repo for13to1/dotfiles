@@ -1,7 +1,7 @@
 -- Neovim version gates: version-sensitive plugins are only registered when the
 -- running Neovim satisfies their minimum requirement, so this single config
 -- works on both old and new Neovim (older versions get a reduced feature set).
--- 版本基准（2026-08）: brew 0.12.4 / apt 0.11.6 / extra 0.12.4，最低 0.11.6
+-- Version baseline (2026-08): brew 0.12.4 / apt 0.11.6 / extra 0.12.4; minimum 0.11.6
 local has_nvim_010 = vim.fn.has("nvim-0.10") == 1
 local has_nvim_011 = vim.fn.has("nvim-0.11") == 1
 local has_nvim_012 = vim.fn.has("nvim-0.12") == 1
@@ -32,7 +32,7 @@ vim.opt.rtp:prepend(lazypath)
 vim.g.mapleader = ","
 vim.g.maplocalleader = ","
 
--- 启用文件类型检测与插件/缩进（各文件类型插件依赖此设置）
+-- Enable filetype detection and plugin/indent (per-filetype plugins rely on this).
 vim.cmd("filetype plugin indent on")
 
 vim.opt.number = true
@@ -56,11 +56,11 @@ vim.opt.autoindent = true
 vim.opt.clipboard = "unnamedplus"
 
 -- Undo Settings & Keymaps
-vim.opt.undofile = false -- 设置为 true 启用持久化撤销（Neovim 会自动管理并创建撤销目录）
+vim.opt.undofile = false -- set to true to enable persistent undo (Neovim manages the undo dir)
 vim.opt.undolevels = 10000
 vim.opt.undoreload = 10000
 
--- 插入模式下的撤销断点（按标点符号分段撤销，避免一次性撤销太多）
+-- Insert-mode undo breakpoints (undo in punctuation chunks, avoid undoing too much at once).
 vim.keymap.set("i", ",", ",<C-g>u")
 vim.keymap.set("i", ".", ".<C-g>u")
 vim.keymap.set("i", "!", "!<C-g>u")
@@ -68,7 +68,7 @@ vim.keymap.set("i", "?", "?<C-g>u")
 vim.keymap.set("i", ";", ";<C-g>u")
 
 -- Plugins Configuration
--- 按 Neovim 版本门控动态构建插件列表，兼容旧版与新版。
+-- Build the plugin list gated by Neovim version, compatible with old and new.
 local plugins = {
   -- UI / Theme
   {
@@ -233,7 +233,7 @@ if has_nvim_011 then
 end
 
 -- Syntax Highlighting
--- 0.12+ 使用重写后的 main API；0.10-0.11 固定使用兼容旧 API 的 v0.10.0。
+-- 0.12+ uses the rewritten main API; 0.10-0.11 pins v0.10.0 for the old API.
 if has_nvim_012 then
   vim.list_extend(plugins, {
     {
@@ -275,8 +275,8 @@ elseif has_nvim_010 then
   })
 end
 
--- Git UI: neogit（要求 Neovim 0.10+）
--- lazygit（外部 TUI）独立于 neogit，两者入口不冲突。
+-- Git UI: neogit (requires Neovim 0.10+)
+-- lazygit (external TUI) is independent of neogit; their entry keys don't clash.
 if has_nvim_010 then
   vim.list_extend(plugins, {
     {
@@ -291,7 +291,7 @@ end
 
 require("lazy").setup(plugins)
 
--- lazygit（外部 TUI，检测到可执行文件时启用）
+-- lazygit (external TUI, enabled when the executable is found)
 if vim.fn.executable("lazygit") == 1 then
   vim.keymap.set("n", "<leader>gg", function()
     vim.cmd("terminal lazygit")

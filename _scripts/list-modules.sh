@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# list-modules.sh — 读取 Stow 模块列表
-# 用法: list-modules.sh <modules.conf>
-# 空行、# 开头的注释行和行尾注释都会被忽略；每行取第一个字段作为模块名。
+# list-modules.sh — read the Stow module list
+# Usage: list-modules.sh <modules.conf>
+# Blank lines, comment lines starting with #, and trailing comments are ignored;
+# each line yields its first field as the module name.
 #
 
 set -euo pipefail

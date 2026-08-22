@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# test-tmux-plugins.sh — _scripts/tmux-plugins.sh 行为测试（TPM 克隆与安装流程）
-# 用法: bash _tests/test-tmux-plugins.sh
+# test-tmux-plugins.sh — behavior tests for _scripts/tmux-plugins.sh (TPM clone and install flow)
+# Usage: bash _tests/test-tmux-plugins.sh
 
 set -euo pipefail
-# shellcheck disable=SC1091  # helpers.sh 动态路径
+# shellcheck disable=SC1091  # helpers.sh is sourced via a dynamic path
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +17,7 @@ mkdir -p "$fake_bin"
 home="$TMP/home"
 mkdir -p "$home"
 
-# 模拟 clone 后的 tpm 命令。
+# Mock the git command to simulate a cloned tpm.
 cat > "$fake_bin/git" <<'EOF'
 #!/usr/bin/env bash
 target="${@: -1}"
@@ -33,7 +33,8 @@ exit 0
 EOF
 chmod +x "$fake_bin/git"
 
-# 记录 tmux server 环境设置；FAKE_NO_SERVER=1 模拟无 server 时 set-environment 失败。
+# Record tmux server env setup; FAKE_NO_SERVER=1 simulates set-environment failing
+# without a server.
 cat > "$fake_bin/tmux" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$1" == "set-environment" ]]; then
@@ -78,7 +79,8 @@ if FAKE_INSTALL_EXIT=1 run_script >/dev/null 2>&1; then
     fail "tmux-plugins should fail when install_plugins fails"
 fi
 
-# 5) 无 server 场景：set-environment 失败（模拟 "no server running"）但脚本应继续并成功
+# 5) No-server scenario: set-environment fails (simulating "no server running") but the
+# script should continue and succeed
 rm -rf "$home/.tmux/plugins/tpm"
 if ! FAKE_NO_SERVER=1 run_script >/dev/null 2>&1; then
     fail "tmux-plugins should succeed even when set-environment fails (no server)"

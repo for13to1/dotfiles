@@ -1,22 +1,22 @@
 # shellcheck shell=bash
-# net_proxy — 网络代理开关与配置
+# net_proxy — proxy on/off and configuration
 #
-# 用法: net_proxy [on|off|set [ip:port]|scheme [http|https|socks5]|status|help]
-#   无参数 = status；直接传 ip:port 等价于 set（可交互输入）。
+# Usage: net_proxy [on|off|set [ip:port]|scheme [http|https|socks5]|status|help]
+#   No argument = status; a bare ip:port is equivalent to set (with interactive prompt).
 #
-# 配置保存在 ~/.net_proxy.conf（默认即关闭，不导出任何环境变量）。
-# net_proxy on 时导出:
-#   http_proxy / https_proxy = http://$addr（大写形式同）
-#   all_proxy / ALL_PROXY    = $scheme://$addr（默认 socks5）
+# Config is stored in ~/.net_proxy.conf (off by default; no env vars are exported).
+# `net_proxy on` exports:
+#   http_proxy / https_proxy = http://$addr (plus uppercase variants)
+#   all_proxy / ALL_PROXY    = $scheme://$addr (socks5 by default)
 #   no_proxy / NO_PROXY      = localhost,127.0.0.1,0.0.0.0,::1
-# 新终端启动自动恢复最近一次状态。
+# A new terminal auto-restores the last state.
 
 NET_PROXY_CONF_FILE="${NET_PROXY_CONF_FILE:-$HOME/.net_proxy.conf}"
 NET_PROXY_DEFAULT_ADDR="${NET_PROXY_DEFAULT_ADDR:-127.0.0.1:7890}"
 NET_PROXY_DEFAULT_SCHEME="${NET_PROXY_DEFAULT_SCHEME:-socks5}"
 NET_PROXY_NO_PROXY="${NET_PROXY_NO_PROXY:-localhost,127.0.0.1,0.0.0.0,::1}"
 
-# 接受主机名/IPv4 或方括号 IPv6，端口范围为 1-65535。
+# Accepts hostname/IPv4 or bracketed IPv6, with port 1-65535.
 net_proxy_valid_addr() {
     local addr="$1" port
     [[ "$addr" =~ ^([[:alnum:]._-]+|\[[[:xdigit:]:]+\]):[[:digit:]]+$ ]] || return 1
@@ -24,7 +24,7 @@ net_proxy_valid_addr() {
     (( 10#$port >= 1 && 10#$port <= 65535 ))
 }
 
-# 载入保存的配置（若存在）
+# Load the saved config (if any).
 net_proxy_load_conf() {
     net_proxy_addr="$NET_PROXY_DEFAULT_ADDR"
     net_proxy_scheme="$NET_PROXY_DEFAULT_SCHEME"
@@ -55,7 +55,7 @@ net_proxy_load_conf() {
     done < "$NET_PROXY_CONF_FILE"
 }
 
-# 在当前 shell 导出全部代理环境变量
+# Export all proxy env vars in the current shell.
 net_proxy_export_env() {
     export http_proxy="http://$net_proxy_addr" \
            https_proxy="http://$net_proxy_addr" \
@@ -67,13 +67,13 @@ net_proxy_export_env() {
            NO_PROXY="$NET_PROXY_NO_PROXY"
 }
 
-# 移除当前 shell 的代理环境变量（no_proxy 泛用性更广，保留不动）
+# Remove proxy env vars from the current shell (keep no_proxy: it is more general).
 net_proxy_unset_env() {
     unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 }
 
-# 唯一变更出口：归一默认值 → 按开关状态导出/清除 → 持久化。
-# on/off/set/scheme 全部经由这里提交，保证配置与当前 shell 始终一致。
+# Single mutation exit: normalize defaults → export/unset per on/off state → persist.
+# on/off/set/scheme all funnel through here, keeping config and shell always in sync.
 net_proxy_apply() {
     net_proxy_addr="${net_proxy_addr:-$NET_PROXY_DEFAULT_ADDR}"
     net_proxy_scheme="${net_proxy_scheme:-$NET_PROXY_DEFAULT_SCHEME}"
@@ -85,7 +85,7 @@ net_proxy_apply() {
     net_proxy_save_conf
 }
 
-# 持久化配置到 ~/.net_proxy.conf（纯数据文件，权限收紧为 600）
+# Persist config to ~/.net_proxy.conf (a plain data file, permissions tightened to 600).
 net_proxy_save_conf() {
     local fdir
     fdir="$(dirname "$NET_PROXY_CONF_FILE")"
@@ -93,7 +93,7 @@ net_proxy_save_conf() {
     (
         umask 077
         {
-            printf '%s\n' '# 本文件由 net_proxy 命令维护；如需修改请使用 net_proxy 命令，或编辑后重启终端。'
+            printf '%s\n' '# This file is maintained by the net_proxy command; edit via net_proxy, or edit then restart your terminal.'
             printf 'net_proxy_addr=%s\n' "$net_proxy_addr"
             printf 'net_proxy_scheme=%s\n' "$net_proxy_scheme"
             printf 'net_proxy_enabled=%s\n' "${net_proxy_enabled:-0}"
@@ -102,8 +102,8 @@ net_proxy_save_conf() {
     chmod 600 "$NET_PROXY_CONF_FILE"
 }
 
-# 交互式输入：bash / zsh 通用（避免 zsh 中 read 的 -p 表示协程而非提示符）
-# 提示符写入 stderr，否则在命令替换 $(net_proxy_prompt ...) 中会被误捕为返回值。
+# Interactive input, portable across bash/zsh (in zsh, read -p means coproc, not prompt).
+# The prompt goes to stderr so command substitution doesn't capture it as the return value.
 net_proxy_prompt() {
     local reply=""
     printf '%s' "$1" >&2
@@ -111,22 +111,23 @@ net_proxy_prompt() {
     printf '%s\n' "${reply:-$2}"
 }
 
-# 设置代理地址（net_proxy set 与快捷传址共用；配置已由分发器载入）
+# Set the proxy address (shared by `net_proxy set` and the quick ip:port form; config is
+# already loaded by the dispatcher).
 net_proxy_set() {
     local addr="${1:-}"
     if [[ -z "$addr" ]]; then
-        addr="$(net_proxy_prompt "请输入代理地址 (默认: ${net_proxy_addr:-$NET_PROXY_DEFAULT_ADDR}): " "${net_proxy_addr:-$NET_PROXY_DEFAULT_ADDR}")"
+        addr="$(net_proxy_prompt "Enter proxy address (default: ${net_proxy_addr:-$NET_PROXY_DEFAULT_ADDR}): " "${net_proxy_addr:-$NET_PROXY_DEFAULT_ADDR}")"
     fi
     if ! net_proxy_valid_addr "$addr"; then
-        echo "错误: 代理地址应为 host:port 或 [IPv6]:port，端口范围 1-65535" >&2
+        echo "Error: proxy address must be host:port or [IPv6]:port, port 1-65535" >&2
         return 1
     fi
     net_proxy_addr="$addr"
     net_proxy_apply
     if (( net_proxy_enabled == 1 )); then
-        echo "✅ 代理地址已更新并生效: $net_proxy_addr"
+        echo "✅ Proxy address updated and active: $net_proxy_addr"
     else
-        echo "💾 代理地址已保存: $net_proxy_addr（运行 net_proxy on 启用）"
+        echo "💾 Proxy address saved: $net_proxy_addr (run 'net_proxy on' to enable)"
     fi
 }
 
@@ -135,35 +136,36 @@ net_proxy_status() {
     local scheme="${net_proxy_scheme:-$NET_PROXY_DEFAULT_SCHEME}"
     if [[ "${net_proxy_enabled:-0}" == "1" ]]; then
         if [[ -n "${http_proxy:-}" ]]; then
-            echo "代理状态: ✅ 已开启并生效"
+            echo "Proxy status: ✅ on and active"
         else
-            echo "代理状态: ✅ 已配置开启，当前会话未生效（运行 net_proxy on 或重开终端）"
+            echo "Proxy status: ✅ configured on, not active in this session (run 'net_proxy on' or reopen the terminal)"
         fi
     else
-        echo "代理状态: ⭕ 已关闭"
+        echo "Proxy status: ⭕ off"
     fi
-    echo "  地址:       $addr"
+    echo "  Address:    $addr"
     echo "  http(s):    http://$addr"
     echo "  all_proxy:  ${scheme}://$addr"
-    echo "  no_proxy:   ${no_proxy:-未设置}"
+    echo "  no_proxy:   ${no_proxy:-not set}"
 }
 
 net_proxy_help() {
     cat <<'EOF'
-用法: net_proxy <命令> [参数]
-  无参数              等价于 status
-  on                  开启代理（应用已保存的配置）
-  off                 关闭代理
-  set [ip:port]       设置代理地址；不带参数则交互式输入
-                      （也可直接写 net_proxy 127.0.0.1:7890）
-  scheme [http|https|socks5]  设置 all_proxy 协议（默认 socks5）
-  status              查看当前状态
-  help                显示本帮助
-配置保存在 ~/.net_proxy.conf，默认关闭，新终端自动恢复最近状态。
+Usage: net_proxy <command> [args]
+  (no args)           equivalent to status
+  on                  enable the proxy (applies the saved config)
+  off                 disable the proxy
+  set [ip:port]       set the proxy address; without an arg, prompts interactively
+                      (you can also write net_proxy 127.0.0.1:7890 directly)
+  scheme [http|https|socks5]  set the all_proxy scheme (default socks5)
+  status              show the current status
+  help                show this help
+Config is stored in ~/.net_proxy.conf, off by default; a new terminal auto-restores
+ the last state.
 EOF
 }
 
-# 命令分发：先统一载入配置，各子命令只修改状态，统一交给 net_proxy_apply 提交
+# Dispatch: load config once, subcommands only mutate state, and net_proxy_apply commits it.
 net_proxy() {
     local cmd="${1:-status}"
     net_proxy_load_conf
@@ -171,27 +173,27 @@ net_proxy() {
         on|enable)
             net_proxy_enabled=1
             net_proxy_apply
-            echo "✅ 代理已开启: http_proxy=$net_proxy_addr / all_proxy=$net_proxy_scheme://$net_proxy_addr"
+            echo "✅ Proxy enabled: http_proxy=$net_proxy_addr / all_proxy=$net_proxy_scheme://$net_proxy_addr"
             ;;
         off|disable)
             net_proxy_enabled=0
             net_proxy_apply
-            echo "🔄 代理已关闭"
+            echo "🔄 Proxy disabled"
             ;;
         set)
             net_proxy_set "${2:-}"
             ;;
         scheme)
             if [[ -z "${2:-}" ]]; then
-                echo "当前 all_proxy 协议: ${net_proxy_scheme:-$NET_PROXY_DEFAULT_SCHEME}"
+                echo "Current all_proxy scheme: ${net_proxy_scheme:-$NET_PROXY_DEFAULT_SCHEME}"
             else
                 case "$2" in
                     http|https|socks5) ;;
-                    *) echo "错误: 协议仅支持 http / https / socks5" >&2; return 1 ;;
+                    *) echo "Error: scheme must be http / https / socks5" >&2; return 1 ;;
                 esac
                 net_proxy_scheme="$2"
                 net_proxy_apply
-                echo "✅ all_proxy 协议已设为 $2"
+                echo "✅ all_proxy scheme set to $2"
             fi
             ;;
         status)
@@ -201,18 +203,18 @@ net_proxy() {
             net_proxy_help
             ;;
         *)
-            # 直接传 ip:port 视为快捷设置
+            # A bare ip:port is treated as a quick set.
             if [[ "$cmd" == *:* ]]; then
                 net_proxy_set "$cmd"
             else
-                echo "错误: 未知命令 '$cmd'，运行 net_proxy help 查看用法" >&2
+                echo "Error: unknown command '$cmd'; run 'net_proxy help'" >&2
                 return 1
             fi
             ;;
     esac
 }
 
-# 本文件被 .zshrc 加载（~/.zsh.d/*.sh）时自动恢复代理配置
+# Auto-restore the proxy config when this file is sourced by .zshrc (~/.zsh.d/*.sh).
 net_proxy_load_conf
 if [[ "${net_proxy_enabled:-0}" == "1" ]]; then
     net_proxy_addr="${net_proxy_addr:-$NET_PROXY_DEFAULT_ADDR}"

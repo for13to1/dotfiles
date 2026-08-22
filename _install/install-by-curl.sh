@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/install-by-curl.sh — 官方安装器途径的工具管理器安装
+# _install/install-by-curl.sh — tool managers via their official installers
 
 set -euo pipefail
 
@@ -24,23 +24,23 @@ main() {
 
     install_with_prompt \
         "fnm" \
-        "未检测到 fnm，是否通过官网安装器安装？" \
+        "fnm not found; install it via the official installer?" \
         "install_fnm" \
-        "fnm 安装完成" \
+        "fnm installed" \
         "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/fnm"
 
     install_with_prompt \
         "rustup" \
-        "未检测到 rustup，是否通过官网安装器安装？" \
+        "rustup not found; install it via the official installer?" \
         "install_rustup" \
-        "rustup 安装完成" \
+        "rustup installed" \
         "$HOME/.cargo/bin/rustup"
 
     install_with_prompt \
         "uv" \
-        "未检测到 uv，是否通过官网安装器安装？" \
+        "uv not found; install it via the official installer?" \
         "install_uv" \
-        "uv 安装完成" \
+        "uv installed" \
         "$HOME/.local/bin/uv"
 }
 

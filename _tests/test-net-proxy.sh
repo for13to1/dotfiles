@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016  # 单引号字符串刻意保留：传给 run() 后原样写盘，在子 shell 中才求值
+# shellcheck disable=SC2016  # single-quoted strings are intentional: written verbatim by run(), evaluated in a subshell
 #
-# test-net-proxy.sh — zsh/.zsh.d/net_proxy.sh 行为测试（代理开关与配置）
-# 用法: bash _tests/test-net-proxy.sh
+# test-net-proxy.sh — behavior tests for zsh/.zsh.d/net_proxy.sh (proxy on/off and config)
+# Usage: bash _tests/test-net-proxy.sh
 
 set -euo pipefail
-# shellcheck disable=SC1091  # helpers.sh 动态路径
+# shellcheck disable=SC1091  # helpers.sh is sourced via a dynamic path
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,114 +14,114 @@ trap 'rm -rf "$TMP"' EXIT
 
 NET_PROXY_SH="$ROOT/zsh/.zsh.d/net_proxy.sh"
 
-# 在隔离的 HOME 下执行一段脚本（每次全新 shell，模拟新终端）
+# Run a snippet under an isolated HOME (a fresh shell each time, simulating a new terminal).
 run() {
     printf '%s\n' "$1" > "$TMP/run.sh"
     HOME="$TMP/home" bash -c "source '$NET_PROXY_SH'; . '$TMP/run.sh'"
 }
 
-# 读取配置文件中当前保存的代理地址
+# Read the currently saved proxy address from the config file.
 conf_addr() {
     sed -n 's/^net_proxy_addr=//p' "$TMP/home/.net_proxy.conf" | head -1 | sed 's/^"//; s/"$//'
 }
 
 mkdir -p "$TMP/home"
 
-# ── 初始状态：无配置文件时 status 显示已关闭 ───────────────────
+# ── Initial state: status shows off when no config exists ──
 out="$(run 'net_proxy status')"
-assert_contains "无配置时应显示已关闭" "$out" '已关闭'
+assert_contains "status shows off with no config" "$out" 'Proxy status: ⭕ off'
 
-# ── set：保存地址到 ~/.net_proxy.conf ─────────────────────────
-run 'net_proxy set 192.168.1.5:8888' >/dev/null || fail "net_proxy set 应成功"
+# ── set: save the address to ~/.net_proxy.conf ──
+run 'net_proxy set 192.168.1.5:8888' >/dev/null || fail "net_proxy set should succeed"
 grep -q '^net_proxy_addr=192.168.1.5:8888$' "$TMP/home/.net_proxy.conf" \
-    || fail "配置应包含新地址"
+    || fail "config should contain the new address"
 grep -q 'net_proxy_enabled=0' "$TMP/home/.net_proxy.conf" \
-    || fail "未开启时 net_proxy_enabled 应为 0"
+    || fail "net_proxy_enabled should be 0 when off"
 
-# ── on：导出正确环境变量并持久化开关状态 ───────────────────────
+# ── on: export env vars and persist the on/off state ──
 out="$(run 'net_proxy on >/dev/null; printf "%s|%s|%s" "$http_proxy" "$https_proxy" "$all_proxy"')"
 [[ "$out" == "http://192.168.1.5:8888|http://192.168.1.5:8888|socks5://192.168.1.5:8888" ]] \
-    || fail "on 应导出 http:// 与 socks5:// 代理变量，实际: $out"
+    || fail "on should export http:// and socks5:// proxy vars; got: $out"
 grep -q 'net_proxy_enabled=1' "$TMP/home/.net_proxy.conf" \
-    || fail "on 应写入 net_proxy_enabled=1"
+    || fail "on should write net_proxy_enabled=1"
 
-# ── on 时应设置 no_proxy ───────────────────────────────────────
+# ── on should set no_proxy ──
 out="$(run 'net_proxy on >/dev/null; printf "%s" "$no_proxy"')"
-[[ "$out" == *"localhost"* ]] || fail "on 应设置 no_proxy"
+[[ "$out" == *"localhost"* ]] || fail "on should set no_proxy"
 
-# ── off：清除环境变量并持久化开关状态 ──────────────────────────
+# ── off: clear env vars and persist the on/off state ──
 out="$(run 'net_proxy on >/dev/null; net_proxy off >/dev/null; printf "%s|%s" "${http_proxy:-unset}" "${all_proxy:-unset}"')"
-[[ "$out" == "unset|unset" ]] || fail "off 后代理变量应被清除，实际: $out"
+[[ "$out" == "unset|unset" ]] || fail "off should clear proxy vars; got: $out"
 grep -q 'net_proxy_enabled=0' "$TMP/home/.net_proxy.conf" \
-    || fail "off 应写入 net_proxy_enabled=0"
+    || fail "off should write net_proxy_enabled=0"
 
-# ── 新终端自动恢复：on 之后重开 shell 应自动生效 ───────────────
+# ── Auto-restore in a new terminal: on should reapply after reopening a shell ──
 run 'net_proxy on' >/dev/null
 out="$(run 'printf "%s" "${http_proxy:-unset}"')"
 [[ "$out" == "http://192.168.1.5:8888" ]] \
-    || fail "新终端应自动恢复代理，实际: $out"
+    || fail "a new terminal should auto-restore the proxy; got: $out"
 
-# ── off 之后新终端不恢复 ───────────────────────────────────────
+# ── No restore in a new terminal after off ──
 run 'net_proxy off' >/dev/null
 out="$(run 'printf "%s" "${http_proxy:-unset}"')"
-[[ "$out" == "unset" ]] || fail "关闭后新终端不应再自动恢复，实际: $out"
+[[ "$out" == "unset" ]] || fail "a new terminal must not restore after off; got: $out"
 
-# ── 快捷方式：直接传 ip:port 等价于 set ────────────────────────
-run 'net_proxy 127.0.0.1:9999' >/dev/null || fail "net_proxy ip:port 应等价于 set"
+# ── Shortcut: passing ip:port directly equals set ──
+run 'net_proxy 127.0.0.1:9999' >/dev/null || fail "net_proxy ip:port should equal set"
 grep -q '^net_proxy_addr=127.0.0.1:9999$' "$TMP/home/.net_proxy.conf" \
-    || fail "快捷方式应更新地址"
+    || fail "the shortcut should update the address"
 
-# ── scheme 切换：http 时 all_proxy 跟随 ────────────────────────
+# ── scheme switch: all_proxy follows when http ──
 out="$(run 'net_proxy on >/dev/null; net_proxy scheme http >/dev/null; printf "%s|%s" "$all_proxy" "$http_proxy"')"
 [[ "$out" == "http://127.0.0.1:9999|http://127.0.0.1:9999" ]] \
-    || fail "scheme http 应生效，实际: $out"
+    || fail "scheme http should apply; got: $out"
 
-# ── 非法 scheme / 未知命令应报错 ──────────────────────────────
+# ── Invalid scheme / unknown command should error ──
 if run 'net_proxy scheme ftp' >/dev/null 2>&1; then
-    fail "非法 scheme 应被拒绝"
+    fail "an invalid scheme should be rejected"
 fi
 if run 'net_proxy nonsense' >/dev/null 2>&1; then
-    fail "未知命令应失败"
+    fail "an unknown command should fail"
 fi
 
-# ── set 后（处于开启）立即生效 ─────────────────────────────────
+# ── set takes effect immediately while on ──
 run 'net_proxy on' >/dev/null
 out="$(run 'net_proxy set 10.0.0.2:3128 >/dev/null; printf "%s" "$http_proxy"')"
 [[ "$out" == "http://10.0.0.2:3128" ]] \
-    || fail "开启状态下 set 应立即生效，实际: $out"
+    || fail "set should take effect immediately while on; got: $out"
 
-# ── 交互式 set：回车使用默认值，提示符不应污染返回值 ───────────
+# ── Interactive set: Enter keeps the default; the prompt must not leak into the value ──
 printf '\n' | HOME="$TMP/home" bash -c "source '$NET_PROXY_SH'; net_proxy set" >/dev/null 2>&1
 out="$(conf_addr)"
-[[ "$out" == "10.0.0.2:3128" ]] || fail "交互式 set 回车应保留当前地址，实际: $out"
+[[ "$out" == "10.0.0.2:3128" ]] || fail "interactive set with Enter should keep the current address; got: $out"
 
 printf '172.16.0.9:8080\n' | HOME="$TMP/home" bash -c "source '$NET_PROXY_SH'; net_proxy set" >/dev/null 2>&1
 out="$(conf_addr)"
-[[ "$out" == "172.16.0.9:8080" ]] || fail "交互式 set 应接受输入值，实际: $out"
+[[ "$out" == "172.16.0.9:8080" ]] || fail "interactive set should accept the typed value; got: $out"
 
-# 提示符不应出现在保存的地址中（曾发生的 bug）
-[[ "$out" != *"请输入"* ]] || fail "提示符不应污染保存的地址，实际: $out"
+# The prompt must not leak into the saved address.
+[[ "$out" != *"Enter proxy address"* ]] || fail "the prompt must not leak into the saved address; got: $out"
 
-# ── IPv6 地址应能保存并在新终端恢复 ────────────────────────────
+# ── IPv6 addresses save and restore in a new terminal ──
 run 'net_proxy set "[::1]:1080" >/dev/null; net_proxy on >/dev/null' \
-    || fail "方括号 IPv6 地址应可设置"
+    || fail "a bracketed IPv6 address should be settable"
 out="$(run 'printf "%s" "$all_proxy"')"
-[[ "$out" == "http://[::1]:1080" ]] || fail "IPv6 地址应在新终端恢复，实际: $out"
+[[ "$out" == "http://[::1]:1080" ]] || fail "the IPv6 address should restore in a new terminal; got: $out"
 
-# ── 非法地址应立即拒绝，且不能覆盖已有配置 ─────────────────────
+# ── Invalid addresses are rejected immediately and must not overwrite existing config ──
 before="$(conf_addr)"
 marker="$TMP/should-not-exist"
 if HOME="$TMP/home" MARKER="$marker" bash -c "source '$NET_PROXY_SH'; addr='\$(touch \"\$MARKER\")'; net_proxy set \"\$addr\"" >/dev/null 2>&1; then
-    fail "包含 shell 特殊字符的地址应被拒绝"
+    fail "an address with shell special chars should be rejected"
 fi
-[[ ! -e "$marker" ]] || fail "非法地址不应执行命令"
-[[ "$(conf_addr)" == "$before" ]] || fail "非法地址不应覆盖已有配置"
+[[ ! -e "$marker" ]] || fail "an invalid address must not execute commands"
+[[ "$(conf_addr)" == "$before" ]] || fail "an invalid address must not overwrite existing config"
 
 if run 'net_proxy set host:70000' >/dev/null 2>&1; then
-    fail "超出范围的端口应被拒绝"
+    fail "an out-of-range port should be rejected"
 fi
 if run 'net_proxy set user:pass@host:7890' >/dev/null 2>&1; then
-    fail "不支持的认证地址应被明确拒绝"
+    fail "an unsupported auth address should be explicitly rejected"
 fi
 
 echo "PASS net_proxy tests"

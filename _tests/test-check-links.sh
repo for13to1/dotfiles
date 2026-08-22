@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# test-check-links.sh — _scripts/check-links.sh 行为测试（verify/preflight 与 stow_find）
-# 用法: bash _tests/test-check-links.sh
+# test-check-links.sh — behavior tests for _scripts/check-links.sh (verify/preflight and stow_find)
+# Usage: bash _tests/test-check-links.sh
 
 set -euo pipefail
-# shellcheck disable=SC1091  # helpers.sh 动态路径
+# shellcheck disable=SC1091  # helpers.sh is sourced via a dynamic path
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -53,7 +53,7 @@ assert_fail "preflight: wrong parent symlink" \
 assert_fail "preflight: missing module" \
     bash "$CHECK" preflight "$TMP/dotfiles" "$TMP/home" does-not-exist
 
-# ── stow_find 测试：类型过滤与忽略目录 ──
+# ── stow_find tests: type filtering and ignored dirs ──
 # shellcheck disable=SC1091
 source "$ROOT/_scripts/common.sh"
 
@@ -67,15 +67,15 @@ printf 'd\n' > "$SF/sub/deep.txt"
 sf_list() { stow_find "$SF" "$@" | tr '\0' '\n' | sed -e "s#^$SF/##" -e "s#^$SF\$##" | grep -v '^$' | sort; }
 
 [[ "$(sf_list -mindepth 1 -type d)" == "sub" ]] \
-    || fail "stow_find -type d 应只返回目录: $(sf_list -mindepth 1 -type d | tr '\n' ' ')"
+    || fail "stow_find -type d should return only directories: $(sf_list -mindepth 1 -type d | tr '\n' ' ')"
 
 [[ "$(sf_list -mindepth 1 \( -type f -o -type l \))" == $'afile.txt\nsub/deep.txt' ]] \
-    || fail "stow_find -type f 应只返回文件且不进入忽略目录: $(sf_list -mindepth 1 \( -type f -o -type l \) | tr '\n' ' ')"
+    || fail "stow_find -type f should return only files and not enter ignored dirs: $(sf_list -mindepth 1 \( -type f -o -type l \) | tr '\n' ' ')"
 
 [[ "$(sf_list -mindepth 1 -maxdepth 1)" == $'afile.txt\nsub' ]] \
-    || fail "stow_find -maxdepth 1 应只返回一级条目: $(sf_list -mindepth 1 -maxdepth 1 | tr '\n' ' ')"
+    || fail "stow_find -maxdepth 1 should return only one level: $(sf_list -mindepth 1 -maxdepth 1 | tr '\n' ' ')"
 
 [[ "$(sf_list)" == $'afile.txt\nsub\nsub/deep.txt' ]] \
-    || fail "stow_find 无谓词应列出全部条目且不进入忽略目录: $(sf_list | tr '\n' ' ')"
+    || fail "stow_find without predicates should list everything and not enter ignored dirs: $(sf_list | tr '\n' ' ')"
 
 echo "PASS check-links tests"

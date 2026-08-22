@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 #
-# _setup/mac/setup.sh — macOS 系统偏好设置
+# _setup/mac/setup.sh — apply macOS system preferences
 #
 
 set -euo pipefail
 
-# ── 共享基础设施（颜色输出等）─────────────────────────────────────
+# ── Shared infrastructure (colored output etc.) ─────────────────
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../../_scripts/common.sh"
 
-echo "正在应用 macOS 系统偏好设置..."
+echo "Applying macOS system preferences..."
 
-# ── 辅助函数 ─────────────────────────────────────────────────────
+# ── Helpers ─────────────────────────────────────────────────
 
 _normalize_bool() {
     local val="$1"
@@ -35,43 +35,43 @@ set_default() {
     pretty_domain=$(_get_pretty_domain "$target")
 
     local old_raw
-    old_raw=$(defaults read "$target" "$key" 2>/dev/null) || old_raw="(未设置)"
+    old_raw=$(defaults read "$target" "$key" 2>/dev/null) || old_raw="(not set)"
 
     local old_norm="$old_raw"
     [[ "$type" == "-bool" ]] && old_norm=$(_normalize_bool "$old_raw")
 
     local msg="[$pretty_domain] $desc"
     if [[ "$old_norm" == "$value" ]]; then
-        echo "  ✓ $msg: $old_norm (无变化)"
+        echo "  ✓ $msg: $old_norm (unchanged)"
     else
         if defaults write "$target" "$key" "$type" "$value" 2>/dev/null; then
             echo "  ✓ $msg: $old_norm → $value"
         else
-            echo "  ✗ $msg: 写入失败"
+            echo "  ✗ $msg: write failed"
             return 1
         fi
     fi
 }
 
-# ── 核心项目 ──────────────────────────────────────────────────────
+# ── Core settings ─────────────────────────────────────────────
 
 # 1. Global
-set_default NSGlobalDomain AppleShowAllExtensions -bool true "显示所有文件扩展名"
+set_default NSGlobalDomain AppleShowAllExtensions -bool true "Show all filename extensions"
 
 # 2. Finder
-set_default com.apple.finder ShowPathbar -bool true "显示路径栏"
-set_default com.apple.finder FinderSpawnTab -bool true "在标签页中打开文件夹"
-set_default com.apple.finder FXPreferredViewStyle -string "Nlsv" "默认列表视图"
+set_default com.apple.finder ShowPathbar -bool true "Show the path bar"
+set_default com.apple.finder FinderSpawnTab -bool true "Open folders in tabs"
+set_default com.apple.finder FXPreferredViewStyle -string "Nlsv" "Default list view"
 
-# ── 重载生效 ──────────────────────────────────────────────────────
+# ── Reload ─────────────────────────────────────────────────────
 echo ""
-if confirm "是否立即重启 Finder 以使设置生效？ [y/N]: " 0; then
-    info "正在重启 Finder..."
-    # killall 是 macOS 推荐的重载方式，比 pkill -9 更安全、更体面
+if confirm "Restart Finder now to apply the settings? [y/N]: " 0; then
+    info "Restarting Finder..."
+    # killall is the recommended macOS reload; safer and cleaner than pkill -9.
     killall Finder 2>/dev/null || true
-    ok "Finder 已重载"
+    ok "Finder reloaded"
 else
-    info "设置已写入。Finder 将在下次系统重启或手动重启后生效。"
+    info "Settings written. Finder will apply them on the next system restart or a manual restart."
 fi
 
-ok "macOS 偏好设置调整完毕。"
+ok "macOS preferences applied."

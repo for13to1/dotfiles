@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/install-by-uv.sh — uv tool 途径的 Python CLI 安装
+# _install/install-by-uv.sh — Python CLI installs via uv tool
 
 set -euo pipefail
 
@@ -25,15 +25,15 @@ main() {
     is_debian_like || return 0
 
     if [[ -z "$(find_uv_bin || true)" ]]; then
-        warn "未检测到 uv，Python CLI 安装跳过"
+        warn "uv not found; skipping Python CLI installs"
         return 0
     fi
 
     install_with_prompt \
         "ruff" \
-        "未检测到 ruff，是否通过 uv tool 安装？" \
+        "ruff not found; install it via uv tool?" \
         "install_ruff" \
-        "ruff 安装完成" \
+        "ruff installed" \
         "$HOME/.local/bin/ruff"
 }
 

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
-# check-links.sh — Stow 链接检查工具
+# check-links.sh — Stow link checker
 #
-# 用法:
+# Usage:
 #   check-links.sh preflight <dotfiles-dir> <target-dir> <module>...
-#       挂载前检查：确认目标父目录未被折叠为软链接，避免 stow 折叠到错误层级。
+#       Pre-mount check: ensure target parents are not folded into symlinks, so stow
+#       does not fold at the wrong level.
 #   check-links.sh verify <dotfiles-dir> <target-dir> <module>...
-#       挂载后校验：确认每个模块的软链接都正确指向 dotfiles 仓库。
+#       Post-mount check: ensure every module's symlink points into the dotfiles repo.
 #
 
 set -euo pipefail
@@ -17,13 +18,13 @@ source "$SCRIPT_DIR/common.sh"
 
 CMD="${1:-}"
 if [[ -z "$CMD" ]]; then
-    echo "用法: $0 <preflight|verify> <dotfiles-dir> <target-dir> <module>..." >&2
+    echo "Usage: $0 <preflight|verify> <dotfiles-dir> <target-dir> <module>..." >&2
     exit 2
 fi
 shift
 
 if (( $# < 3 )); then
-    echo "用法: $0 $CMD <dotfiles-dir> <target-dir> <module>..." >&2
+    echo "Usage: $0 $CMD <dotfiles-dir> <target-dir> <module>..." >&2
     exit 2
 fi
 
@@ -31,13 +32,14 @@ DOTFILES_DIR="${1:-$DOTFILES_DIR}"
 TARGET_DIR="$2"
 shift 2
 
-# 规范化源目录（dotfiles_dir），避免 /tmp、/var 等 symlink 路径误判。
+# Canonicalize the source dir (dotfiles_dir) to avoid misdetection on symlinked
+# paths like /tmp or /var.
 DOTFILES_DIR="$(dotfiles_dir "$DOTFILES_DIR")" || {
-    echo "无法访问 dotfiles 目录: $DOTFILES_DIR" >&2
+    echo "Cannot access dotfiles dir: $DOTFILES_DIR" >&2
     exit 1
 }
 
-# ── preflight：挂载前检查 ──────────────────────────────────────────
+# ── preflight: pre-mount check ────────────────────────────────────
 preflight_check_tree() {
     local module="$1"
     local directory="$2"
@@ -49,13 +51,13 @@ preflight_check_tree() {
         parent="$(dirname "$target")"
 
         if [[ -L "$parent" ]]; then
-            echo "❌ $parent 是软链接，请手动处理后再运行 stow" >&2
+            error_msg "$parent is a symlink; handle it manually before running stow" >&2
             return 1
         fi
 
         if [[ -L "$target" ]]; then
             if [[ "$(resolved_link_target "$target")" != "$(physical_path "$entry")" ]]; then
-                echo "❌ $target 是软链接，请手动处理后再运行 stow" >&2
+                error_msg "$target is a symlink; handle it manually before running stow" >&2
                 return 1
             fi
         elif [[ -d "$entry" && ! -L "$entry" && -d "$target" ]]; then
@@ -69,14 +71,14 @@ preflight() {
     cd "$DOTFILES_DIR"
     for module in "$@"; do
         if [[ ! -d "$module" ]]; then
-            echo "  ⚠️  模块目录不存在: $module" >&2
+            warn "Module dir does not exist: $module" >&2
             return 1
         fi
         preflight_check_tree "$module" "$module"
     done
 }
 
-# ── verify：挂载后校验 ────────────────────────────────────────────
+# ── verify: post-mount check ──────────────────────────────────────
 verify_entry() {
     local mod="$1"
     local entry="$2"
@@ -91,12 +93,12 @@ verify_entry() {
         if [[ "$resolved" == "$src" ]]; then
             return 0
         fi
-        echo "  ❌ $rel → 软链接指向错误" >&2
+        error_msg "$rel → symlink points to the wrong target" >&2
         return 1
     fi
 
     if [[ ! -e "$target" ]]; then
-        echo "  ❌ $rel → 软链接缺失" >&2
+        error_msg "$rel → symlink missing" >&2
         return 1
     fi
 
@@ -108,18 +110,18 @@ verify_entry() {
         return 0
     fi
 
-    echo "  ❌ $rel → 存在但不是正确软链接" >&2
+    error_msg "$rel → exists but is not a correct symlink" >&2
     return 1
 }
 
 verify() {
     cd "$DOTFILES_DIR"
     local failed=0
-    echo "正在检查软链接状态..."
+    info "Checking symlink status..."
 
     for mod in "$@"; do
         if [[ ! -d "$mod" ]]; then
-            echo "  ⚠️  模块目录不存在: $mod" >&2
+            warn "Module dir does not exist: $mod" >&2
             failed=1
             continue
         fi
@@ -131,16 +133,16 @@ verify() {
         done < <(stow_find "$mod" -mindepth 1 -maxdepth 1)
 
         if (( errors == 0 )); then
-            echo "  ✅ $mod"
+            ok "$mod"
         else
             failed=1
         fi
     done
 
     if (( failed == 0 )); then
-        echo "全部检查通过！"
+        ok "All checks passed!"
     else
-        echo "存在异常，请运行 make sync 修复。" >&2
+        error_msg "Issues found; run 'make sync' to fix." >&2
         exit 1
     fi
 }
@@ -149,7 +151,7 @@ case "$CMD" in
     preflight) preflight "$@" ;;
     verify)    verify "$@" ;;
     *)
-        echo "未知子命令: $CMD（可选: preflight | verify）" >&2
+        error_msg "Unknown subcommand: $CMD (choices: preflight | verify)" >&2
         exit 2
         ;;
 esac

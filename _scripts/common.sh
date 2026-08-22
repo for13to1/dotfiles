@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
-# _scripts/common.sh — 跨脚本共享的 shell 基础设施（仅允许被 source 加载）
+# _scripts/common.sh — shared shell infrastructure sourced by other scripts
 
-# 防止被当作脚本直接执行
+# Guard against being executed directly.
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-    echo "common.sh 是共享库，请用 source 加载" >&2
+    echo "common.sh is a shared library; source it instead" >&2
     exit 1
 fi
 
-# ── 仓库根路径解析 ────────────────────────────────────────────────
-# common.sh 固定位于 <仓库根>/_scripts/ 下，据此解析仓库根路径。
+# ── Resolve the repository root ────────────────────────────────────
+# common.sh always lives at <repo-root>/_scripts/, so derive the root from it.
 DOTFILES_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# dotfiles_dir [override]：解析并输出仓库根（-P 规范化，子 shell 中 cd，不影响调用方）。
-# 无参数用 $DOTFILES_DIR；路径不可访问时输出为空并返回非零。
+# dotfiles_dir [override]: resolve and print the repo root (-P canonicalized,
+# cd happens in a subshell so the caller's cwd is untouched).
+# No arg uses $DOTFILES_DIR; prints nothing and returns non-zero when inaccessible.
 dotfiles_dir() {
     local base="${1:-$DOTFILES_DIR}"
     ( cd -P -- "$base" 2>/dev/null && pwd -P )
 }
 
-# ── 彩色输出 ──────────────────────────────────────────────────────
+# ── Colored output ─────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-# msg <level> <text>: 统一打印入口，level 取 info|ok|warn|error。
+# msg <level> <text>: unified printer; level is info|ok|warn|error.
 msg() {
     local level="$1"
     shift
@@ -37,12 +38,12 @@ msg() {
 info()      { msg 'info'  "$*"; }
 ok()        { msg 'ok'    "$*"; }
 warn()      { msg 'warn'  "$*"; }
-# error_msg 仅打印错误信息不退出；error 在其基础上终止脚本。
+# error_msg only prints; error prints and then exits the script.
 error_msg() { msg 'error' "$*"; }
 error()     { error_msg "$*"; exit 1; }
 
-# ── 发行版检测 ────────────────────────────────────────────────────
-# Debian 系平台返回 0。
+# ── Distro detection ─────────────────────────────────────────────
+# Returns 0 on Debian-like platforms.
 is_debian_like() {
     [[ -r /etc/os-release ]] || return 1
     # shellcheck disable=SC1091
@@ -50,8 +51,8 @@ is_debian_like() {
     [[ "${ID:-}" == "ubuntu" || "${ID:-}" == "debian" || "${ID_LIKE:-}" == *"debian"* ]]
 }
 
-# ── 已装判断 ──────────────────────────────────────────────────────
-# 命令在 PATH 上，或任一已知安装路径可执行，即视为已装。
+# ── Installed check ───────────────────────────────────────────────
+# A command counts as installed if it is on PATH or executable at any known path.
 is_installed() {
     local cmd="$1"; shift
     command -v "$cmd" &>/dev/null && return 0
@@ -62,8 +63,8 @@ is_installed() {
     return 1
 }
 
-# ── Stow 路径与忽略规则 ───────────────────────────────────────────
-# 这些目录/文件不参与 Stow 检查、备份和挂载。
+# ── Stow paths and ignore rules ─────────────────────────────────
+# These directories/files never participate in Stow checks, backup, or mounting.
 STOW_IGNORE_NAMES=(
     "__pycache__"
     ".pytest_cache"
@@ -77,12 +78,15 @@ STOW_IGNORE_NAMES=(
     "history.json"
 )
 
-# find 包装，最终命令形如：
-#   find ROOT [-mindepth N -maxdepth M] -name IGN -prune -o … -o '(' 用户谓词 ')' -print0
-# 依赖 -a 高于 -o：命中忽略项时 -prune 为真并短路，后续分支不再求值，
-# 因此用户谓词必须放在 -o 链末端的兜底分支，否则 -prune 与 -type 过滤无法同时生效。
-# -mindepth/-maxdepth 是全局选项（对前后所有测试生效），须紧跟 ROOT 置于所有测试之前，
-# 混在谓词里会触发 GNU find 的 "global option … after the argument …" 告警。
+# find wrapper whose final command is:
+#   find ROOT [-mindepth N -maxdepth M] -name IGN -prune -o … -o '(' user-preds ')' -print0
+# Relies on -a binding tighter than -o: when an ignore matches, -prune is true and
+# short-circuits, so later branches are skipped. Therefore user predicates MUST live in
+# the trailing fallback branch of the -o chain, otherwise -prune and -type filters
+# cannot coexist.
+# -mindepth/-maxdepth are global options (they apply to every test) and must follow ROOT
+# before any other test; mixing them into predicates triggers GNU find's
+# "global option … after the argument …" warning.
 stow_find() {
     local root="$1"
     shift
@@ -124,8 +128,8 @@ resolved_link_target() {
     physical_path "$link"
 }
 
-# ── 非交互式输入 ──────────────────────────────────────────────────
-# DOTFILES_NON_INTERACTIVE=1 时直接返回默认值，不读取 stdin。
+# ── Non-interactive input ──────────────────────────────────────────
+# When DOTFILES_NON_INTERACTIVE=1, return the default without reading stdin.
 ask_value() {
     local prompt="$1" default="$2" reply
     if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
@@ -136,7 +140,7 @@ ask_value() {
     printf '%s\n' "${reply:-$default}"
 }
 
-# default: 1 = 是（回车/非交互返回 0），0 = 否（返回 1）
+# default: 1 = yes (Enter/non-interactive returns 0), 0 = no (returns 1)
 confirm() {
     local prompt="$1" default="$2" reply
     local default_ret=$((1 - default))
@@ -148,20 +152,21 @@ confirm() {
     [[ "$reply" =~ ^[Yy](es)?$ ]]
 }
 
-# ── .group 文件合并去重 ────────────────────────────────────────
-# .group 文件读取：跳过 # 开头的注释行与空行（apt/pacman 纯包名，brew 为 brew/cask 行）。
+# ── .group merge & dedupe ───────────────────────────────────────
+# .group reader: skip comment lines starting with # and blank lines
+# (apt/pacman are bare package names; brew lines are brew/cask lines).
 group_list_lines() {
     grep -v '^[[:space:]]*#' "$1" 2>/dev/null | grep -v '^[[:space:]]*$' || true
 }
 
-# 通用保序去重（stdin → stdout）：按整行去重，保留首次出现的行。
+# Order-preserving dedupe (stdin → stdout): dedupe whole lines, keep first occurrence.
 dedupe_lines() {
     awk '!seen[$0]++'
 }
 
-# Brewfile 去重（stdin → stdout）：按「brew/cask + 包名」去重，保留首次出现的完整行
-# （含 restart_service 等选项）；非 brew/cask 行原样透传。
-# 仅用 awk 基础特性，兼容 macOS 自带 BSD awk。
+# Brewfile dedupe (stdin → stdout): dedupe by "brew/cask + package name", keeping
+# the first full line (including restart_service etc.); non-brew/cask lines pass through.
+# Uses only basic awk features, compatible with macOS's bundled BSD awk.
 dedupe_brewfile() {
     awk '
         /^[[:space:]]*(brew|cask)[[:space:]]+"[^"]+"/ {
@@ -174,9 +179,9 @@ dedupe_brewfile() {
     '
 }
 
-# ── 交互式安装 ────────────────────────────────────────────────────
-# 用法: install_with_prompt <check_cmd> <prompt> <install_fn> <success_msg> [known_paths...]
-# 已装（command -v 或已知路径存在）则跳过；非 Debian 系也跳过。
+# ── Interactive install ──────────────────────────────────────────
+# Usage: install_with_prompt <check_cmd> <prompt> <install_fn> <success_msg> [known_paths...]
+# Skips when already installed (on PATH or a known path exists) or on non-Debian platforms.
 install_with_prompt() {
     local check_cmd="$1" prompt="$2" install_fn="$3" success_msg="$4"
     shift 4
@@ -186,11 +191,11 @@ install_with_prompt() {
     is_debian_like || return 0
 
     warn "$prompt"
-    if confirm "是否现在安装？ [y/N]: " 0; then
+    if confirm "Install now? [y/N]: " 0; then
         if "$install_fn"; then
             ok "$success_msg"
         else
-            warn "安装未完成，请稍后手动重试"
+            warn "Installation incomplete; retry manually later"
         fi
     fi
 }

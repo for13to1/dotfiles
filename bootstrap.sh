@@ -1,31 +1,24 @@
 #!/usr/bin/env bash
 #
-# bootstrap.sh — 开发环境部署入口
-# 用法: git clone https://github.com/for13to1/dotfiles.git ~/dotfiles
-#       cd ~/dotfiles && bash bootstrap.sh
+# bootstrap.sh — one-shot development environment bootstrap
+# Usage: git clone https://github.com/for13to1/dotfiles.git ~/dotfiles
+#        cd ~/dotfiles && bash bootstrap.sh
 #
 
 set -euo pipefail
 
-# ── 脚本路径解析（支持软链接/相对路径调用）─────────────────────────
-SCRIPT_PATH="${BASH_SOURCE[0]}"
-while [[ -L "$SCRIPT_PATH" ]]; do
-    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
-    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
-    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
-done
-SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── 共享基础设施（彩色输出等，见 _scripts/common.sh）──────────────
+# ── Shared infrastructure (colored output etc., see _scripts/common.sh) ─
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/_scripts/common.sh"
 
-# ── 1. 检测操作系统 ──────────────────────────────────────────────
+# ── 1. Detect the operating system ──────────────────────────────
 OS="$(uname -s)"
-info "检测到操作系统: $OS"
+info "Detected OS: $OS"
 
-# ── 2. 软件安装 ──────────────────────────────────────────────
-# ── 可选组提示：枚举某平台除 default 组外的其余组，便于按需选装 ──
+# ── 2. Software installation ───────────────────────────────────
+# ── Optional-group hint: list all groups except "default" for a platform ──
 hint_optional_groups() {
     local platform="$1"
     local groups=() _f _t
@@ -36,47 +29,47 @@ hint_optional_groups() {
         groups+=("${_t%.group}")
     done
     if (( ${#groups[@]} > 0 )); then
-        info "💡 其余组请按需选装: bash _install/install --$platform ${groups[*]}"
+        info "💡 Optional groups: bash _install/install --$platform ${groups[*]}"
     fi
 }
 
 case "$OS" in
     Darwin*)
-        info "🍎 macOS 环境，开始配置..."
+        info "🍎 macOS environment, starting setup..."
 
-        # Xcode 开发工具检测：优先使用完整版 Xcode.app，否则退而安装精简版 CLT
+        # Detect Xcode tooling: prefer a full Xcode.app, otherwise install the slim CLT.
         if [[ -d "/Applications/Xcode.app" ]]; then
-            # 完整版 Xcode 已安装，测试 xcodebuild 是否可用
+            # Full Xcode is present; verify xcodebuild is reachable.
             if ! xcodebuild -version &>/dev/null; then
-                info "检测到 Xcode.app 但当前路径未正确指向它，正在切换 xcode-select 路径..."
+                info "Xcode.app detected but xcode-select does not point to it; switching..."
                 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
             fi
-            ok "Xcode.app 已就绪"
+            ok "Xcode.app ready"
         elif ! xcode-select -p &>/dev/null; then
-            # 没有完整版 Xcode，也没有 CLT，安装精简版 CLT
-            info "未检测到 Xcode.app，正在安装 Command Line Tools..."
+            # Neither full Xcode nor CLT is installed: install the slim CLT.
+            info "Xcode.app not found; installing Command Line Tools..."
             xcode-select --install
-            echo "请在弹出的窗口中点击\"安装\"，安装完成后重新运行本脚本。"
+            echo "Click \"Install\" in the dialog, then rerun this script."
             exit 0
         else
-            ok "Xcode Command Line Tools 已就绪"
+            ok "Xcode Command Line Tools ready"
         fi
 
         if [[ -f "$DOTFILES_DIR/zsh/.zsh.d/brew_mirror.sh" ]]; then
             # shellcheck disable=SC1091
             source "$DOTFILES_DIR/zsh/.zsh.d/brew_mirror.sh"
         else
-            error "未找到 brew_mirror.sh"
+            error "brew_mirror.sh not found"
         fi
 
-        # 询问是否需要使用镜像源加速
+        # Ask whether to use a mirror to speed up package downloads.
         echo ""
-        info "🌍 Homebrew 镜像源选择："
-        echo "   1) 清华大学 (TUNA) - [默认]"
-        echo "   2) 中国科大 (USTC)"
-        echo "   3) 阿里巴巴 (Aliyun)"
-        echo "   4) 跳过 (使用官方源)"
-        mirror_choice="$(ask_value "请输入数字 [1-4]: " "1")"
+        info "🌍 Homebrew mirror selection:"
+        echo "   1) Tsinghua (TUNA) - [default]"
+        echo "   2) USTC"
+        echo "   3) Aliyun"
+        echo "   4) Skip (use official sources)"
+        mirror_choice="$(ask_value "Enter a number [1-4]: " "1")"
 
         SELECTED_MIRROR=""
         case "$mirror_choice" in
@@ -88,119 +81,122 @@ case "$OS" in
 
         if [[ -n "$SELECTED_MIRROR" ]]; then
             brew_mirror -q "$SELECTED_MIRROR"
-            ok "已临时设置 $SELECTED_MIRROR 镜像源以加速安装"
+            ok "Temporarily set the $SELECTED_MIRROR mirror to speed up installation"
         elif command -v brew &>/dev/null; then
             brew_mirror -q reset
-            ok "已重置为 Homebrew 官方源"
+            ok "Reset to the official Homebrew sources"
         else
-            info "默认使用 Homebrew 官方源"
+            info "Using the official Homebrew sources by default"
         fi
 
-        # 安装 Homebrew （如果没装过）
+        # Install Homebrew if missing.
         if ! command -v brew &>/dev/null; then
-            info "正在安装 Homebrew..."
+            info "Installing Homebrew..."
             /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            # Apple Silicon 需要手动加入 PATH
+            # Apple Silicon needs the PATH set manually.
             if [[ "$(uname -m)" == "arm64" ]]; then
                 eval "$(/opt/homebrew/bin/brew shellenv)"
             fi
         fi
-        ok "Homebrew 已就绪"
+        ok "Homebrew ready"
 
-        # 确保脚本硬依赖已安装
+        # Ensure the hard script dependency is installed.
         if ! command -v stow &>/dev/null; then
-            info "正在安装 stow..."
+            info "Installing stow..."
             brew install stow
         fi
 
-        # 安装默认组
-        info "正在更新 Homebrew 并安装默认组..."
-        brew update || warn "Homebrew 索引更新未能全量完成，尝试继续安装..."
+        # Install the default group.
+        info "Updating Homebrew and installing the default group..."
+        brew update || warn "Homebrew index update did not fully complete; continuing with the install..."
         if bash "$DOTFILES_DIR/_install/install" --brew; then
-            ok "默认组安装完毕"
+            ok "Default group installed"
         else
-            warn "默认组部分软件安装失败，可稍后运行 bash _install/install --brew 重试"
+            warn "Some packages in the default group failed; run 'bash _install/install --brew' later to retry"
         fi
         hint_optional_groups brew
 
-        # 执行 macOS 偏好设置脚本
+        # Apply macOS system preferences.
         if [[ -f "$DOTFILES_DIR/_setup/mac/setup.sh" ]]; then
-            info "正在应用 macOS 系统偏好设置..."
+            info "Applying macOS system preferences..."
             bash "$DOTFILES_DIR/_setup/mac/setup.sh"
-            ok "macOS 偏好设置已应用"
+            ok "macOS preferences applied"
         fi
         ;;
 
     Linux*)
-        info "🐧 Linux 环境，开始配置..."
+        info "🐧 Linux environment, starting setup..."
 
-        # 按组安装软件
+        # Install software by group.
         install_bootstrap_groups() {
             local platform="$1"
             if bash "$DOTFILES_DIR/_install/install" "--$platform"; then
-                ok "$platform 默认组安装完毕"
+                ok "$platform default group installed"
             else
-                warn "$platform 默认组部分软件安装失败，可稍后运行 bash _install/install --$platform 重试"
-                if confirm "是否继续执行后续配置？ [Y/n]: " 1; then
-                    warn "继续执行后续配置"
+                warn "Some packages in the $platform default group failed; run 'bash _install/install --$platform' later to retry"
+                if confirm "Continue with the remaining setup? [Y/n]: " 1; then
+                    warn "Continuing with the remaining setup"
                 else
-                    error "已按用户选择停止 bootstrap"
+                    error "Stopped bootstrap as requested"
                 fi
             fi
         }
 
         if command -v apt &>/dev/null; then
-            info "正在更新 apt 软件包索引..."
+            info "Updating the apt package index..."
             if ! sudo apt update; then
-                warn "apt update 失败，可能是网络问题，继续尝试安装已缓存的软件包..."
+                warn "apt update failed (possibly a network issue); continuing with cached packages..."
             fi
 
-            # 确保脚本硬依赖已安装（zsh + stow）
+            # Ensure hard script dependencies are installed (zsh + stow + make).
             if ! command -v zsh &>/dev/null; then
-                info "正在安装 zsh..."
+                info "Installing zsh..."
                 sudo apt install -y zsh
             fi
             if ! command -v stow &>/dev/null; then
-                info "正在安装 stow..."
+                info "Installing stow..."
                 sudo apt install -y stow
             fi
             if ! command -v make &>/dev/null; then
-                info "正在安装 make..."
+                info "Installing make..."
                 sudo apt install -y make
             fi
 
             install_bootstrap_groups apt
+            hint_optional_groups apt
 
-            # 确保 en_US.UTF-8 locale 存在，避免 stow/perl 等工具报 locale 警告。
+            # Ensure en_US.UTF-8 locale exists to avoid stow/perl locale warnings.
             if command -v locale-gen &>/dev/null \
                && ! locale -a 2>/dev/null | grep -qiE 'en_US\.utf-?8'; then
-                info "正在生成 en_US.UTF-8 locale..."
+                info "Generating the en_US.UTF-8 locale..."
                 sudo locale-gen en_US.UTF-8 \
-                    || warn "生成失败，可稍后手动执行: sudo locale-gen en_US.UTF-8"
+                    || warn "Generation failed; you can run 'sudo locale-gen en_US.UTF-8' later"
             fi
         elif command -v pacman &>/dev/null; then
             sudo pacman -Syu --noconfirm
 
-            # 确保脚本硬依赖已安装（zsh + stow）
+            # Ensure hard script dependencies are installed (zsh + stow + make).
             if ! command -v zsh &>/dev/null; then
-                info "正在安装 zsh..."
+                info "Installing zsh..."
                 sudo pacman -S --noconfirm zsh
             fi
             if ! command -v stow &>/dev/null; then
-                info "正在安装 stow..."
+                info "Installing stow..."
                 sudo pacman -S --noconfirm stow
             fi
             if ! command -v make &>/dev/null; then
-                info "正在安装 make..."
+                info "Installing make..."
                 sudo pacman -S --noconfirm make
             fi
 
             install_bootstrap_groups pacman
+            hint_optional_groups pacman
         else
-            warn "未识别的 Linux 包管理器，请手动安装 zsh 及所需软件"
+            warn "Unrecognized Linux package manager; please install zsh and required tools manually"
         fi
 
-        # Debian 系平台先准备工具管理器，再按 npm/uv/Cargo 渠道安装 CLI。
+        # On Debian-like platforms, set up tool managers first, then install CLIs
+        # via the npm/uv/Cargo channels.
         if [[ -f "$DOTFILES_DIR/_install/install-by-curl.sh" ]]; then
             bash "$DOTFILES_DIR/_install/install-by-curl.sh"
         fi
@@ -219,23 +215,23 @@ case "$OS" in
         ;;
 
     *)
-        error "不支持的操作系统: $OS"
+        error "Unsupported OS: $OS"
         ;;
 esac
 
-# ── 3-5. 主机基础配置 ────────────────────────────────────────────
+# ── 3-5. Host base configuration ────────────────────────────────
 bash "$DOTFILES_DIR/_bootstrap/ssh.sh"
 bash "$DOTFILES_DIR/_bootstrap/git.sh" "$DOTFILES_DIR"
 bash "$DOTFILES_DIR/_bootstrap/shell.sh" "$OS" "${SELECTED_MIRROR:-}"
 
-# ── 6. 配置文件挂载 (Stow) ──────────────────────────────────────────
-info "正在使用 Stow 挂载配置文件..."
+# ── 6. Mount configuration files (Stow) ─────────────────────────
+info "Mounting configuration files with Stow..."
 
-## 1. 确定模块列表（单一真值源 SSOT，见 _scripts/modules.conf）
-# 模块清单以每行一个模块的形式输出，逐行读入数组。
+## 1. Resolve the module list (single source of truth, see _scripts/modules.conf).
+# The module list is emitted one module per line and read into an array.
 STOW_MODULES=()
 if [[ -f "$DOTFILES_DIR/_scripts/modules.conf" && -f "$DOTFILES_DIR/_scripts/list-modules.sh" ]]; then
-    # macOS 自带 bash 3.2 无 mapfile，改用 while read
+    # macOS ships bash 3.2 without mapfile, so use a while-read loop.
     while IFS= read -r _module; do
         STOW_MODULES+=("$_module")
     done < <(bash "$DOTFILES_DIR/_scripts/list-modules.sh" "$DOTFILES_DIR/_scripts/modules.conf")
@@ -243,39 +239,39 @@ if [[ -f "$DOTFILES_DIR/_scripts/modules.conf" && -f "$DOTFILES_DIR/_scripts/lis
 fi
 
 if (( ${#STOW_MODULES[@]} == 0 )); then
-    warn "modules.conf 中未发现有效的模块列表，正在尝试默认列表..."
+    warn "No valid module list in modules.conf; falling back to the default list..."
     STOW_MODULES=(agents zsh git vim nvim tmux ripgrep)
 else
-    info "从 _scripts/modules.conf 加载模块: ${STOW_MODULES[*]}"
+    info "Loaded modules from _scripts/modules.conf: ${STOW_MODULES[*]}"
 fi
 
-## 2. 执行 Stow 挂载
-# 统一入口负责 preflight、冲突备份、共享目录创建、stow -R 和挂载后校验。
-# 挂载失败仅提示，不阻断后续配置。
+## 2. Run the Stow mount.
+# The single entry point handles preflight, conflict backup, shared dir creation,
+# `stow -R`, and post-mount verification. Mount failures only warn, never block.
 if bash "$DOTFILES_DIR/_scripts/stow-sync.sh" \
     "$DOTFILES_DIR" "$HOME" "${STOW_MODULES[@]}"; then
-    ok "Stow 配置挂载完成"
+    ok "Stow configuration mounted"
 else
-    warn "Stow 配置挂载有失败项（详情见上方报错），可稍后运行 make sync 修复"
+    warn "Stow mount had failures (see errors above); run 'make sync' later to fix"
 fi
 
-# ── 7. tmux 插件同步 (tpm) ──────────────────────────────────────
+# ── 7. Sync tmux plugins (tpm) ──────────────────────────────────
 echo ""
-info "正在同步 tmux 插件 (tpm)..."
+info "Syncing tmux plugins (tpm)..."
 if bash "$DOTFILES_DIR/_scripts/tmux-plugins.sh"; then
-    ok "tmux 插件就绪"
+    ok "tmux plugins ready"
 else
-    warn "tmux 插件同步过程中有报错，可稍后运行 bash _scripts/tmux-plugins.sh 重试"
+    warn "tmux plugin sync had errors; run 'bash _scripts/tmux-plugins.sh' later to retry"
 fi
 
-# ── 8. 编辑器插件同步 ────────────────────────────────────────────
+# ── 8. Sync editor plugins ──────────────────────────────────────
 echo ""
 bash "$DOTFILES_DIR/_bootstrap/editors.sh"
 
-# ── 9. 自定义脚本部署 ──────────────────────────────────────────────
+# ── 9. Deploy custom scripts ────────────────────────────────────
 bash "$DOTFILES_DIR/_bootstrap/tools.sh" "$DOTFILES_DIR"
 
-# ── 10. 完成 ────────────────────────────────────────────────────────
+# ── 10. Done ────────────────────────────────────────────────────
 echo ""
-ok "🎉 全部搞定！请重启终端，或执行 source ~/.zshrc 使配置生效。"
+ok "🎉 All done! Restart your terminal or run 'source ~/.zshrc' to apply the config."
 echo ""

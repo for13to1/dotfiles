@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# test-doctor.sh — _scripts/doctor.sh 退出码契约测试
-# 用法: bash _tests/test-doctor.sh
+# test-doctor.sh — exit-code contract tests for _scripts/doctor.sh
+# Usage: bash _tests/test-doctor.sh
 #
-# 只断言 doctor 的退出码语义（核心契约）：
-#   干净环境 → 0；仅有警告 → 0；存在阻断问题 → 非 0
-# 不 grep 输出文案，避免文案改动导致测试脆断。
+# Only assert doctor's exit-code semantics (the core contract):
+#   clean → 0; warnings only → 0; blocking issues → non-zero
+# Never grep output text, so message changes do not make the test brittle.
 
 set -euo pipefail
-# shellcheck disable=SC1091  # helpers.sh 动态路径
+# shellcheck disable=SC1091  # helpers.sh is sourced via a dynamic path
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,16 +27,16 @@ ln -s ../dotfiles/git/.gitconfig "$TMP/home/.gitconfig"
 printf '# local zsh\n' > "$TMP/home/.zshrc.local"
 printf '[user]\n' > "$TMP/home/.gitconfig.local"
 
-# 干净环境：退出 0
+# Clean environment: exit 0.
 assert_pass "synced dotfiles should exit 0" \
     bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
 
-# 可选本地状态缺失：警告而非失败，仍退出 0
+# Missing optional local state: warn but still exit 0.
 rm -f "$TMP/home/.gitconfig" "$TMP/home/.zshrc.local" "$TMP/home/.gitconfig.local"
 assert_pass "missing optional local state should warn but exit 0" \
     bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
 
-# 模块目录缺失：阻断问题，退出非 0
+# Missing module dir: blocking issue, exit non-zero.
 rm -rf "$TMP/dotfiles/git"
 assert_fail "missing stow module should be a blocking failure" \
     bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"

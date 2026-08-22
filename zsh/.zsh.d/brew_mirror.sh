@@ -1,12 +1,13 @@
 # shellcheck shell=bash
-# brew_mirror — Homebrew 镜像源切换
-# 用法: brew_mirror [-q] [tuna | ustc | ali | reset]
-#   -q / --quiet  静默模式，不打印切换提示（适合在 .zshrc.local 中调用）
+# brew_mirror — switch Homebrew mirror sources
+# Usage: brew_mirror [-q] [tuna | ustc | ali | reset]
+#   -q / --quiet  quiet mode: no switch message (for use in .zshrc.local)
 
 function restore_brew_git_remotes() {
     local brew_repo repo url
     brew_repo="$(brew --repo 2>/dev/null)" || return 0
-    # zsh 与 bash 数组索引语义不同，逐项处理
+    # Iterate each repo explicitly so the function works in both zsh and bash
+    # (a literal list avoids the differing array semantics between the two shells).
     for repo in "$brew_repo" \
         "$brew_repo/Library/Taps/homebrew/homebrew-core" \
         "$brew_repo/Library/Taps/homebrew/homebrew-cask"; do
@@ -17,7 +18,7 @@ function restore_brew_git_remotes() {
             *"/homebrew-cask")          url="https://github.com/Homebrew/homebrew-cask.git" ;;
             *)                           continue ;;
         esac
-        # 仅在与官方不一致时写入
+        # Write only when it differs from the official remote.
         [[ "$(git -C "$repo" remote get-url origin 2>/dev/null)" == "$url" ]] \
             || git -C "$repo" remote set-url origin "$url" 2>/dev/null
     done
@@ -33,46 +34,46 @@ function brew_mirror() {
 
     local target=${1:-}
 
-    # 无参数 → 仅显示当前状态
+    # No argument → show only the current state.
     if [[ -z "$target" ]]; then
         if (( quiet )); then return 0; fi
-        echo -e "当前 Homebrew 镜像源状态:"
-        echo -e "  HOMEBREW_API_DOMAIN:      \033[1;33m${HOMEBREW_API_DOMAIN:-[未设置 (官方默认)]}\033[0m"
-        echo -e "  HOMEBREW_BOTTLE_DOMAIN:   \033[1;33m${HOMEBREW_BOTTLE_DOMAIN:-[未设置]}\033[0m"
-        echo -e "  HOMEBREW_BREW_GIT_REMOTE: \033[1;33m${HOMEBREW_BREW_GIT_REMOTE:-[未设置]}\033[0m"
-        echo -e "  git remote (brew):        \033[1;33m$(git -C "$(brew --repo 2>/dev/null)" remote get-url origin 2>/dev/null || echo '[无法获取]')\033[0m"
+        echo -e "Current Homebrew mirror status:"
+        echo -e "  HOMEBREW_API_DOMAIN:      \033[1;33m${HOMEBREW_API_DOMAIN:-[not set (official default)]}\033[0m"
+        echo -e "  HOMEBREW_BOTTLE_DOMAIN:   \033[1;33m${HOMEBREW_BOTTLE_DOMAIN:-[not set]}\033[0m"
+        echo -e "  HOMEBREW_BREW_GIT_REMOTE: \033[1;33m${HOMEBREW_BREW_GIT_REMOTE:-[not set]}\033[0m"
+        echo -e "  git remote (brew):        \033[1;33m$(git -C "$(brew --repo 2>/dev/null)" remote get-url origin 2>/dev/null || echo '[unavailable]')\033[0m"
         return 0
     fi
 
     case $target in
         --help|-h)
-            echo "用法: brew_mirror [-q] [tuna | ustc | ali | reset]"
-            echo "  -q / --quiet  静默模式，不打印切换提示"
+            echo "Usage: brew_mirror [-q] [tuna | ustc | ali | reset]"
+            echo "  -q / --quiet  quiet mode: no switch message"
             echo ""
-            echo "示例:"
-            echo "  brew_mirror              # 查看当前镜像源状态"
-            echo "  brew_mirror tuna         # 切换至清华大学镜像源"
-            echo "  brew_mirror -q ustc      # 静默切换至 USTC 镜像源"
-            echo "  brew_mirror reset        # 重置为官方源"
+            echo "Examples:"
+            echo "  brew_mirror              # show the current mirror status"
+            echo "  brew_mirror tuna         # switch to the Tsinghua (TUNA) mirror"
+            echo "  brew_mirror -q ustc      # quietly switch to the USTC mirror"
+            echo "  brew_mirror reset        # reset to the official sources"
             return 0
             ;;
         tuna|tsinghua)
             export HOMEBREW_API_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api"
             export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles"
             export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git"
-            (( quiet )) || echo -e "\033[1;32m✅ 已切换至 清华大学 (TUNA) 镜像源\033[0m"
+            (( quiet )) || echo -e "\033[1;32m✅ Switched to the Tsinghua (TUNA) mirror\033[0m"
             ;;
         ustc)
             export HOMEBREW_API_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles/api"
             export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.ustc.edu.cn/homebrew-bottles"
             export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.ustc.edu.cn/brew.git"
-            (( quiet )) || echo -e "\033[1;32m✅ 已切换至 中国科学技术大学 (USTC) 镜像源\033[0m"
+            (( quiet )) || echo -e "\033[1;32m✅ Switched to the USTC mirror\033[0m"
             ;;
         aliyun|ali)
             export HOMEBREW_API_DOMAIN="https://mirrors.aliyun.com/homebrew/homebrew-bottles/api"
             export HOMEBREW_BOTTLE_DOMAIN="https://mirrors.aliyun.com/homebrew/homebrew-bottles"
             export HOMEBREW_BREW_GIT_REMOTE="https://mirrors.aliyun.com/homebrew/brew.git"
-            (( quiet )) || echo -e "\033[1;32m✅ 已切换至 阿里巴巴 (Aliyun) 镜像源\033[0m"
+            (( quiet )) || echo -e "\033[1;32m✅ Switched to the Aliyun mirror\033[0m"
             ;;
         reset|default)
             unset HOMEBREW_API_DOMAIN
@@ -81,11 +82,11 @@ function brew_mirror() {
             unset HOMEBREW_CORE_GIT_REMOTE
             unset HOMEBREW_CASK_GIT_REMOTE
             restore_brew_git_remotes
-            (( quiet )) || echo -e "\033[1;34m🔄 已重置为 Homebrew 官方源\033[0m"
+            (( quiet )) || echo -e "\033[1;34m🔄 Reset to the official Homebrew sources\033[0m"
             ;;
         *)
-            echo -e "\033[1;31m错误:\033[0m 未知镜像源 '$target'"
-            echo "用法: brew_mirror [-q] [tuna | ustc | ali | reset]"
+            echo -e "\033[1;31mError:\033[0m unknown mirror '$target'"
+            echo "Usage: brew_mirror [-q] [tuna | ustc | ali | reset]"
             return 1
             ;;
     esac

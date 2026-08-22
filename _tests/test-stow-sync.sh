@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# test-stow-sync.sh — _scripts/stow-sync.sh 集成测试（参数传递与备份）
-# 用法: bash _tests/test-stow-sync.sh
+# test-stow-sync.sh — integration tests for _scripts/stow-sync.sh (arg passing and backup)
+# Usage: bash _tests/test-stow-sync.sh
 
 set -euo pipefail
-# shellcheck disable=SC1091  # helpers.sh 动态路径
+# shellcheck disable=SC1091  # helpers.sh is sourced via a dynamic path
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

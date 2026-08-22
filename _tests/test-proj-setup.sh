@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# test-proj-setup.sh — proj-setup/bin/proj-setup.sh 行为测试（模板与占位符定制）
-# 用法: bash _tests/test-proj-setup.sh
+# test-proj-setup.sh — behavior tests for proj-setup/bin/proj-setup.sh (templates and placeholders)
+# Usage: bash _tests/test-proj-setup.sh
 
 set -euo pipefail
-# shellcheck disable=SC1091  # helpers.sh 动态路径
+# shellcheck disable=SC1091  # helpers.sh is sourced via a dynamic path
 source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

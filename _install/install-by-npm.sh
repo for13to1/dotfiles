@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/install-by-npm.sh — npm 途径的 Node.js CLI 安装
+# _install/install-by-npm.sh — Node.js CLI installs via npm
 
 set -euo pipefail
 
@@ -7,9 +7,10 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/common.sh"
 
-# ── Node 环境激活 ─────────────────────────────────────────────────
-# 复用本地 fnm 管理的 Node，不自装运行时。所有 Node/npm 调用都通过
-# fnm exec 进入指定运行时，避免依赖 fnm multishell 的内部路径布局。
+# ── Node environment activation ──────────────────────────────────
+# Reuse the locally fnm-managed Node instead of installing a runtime. All Node/npm
+# calls go through fnm exec to enter the pinned runtime, avoiding reliance on fnm
+# multishell's internal path layout.
 FNM_BIN=""
 
 find_fnm_bin() {
@@ -27,24 +28,25 @@ fnm_exec() {
 ensure_fnm_node_env() {
     FNM_BIN="$(find_fnm_bin || true)"
     if [[ -z "$FNM_BIN" ]]; then
-        warn "未检测到 fnm，npm CLI 安装跳过"
+        warn "fnm not found; skipping npm CLI installs"
         return 1
     fi
 
-    info "检测到 fnm，正在准备 Node LTS 环境..."
+    info "fnm found; preparing the Node LTS environment..."
     "$FNM_BIN" install --lts &>/dev/null || true
     "$FNM_BIN" default lts-latest &>/dev/null || true
 
     if fnm_exec node --version &>/dev/null; then
-        ok "fnm Node $(fnm_exec node --version) 已就绪"
+        ok "fnm Node $(fnm_exec node --version) ready"
         return 0
     fi
 
-    warn "Node 环境准备失败，请稍后手动运行: fnm install --lts"
+    warn "Node environment setup failed; run 'fnm install --lts' manually later"
     return 1
 }
 
-# npm >= 11.10 引入 release-age 门禁，官方安装器用 --min-release-age=0 绕过
+# npm >= 11.10 added a release-age gate; the official installer bypasses it with
+# --min-release-age=0.
 release_age_flag() {
     local npm_version
     npm_version="$(fnm_exec npm --version)"
@@ -63,7 +65,7 @@ install_pi() {
     npm_install_global --ignore-scripts @earendil-works/pi-coding-agent
 }
 
-# @openai/codex 无 postinstall，平台二进制经 optionalDependencies 分发
+# @openai/codex has no postinstall; platform binaries ship via optionalDependencies.
 install_codex() {
     npm_install_global @openai/codex
 }
@@ -77,7 +79,7 @@ install_biome() {
 }
 
 main() {
-    # 仅在 Debian 系平台接管 npm CLI 安装。
+    # Take over npm CLI installs only on Debian-like platforms.
     is_debian_like || return 0
 
     if ! ensure_fnm_node_env; then
@@ -85,34 +87,34 @@ main() {
     fi
 
     if ! fnm_exec npm --version &>/dev/null; then
-        warn "未检测到 npm，npm CLI 安装跳过"
+        warn "npm not found; skipping npm CLI installs"
         return 0
     fi
 
     install_with_prompt \
         "biome" \
-        "未检测到 biome，是否通过 npm 安装到 ~/.local？" \
+        "biome not found; install it to ~/.local via npm?" \
         "install_biome" \
-        "biome 安装完成" \
+        "biome installed" \
         "$HOME/.local/bin/biome"
 
     install_with_prompt \
         "pi" \
-        "未检测到 pi，是否通过 npm 安装？" \
+        "pi not found; install it via npm?" \
         "install_pi" \
-        "pi 安装完成"
+        "pi installed"
 
     install_with_prompt \
         "codex" \
-        "未检测到 codex，是否通过 npm 安装？" \
+        "codex not found; install it via npm?" \
         "install_codex" \
-        "codex 安装完成"
+        "codex installed"
 
     install_with_prompt \
         "opencode" \
-        "未检测到 opencode，是否通过 npm 安装？" \
+        "opencode not found; install it via npm?" \
         "install_opencode" \
-        "opencode 安装完成"
+        "opencode installed"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

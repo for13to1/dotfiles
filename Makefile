@@ -1,21 +1,23 @@
-# Dotfiles 管理方案
-# 需要被 Stow 挂载的核心模块列表见 _scripts/modules.conf（与 bootstrap.sh 共用的真值源）。
+# Dotfiles management scheme
+# The core module list to Stow lives in _scripts/modules.conf (shared source of truth
+# with bootstrap.sh).
 #
-# 使用默认折叠行为：stow 会将目录折叠为软链接，即 ~/.zsh.d 、~/.agents 、~/.config/nvim
-# 各自作为一条软链接指向 dotfiles 里的对应目录。
-# ~/.config 是系统共享目录，由 mkdir -p 确保存在，使 stow 折叠停在 nvim 这一层而不是 .config 层。
+# Use the default folding behavior: stow folds directories into symlinks, so ~/.zsh.d,
+# ~/.agents, and ~/.config/nvim each become a single symlink into the dotfiles repo.
+# ~/.config is a system-shared dir ensured by mkdir -p, so stow folding stops at the
+# nvim level rather than the .config level.
 
 SHELL := /bin/bash
-# 解析规则见 _scripts/list-modules.sh，Makefile 与 bootstrap.sh 共用同一实现。
+# Parsing rules live in _scripts/list-modules.sh; Makefile and bootstrap.sh share this impl.
 MODULES := $(shell bash _scripts/list-modules.sh _scripts/modules.conf)
 
 .PHONY: sync check doctor test lint-shell test-shell test-skills help
 
-# 默认一键同步：Restow 所有模块
+# Default one-shot sync: restow all modules.
 sync:
 	@bash _scripts/stow-sync.sh "$(CURDIR)" "$(HOME)" $(MODULES)
 
-# 验证所有模块的软链接是否已正确建立
+# Verify every module's symlinks are correctly created.
 check:
 	@bash _scripts/check-links.sh verify "$(CURDIR)" "$(HOME)" $(MODULES)
 
@@ -29,7 +31,7 @@ lint-shell:
 		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/installer/*' -exec shellcheck {} + ; \
 		shellcheck _scripts/hooks/pre-push; \
 	else \
-		echo "❌ shellcheck 未安装，无法运行完整测试" >&2; \
+		echo "❌ shellcheck not installed; cannot run the full test suite" >&2; \
 		exit 1; \
 	fi
 
@@ -49,19 +51,19 @@ test-skills:
 		uv run --offline --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py \
 		|| uv run --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py; \
 	else \
-		echo "❌ pytest 与 uv 均未安装，无法运行 pdf2md-polish 测试" >&2; \
+		echo "❌ neither pytest nor uv is installed; cannot run pdf2md-polish tests" >&2; \
 		exit 1; \
 	fi
 
 
-# 简易帮助说明
+# Brief help.
 help:
-	@echo "可用命令:"
-	@echo "  make sync   - 一键刷新并重新挂载所有核心模块"
-	@echo "  make check  - 验证所有模块的软链接是否正确建立"
-	@echo "  make doctor - 诊断本机 dotfiles 环境状态"
-	@echo "  make test   - 运行全部静态检查与行为测试"
-	@echo "  make lint-shell  - 运行 ShellCheck"
-	@echo "  make test-shell  - 运行 bash 语法检查与 shell 行为测试"
-	@echo "  make test-skills - 运行 skill Python 测试"
-	@echo "  make help   - 显示此帮助信息"
+	@echo "Available commands:"
+	@echo "  make sync   - restow all core modules"
+	@echo "  make check  - verify every module's symlinks"
+	@echo "  make doctor - diagnose the local dotfiles environment"
+	@echo "  make test   - run all static checks and behavior tests"
+	@echo "  make lint-shell  - run ShellCheck"
+	@echo "  make test-shell  - run bash syntax checks and shell behavior tests"
+	@echo "  make test-skills - run the skill Python tests"
+	@echo "  make help   - show this help"

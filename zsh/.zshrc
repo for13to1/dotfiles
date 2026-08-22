@@ -13,8 +13,8 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     fi
 fi
 
-# 加载 ~/.zsh.d/ 下的所有函数片段（macOS 与 Linux 均加载）
-# 例如: brew_mirror (Homebrew 镜像源)、net_proxy (网络代理开关)
+# Source every function snippet under ~/.zsh.d/ (loaded on both macOS and Linux).
+# Examples: brew_mirror (Homebrew mirror), net_proxy (proxy on/off).
 for _f in ~/.zsh.d/*.sh; do [[ -f "$_f" ]] && source "$_f"; done
 unset _f
 
@@ -23,7 +23,7 @@ export ZSH="$HOME/.oh-my-zsh"
 CASE_SENSITIVE="true"
 ZSH_THEME="robbyrussell"
 
-# 动态构建插件列表：第三方插件需要检查是否存在
+# Build the plugin list dynamically: third-party plugins must be checked for existence.
 plugins=(
     git
     sudo
@@ -36,7 +36,7 @@ plugins=(
     copybuffer
 )
 
-# 第三方插件：检查是否存在再添加
+# Third-party plugins: add only if present.
 missing_plugins=()
 if [[ -d "$ZSH/custom/plugins/zsh-autosuggestions" ]]; then
     plugins+=(zsh-autosuggestions)
@@ -51,13 +51,13 @@ else
 fi
 
 if (( ${#missing_plugins[@]} > 0 )); then
-    echo -e "\033[1;33m⚠️  提醒: Oh My Zsh 缺少插件 ${missing_plugins[*]}，请安装后重新加载 Shell\033[0m"
+    echo -e "\033[1;33m⚠️  Notice: Oh My Zsh is missing plugins ${missing_plugins[*]}; install them and reload the shell\033[0m"
 fi
 
 if [[ -r "$ZSH/oh-my-zsh.sh" ]]; then
     source "$ZSH/oh-my-zsh.sh"
 else
-    echo -e "\033[1;33m⚠️  提醒: 未找到 Oh My Zsh，已跳过框架加载\033[0m"
+    echo -e "\033[1;33m⚠️  Notice: Oh My Zsh not found; skipped framework loading\033[0m"
 fi
 
 # =============================================================================
@@ -73,14 +73,14 @@ fi
 export VISUAL="$EDITOR"
 # export LD_LIBRARY_PATH="$OpenCV_DIR/lib/:$LD_LIBRARY_PATH"
 export PATH="$HOME/.local/bin:$PATH"
-# PATH 列表中，靠前的路径优先级最高
+# Earlier PATH entries win.
 # https://www.gnu.org/software/bash/manual/bash.html#Command-Search-and-Execution
 
 # =============================================================================
 # 3. Local Config
 # =============================================================================
 
-# API Key 等私密信息统统放在 ~/.zshrc.local 里，不纳入版本控制
+# Keep private data (API keys, etc.) in ~/.zshrc.local, out of version control.
 [[ -f ~/.zshrc.local ]] && source ~/.zshrc.local
 
 # =============================================================================
@@ -120,9 +120,9 @@ fi
 # <<< fnm loading <<<
 
 # >>> rustup (cargo) loading >>>
-# 不同平台的 rustup 代理位置不同：
-#   - macOS：Homebrew 的 rustup 是 keg-only，代理在 brew 的 opt 目录（不建 ~/.cargo/bin）
-#   - Linux：Debian 官方安装器 / Arch pacman，代理统一在 ~/.cargo/bin
+# rustup's proxy location differs by platform:
+#   - macOS: Homebrew's rustup is keg-only; the proxy lives in brew's opt dir (no ~/.cargo/bin).
+#   - Linux: Debian official installer / Arch pacman; the proxy is always in ~/.cargo/bin.
 case "$OSTYPE" in
     darwin*)
         [[ -d "/opt/homebrew/opt/rustup/bin" ]] && export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
@@ -150,13 +150,13 @@ fi
 # <<< ripgrep loading <<<
 
 # >>> opencode loading >>>
-# 安装时使用 --no-modify-path 避免脚本自动修改 .zshrc
+# Install with --no-modify-path so the script never rewrites .zshrc.
 # curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path
 [[ -d "$HOME/.opencode/bin" ]] && export PATH="$HOME/.opencode/bin:$PATH"
 # <<< opencode loading <<<
 
 # >>> mimocode loading >>>
-# 安装时使用 --no-modify-path 避免脚本自动修改 .zshrc
+# Install with --no-modify-path so the script never rewrites .zshrc.
 # curl -fsSL https://mimo.xiaomi.com/install | bash -s -- --no-modify-path
 [[ -d "$HOME/.mimocode/bin" ]] && export PATH="$HOME/.mimocode/bin:$PATH"
 # <<< mimocode loading <<<
@@ -167,7 +167,7 @@ fi
 
 alias vi="vim"
 
-# command -v 是 shell built-in，不 fork 进程，性能无忧
+# command -v is a shell builtin; it does not fork, so it is cheap.
 if command -v eza &>/dev/null; then
     alias ll="eza -al --icons --group-directories-first"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
@@ -186,7 +186,7 @@ function grn() {
     fi
 }
 
-# 以下 git 别名已由 OMZ git 插件提供，保留 gl1g（OMZ 无对应）
+# These git aliases are already provided by the OMZ git plugin; keep gl1g (OMZ has none).
 alias gl1g='git log --oneline --graph --decorate --all'
 
 # =============================================================================
@@ -249,10 +249,10 @@ fi
 # 8. Terminal Key Mode Safety Net
 # =============================================================================
 
-# 终端的扩展键模式（modifyOtherKeys/CSI-u）若因 tmux/nvim 异常退出而残留，
-# 普通 zsh 会把 Ctrl+A 的编码 ESC[27;5;97~ 显示成 ";5;97~"。
-# 这里提供手动复位别名，并在非 tmux 环境下新开 shell 时自动清理。
-# 复位同时覆盖 xterm 系（CSI > 4;0m / CSI > 4n）与 kitty 系（CSI < 1 u）协议。
+# The terminal's extended key mode (modifyOtherKeys/CSI-u) can leak when tmux/nvim exits
+# abnormally, making plain zsh render Ctrl+A's ESC[27;5;97~ as ";5;97~".
+# Provide a manual reset alias and auto-clean on new shells outside tmux.
+# The reset covers both xterm-style (CSI > 4;0m / CSI > 4n) and kitty-style (CSI < 1 u).
 
 alias fix-kb='printf "\033[>4;0m" && printf "\033[>4n" && printf "\033[<1u"'
 

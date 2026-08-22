@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
 #
-# proj-setup — 快速初始化项目目录，复制预设配置模板
+# proj-setup — quickly initialize a project directory by copying preset templates
 #
-# 用法: proj-setup [--vcs=VCS] [--lang=LANG] [目录名]
+# Usage: proj-setup [--vcs=VCS] [--lang=LANG] [directory]
 #
-# 参数:
-#   --vcs=VCS    指定版本控制模板目录名（默认: git；可选: git, none）
-#   --lang=LANG  指定语言模板目录名（如 cpp, python, rust），可选
-#   [目录名]     目标目录，默认为当前目录
+# Args:
+#   --vcs=VCS    VCS template dir name (default: git; choices: git, none)
+#   --lang=LANG  language template dir name (e.g. cpp, python, rust), optional
+#   [directory]  target dir, defaults to the current directory
 #
-# 示例:
-#   proj-setup                         # 当前目录，基础配置 + Git
-#   proj-setup myproject               # 创建 myproject，基础配置 + Git
-#   proj-setup --vcs=none              # 当前目录，仅基础配置
-#   proj-setup --vcs=git --lang=cpp    # 当前目录，Git + C++ 模板
-#   proj-setup myproject --lang=python # 创建 myproject，Git + Python 模板
+# Examples:
+#   proj-setup                         # current dir, base config + Git
+#   proj-setup myproject               # create myproject, base config + Git
+#   proj-setup --vcs=none              # current dir, base config only
+#   proj-setup --vcs=git --lang=cpp    # current dir, Git + C++ template
+#   proj-setup myproject --lang=python # create myproject, Git + Python template
 #
 
 set -euo pipefail
 
-# ── 配置 ──────────────────────────────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────
+# Resolve the real script location: it may be invoked through a symlink
+# (e.g. ~/.local/bin/proj-setup), and the relative paths below depend on it.
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 while [[ -L "$SCRIPT_PATH" ]]; do
     SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -27,41 +29,47 @@ while [[ -L "$SCRIPT_PATH" ]]; do
     [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/../../_scripts/common.sh"
-TEMPLATES_DIR="${DOTFILES_DIR}/proj-setup/templates"
+
+# Minimal colored-output helpers.
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+info() { echo -e "${BLUE}ℹ️  $*${NC}"; }
+ok()   { echo -e "${GREEN}✅ $*${NC}"; }
+warn() { echo -e "${YELLOW}⚠️  $*${NC}"; }
+error() { echo -e "${RED}❌ $*${NC}"; exit 1; }
+
+TEMPLATES_DIR="${SCRIPT_DIR}/../templates"
 BASE_TEMPLATES_DIR="${TEMPLATES_DIR}/base"
 VCS_TEMPLATES_DIR="${TEMPLATES_DIR}/vcs"
 LANGUAGE_TEMPLATES_DIR="${TEMPLATES_DIR}/language"
 
-# ── 列出模板目录下的可用子模板名（逗号分隔）──────────────
+# ── List available sub-template names under a template dir (comma-separated) ──
 list_template_names() {
     local dir="$1"
     find "$dir" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; \
         | sort | tr '\n' ',' | sed 's/,$//; s/,/, /g'
 }
 
-# ── 用法说明 ──────────────────────────────────────────────────────
+# ── Usage ────────────────────────────────────────────────────────
 usage() {
     cat <<EOF
-用法: proj-setup [--vcs=VCS] [--lang=LANG] [目录名]
+Usage: proj-setup [--vcs=VCS] [--lang=LANG] [directory]
 
-参数:
-  --vcs=VCS    指定版本控制模板目录名（默认: git；可选: git, none）
-  --lang=LANG  指定语言模板目录名（如 cpp, python, rust），可选
-  [目录名]     目标目录，默认为当前目录
+Args:
+  --vcs=VCS    VCS template dir name (default: git; choices: git, none)
+  --lang=LANG  language template dir name (e.g. cpp, python, rust), optional
+  [directory]  target dir, defaults to the current directory
 
-示例:
-  proj-setup                         # 当前目录，基础配置 + Git
-  proj-setup myproject               # 创建 myproject，基础配置 + Git
-  proj-setup --vcs=none              # 当前目录，仅基础配置
-  proj-setup --vcs=git --lang=cpp    # 当前目录，Git + C++ 模板
-  proj-setup myproject --lang=python # 创建 myproject，Git + Python 模板
+Examples:
+  proj-setup                         # current dir, base config + Git
+  proj-setup myproject               # create myproject, base config + Git
+  proj-setup --vcs=none              # current dir, base config only
+  proj-setup --vcs=git --lang=cpp    # current dir, Git + C++ template
+  proj-setup myproject --lang=python # create myproject, Git + Python template
 EOF
     exit 0
 }
 
-# ── 复制模板文件 ──────────────────────────────────────────────────
+# ── Copy template files ─────────────────────────────────────────
 copy_templates() {
     local src_dir="$1"
     local dst_dir="$2"
@@ -71,7 +79,7 @@ copy_templates() {
         return 0
     fi
 
-    # 检查目录是否为空
+    # Check whether the directory is empty.
     local first
     first="$(find "$src_dir" -mindepth 1 -print -quit 2>/dev/null || true)"
     [[ -n "$first" ]] || return 0
@@ -82,14 +90,14 @@ copy_templates() {
         local dst_file="${dst_dir}/${rel_path}"
 
         if [[ -e "$dst_file" ]]; then
-            warn "跳过已存在: $rel_path"
+            warn "Skipping existing: $rel_path"
         else
             mkdir -p "$(dirname "$dst_file")"
             cp "$src_file" "$dst_file"
             if [[ -n "$copied_list" ]]; then
                 printf '%s\0' "$dst_file" >> "$copied_list"
             fi
-            ok "已复制: $rel_path"
+            ok "Copied: $rel_path"
         fi
     done
 }
@@ -99,11 +107,11 @@ project_name_from_dir() {
     local project_name
 
     project_name=$(basename "$target_dir" | tr '[:upper:]' '[:lower:]' | sed -E 's/[[:space:]_]+/-/g; s/[^a-z0-9.-]//g; s/^[.-]+//; s/[.-]+$//')
-    [[ -n "$project_name" ]] || error "无法从目录名生成有效的项目名: $target_dir"
+    [[ -n "$project_name" ]] || error "Cannot derive a valid project name from the dir: $target_dir"
     printf '%s\n' "$project_name"
 }
 
-# 替换模板文件中的 __PROJECT_NAME__ 占位符（所有语言通用）
+# Replace the __PROJECT_NAME__ placeholder in template files (all languages).
 customize_project_name() {
     local file="$1"
     local project_name="$2"
@@ -114,20 +122,20 @@ customize_project_name() {
     grep -q '__PROJECT_NAME__' "$file" || return 0
 
     escaped_project_name=$(printf '%s\n' "$project_name" | sed 's/[\/&]/\\&/g')
-    tmp_file=$(mktemp "${TMPDIR:-/tmp}/proj-setup.XXXXXX") || error "无法创建临时文件"
+    tmp_file=$(mktemp "${TMPDIR:-/tmp}/proj-setup.XXXXXX") || error "Cannot create a temp file"
     if ! sed "s/__PROJECT_NAME__/${escaped_project_name}/g" "$file" > "$tmp_file"; then
         rm -f "$tmp_file"
-        error "项目名替换失败: $file"
+        error "Project-name substitution failed: $file"
     fi
     if ! cat "$tmp_file" > "$file"; then
         rm -f "$tmp_file"
-        error "写回模板文件失败: $file"
+        error "Failed to write the template file back: $file"
     fi
     rm -f "$tmp_file"
-    ok "已设置项目名: ${project_name}"
+    ok "Project name set: ${project_name}"
 }
 
-# ── 主逻辑 ────────────────────────────────────────────────────────
+# ── Main ─────────────────────────────────────────────────────────
 main() {
     local vcs="git"
     local lang=""
@@ -137,26 +145,26 @@ main() {
     local project_name=""
     local copied_files=""
 
-    # 解析参数
+    # Parse arguments.
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --vcs=*)
                 vcs="${1#*=}"
-                [[ -n "$vcs" ]] || error "参数 --vcs 需要值（如 --vcs=git 或 --vcs=none）"
+                [[ -n "$vcs" ]] || error "--vcs requires a value (e.g. --vcs=git or --vcs=none)"
                 ;;
             --lang=*)
                 lang="${1#*=}"
-                [[ -n "$lang" ]] || error "参数 --lang 需要值（如 --lang=cpp）"
+                [[ -n "$lang" ]] || error "--lang requires a value (e.g. --lang=cpp)"
                 ;;
             --help|-h)
                 usage
                 ;;
             -*)
-                error "未知参数: $1"
+                error "Unknown argument: $1"
                 ;;
             *)
                 if [[ -n "$target_dir" ]]; then
-                    error "位置参数过多: $1"
+                    error "Too many positional arguments: $1"
                 fi
                 target_dir="$1"
                 ;;
@@ -164,7 +172,7 @@ main() {
         shift
     done
 
-    # 验证版本控制参数
+    # Validate the VCS argument.
     if [[ "$vcs" != "none" ]]; then
         if [[ ! -d "${VCS_TEMPLATES_DIR}/${vcs}" ]]; then
             available_vcs="$(list_template_names "$VCS_TEMPLATES_DIR")"
@@ -173,78 +181,78 @@ main() {
             else
                 available_vcs="none"
             fi
-            error "不支持的版本控制: $vcs (可选: ${available_vcs})"
+            error "Unsupported VCS: $vcs (choices: ${available_vcs})"
         fi
     fi
 
-    # 验证语言参数
+    # Validate the language argument.
     if [[ -n "$lang" ]]; then
         if [[ ! -d "${LANGUAGE_TEMPLATES_DIR}/${lang}" ]]; then
             available_langs="$(list_template_names "$LANGUAGE_TEMPLATES_DIR")"
-            [[ -n "$available_langs" ]] || available_langs="无"
-            error "不支持的语言: $lang (可选: ${available_langs})"
+            [[ -n "$available_langs" ]] || available_langs="none"
+            error "Unsupported language: $lang (choices: ${available_langs})"
         fi
     fi
 
-    # 确定目标目录
+    # Determine the target directory.
     if [[ -z "$target_dir" ]]; then
         target_dir="$(pwd)"
     fi
 
-    # 创建目标目录（如果不存在）
+    # Create the target directory if missing.
     if [[ ! -d "$target_dir" ]]; then
-        info "创建目录: $target_dir"
+        info "Creating directory: $target_dir"
         mkdir -p "$target_dir"
     fi
 
-    # 转换为绝对路径
+    # Convert to an absolute path.
     target_dir="$(cd "$target_dir" && pwd)"
     project_name="$(project_name_from_dir "$target_dir")"
     copied_files="$(mktemp "${TMPDIR:-/tmp}/proj-setup-copied.XXXXXX")"
     trap '[[ -n "${copied_files:-}" ]] && rm -f "$copied_files"' EXIT
 
-    info "初始化项目: $target_dir"
-    info "版本控制: $vcs"
-    [[ -n "$lang" ]] && info "语言模板: $lang"
+    info "Initializing project: $target_dir"
+    info "Version control: $vcs"
+    [[ -n "$lang" ]] && info "Language template: $lang"
 
-    # 1. 复制基础模板
+    # 1. Copy base templates.
     echo ""
-    info "复制基础配置..."
+    info "Copying base config..."
     copy_templates "${BASE_TEMPLATES_DIR}" "$target_dir" "$copied_files"
 
-    # 2. 复制版本控制模板
+    # 2. Copy VCS templates.
     if [[ "$vcs" != "none" ]]; then
         echo ""
-        info "复制 ${vcs} 配置..."
+        info "Copying ${vcs} config..."
         copy_templates "${VCS_TEMPLATES_DIR}/${vcs}" "$target_dir" "$copied_files"
     fi
 
-    # 3. 复制语言模板（如果指定）
+    # 3. Copy language templates (if specified).
     if [[ -n "$lang" ]]; then
         echo ""
-        info "复制 ${lang} 模板..."
+        info "Copying ${lang} template..."
         copy_templates "${LANGUAGE_TEMPLATES_DIR}/${lang}" "$target_dir" "$copied_files"
     fi
 
-    # 4. 替换模板中的项目名占位符（__PROJECT_NAME__，所有语言通用）
+    # 4. Replace the project-name placeholder (__PROJECT_NAME__) in templates.
     while IFS= read -r -d '' file; do
         customize_project_name "$file" "$project_name"
     done < "$copied_files"
 
-    # 5. 初始化版本控制（如果尚未初始化）
+    # 5. Initialize version control (if not already done).
     if [[ "$vcs" == "git" ]]; then
         echo ""
         if [[ -d "${target_dir}/.git" ]]; then
-            warn "Git 仓库已存在，跳过初始化"
+            warn "Git repo already exists; skipping init"
         else
-            info "初始化 Git 仓库..."
+            info "Initializing the Git repo..."
             (cd "$target_dir" && git init -q)
-            ok "Git 仓库已初始化"
+            ok "Git repo initialized"
         fi
     fi
 
     echo ""
-    ok "项目初始化完成！"
+    ok "Project initialization complete!"
 }
 
 main "$@"

@@ -14,21 +14,21 @@ main() {
     local resolved_dir=""
     local git_name git_email
 
-    [[ -n "$repo_dir" ]] || error "用法: $0 <dotfiles-dir>"
-    resolved_dir="$(dotfiles_dir "$repo_dir")" || error "无法访问 dotfiles 目录: $repo_dir"
+    [[ -n "$repo_dir" ]] || error "Usage: $0 <dotfiles-dir>"
+    resolved_dir="$(dotfiles_dir "$repo_dir")" || error "Cannot access dotfiles dir: $repo_dir"
     repo_dir="$resolved_dir"
 
-    info "正在配置 Git 环境..."
+    info "Configuring the Git environment..."
     if [[ ! -f "$HOME/.gitconfig.local" ]]; then
         echo ""
-        warn "未发现 ~/.gitconfig.local （用于存储 Git 用户名和邮箱）"
-        if confirm "是否立即创建？ [y/N]: " 0; then
-            git_name="$(ask_value "请输入 Git 用户名 (默认: for13to1): " "for13to1")"
-            git_email="$(ask_value "请输入 Git 邮箱 (默认: for13to1@outlook.com): " "for13to1@outlook.com")"
+        warn "$HOME/.gitconfig.local not found (it stores your Git name and email)"
+        if confirm "Create it now? [y/N]: " 0; then
+            git_name="$(ask_value "Enter your Git name (default: for13to1): " "for13to1")"
+            git_email="$(ask_value "Enter your Git email (default: for13to1@outlook.com): " "for13to1@outlook.com")"
             printf '[user]\n    name = %s\n    email = %s\n' "$git_name" "$git_email" > "$HOME/.gitconfig.local"
-            ok ".gitconfig.local 已生成"
+            ok ".gitconfig.local created"
         else
-            info "已跳过。您稍后可以手动创建并填入以下内容："
+            info "Skipped. You can create it manually later with the following content:"
             info "  [user]"
             info "      name = for13to1"
             info "      email = for13to1@outlook.com"
@@ -36,7 +36,7 @@ main() {
     fi
 
     git -C "$repo_dir" config core.hooksPath "$repo_dir/_scripts/hooks"
-    info "已启用 Git 钩子: core.hooksPath=$repo_dir/_scripts/hooks"
+    info "Git hooks enabled: core.hooksPath=$repo_dir/_scripts/hooks"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

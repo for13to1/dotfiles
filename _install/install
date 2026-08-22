@@ -1,45 +1,40 @@
 #!/usr/bin/env bash
 #
-# _install/install — 按组安装软件包
+# _install/install — install packages by group
 #
-# 未指定时安装 default 组。
+# Installs the "default" group when none is specified.
 #
-# 用法:
+# Usage:
 #   install --<platform> [group...]
 #     --<platform>  --apt | --pacman | --brew
-#     [group...]  组名，可多选；缺省时安装 default 组
+#     [group...]    group names, can be multiple; defaults to the "default" group
 #
-# 环境变量:
-#   INSTALL_DRY=1       只输出合并去重后的最终列表，不真正安装（供测试/预览）
-#   INSTALL_BASE_DIR=…  覆盖 .group 文件根目录（默认脚本所在目录，测试用）
+# Environment:
+#   INSTALL_DRY=1       print the merged, deduped final list without installing (test/preview)
+#   INSTALL_BASE_DIR=…  override the .group root (defaults to the script dir; for tests)
 #
-# 约定:
-#   - 每组一个 .group 文件：apt/pacman 每行一个包名，brew 为 brew/cask 行。
-#   - 组间允许重复包：合并后按包名去重，再一次性安装。
+# Conventions:
+#   - One .group file per group: apt/pacman have one package per line; brew has brew/cask lines.
+#   - Duplicate packages across groups are allowed: merged, deduped, then installed once.
 #
 
 set -euo pipefail
 
-SCRIPT_PATH="${BASH_SOURCE[0]}"
-while [[ -L "$SCRIPT_PATH" ]]; do
-    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
-    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
-    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
-done
-SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/common.sh"
 
-# 进度/警告日志走 stderr，最终列表（DRY 输出）独占 stdout，便于管道与测试断言。
+# Progress/warning logs go to stderr; the final list (DRY output) owns stdout so it
+# can be piped and asserted in tests.
 info()      { msg 'info'  "$*" >&2; }
 warn()      { msg 'warn'  "$*" >&2; }
 ok()        { msg 'ok'    "$*" >&2; }
 error_msg() { msg 'error' "$*" >&2; }
 
 if (( $# < 1 )); then
-    echo "用法: $0 --<platform> [group...]" >&2
+    echo "Usage: $0 --<platform> [group...]" >&2
     echo "      --<platform>  --apt | --pacman | --brew" >&2
-    echo "      [group...]  组名，可多选；缺省时安装 default 组" >&2
+    echo "      [group...]    group names, can be multiple; defaults to the 'default' group" >&2
     exit 2
 fi
 
@@ -50,21 +45,21 @@ case "$PLATFORM_FLAG" in
     --apt)    PLATFORM="apt";    ext="group" ;;
     --pacman) PLATFORM="pacman"; ext="group" ;;
     --brew)   PLATFORM="brew";   ext="group" ;;
-    *) error "不支持的平台: $PLATFORM_FLAG (可选: --apt | --pacman | --brew)" ;;
+    *) error "Unsupported platform: $PLATFORM_FLAG (choices: --apt | --pacman | --brew)" ;;
 esac
 
 BASE_DIR="${INSTALL_BASE_DIR:-$SCRIPT_DIR}"
 
-# ── 确定组集合（缺省 = default 组）───────────────────────────────
+# ── Resolve the group set (default = "default" group) ──────────────
 groups=()
 if (( $# == 0 )); then
     groups=(default)
-    info "未指定组，安装 $PLATFORM 默认组: ${groups[*]}"
+    info "No group specified; installing the $PLATFORM default group: ${groups[*]}"
 else
     groups=("$@")
 fi
 
-# ── 收集 .group 文件 → 合并去重 ─────────────────────────────────
+# ── Collect .group files → merge & dedupe ──────────────────────────
 declare -a all_lines=()
 missing_groups=()
 for group in "${groups[@]}"; do
@@ -73,18 +68,18 @@ for group in "${groups[@]}"; do
         missing_groups+=("$group")
         continue
     fi
-    info "收集组 [$PLATFORM/$group]: $file"
+    info "Collecting group [$PLATFORM/$group]: $file"
     while IFS= read -r line; do
         all_lines+=("$line")
     done < <(group_list_lines "$file")
 done
 
 if (( ${#missing_groups[@]} > 0 )); then
-    error "未知的 $PLATFORM 安装组: ${missing_groups[*]}"
+    error "Unknown $PLATFORM install group: ${missing_groups[*]}"
 fi
 
 if (( ${#all_lines[@]} == 0 )); then
-    warn "没有可安装的包，跳过安装"
+    warn "No packages to install; skipping"
     exit 0
 fi
 
@@ -95,17 +90,17 @@ else
 fi
 
 if [[ -z "$merged" ]]; then
-    warn "没有可安装的包，跳过安装"
+    warn "No packages to install; skipping"
     exit 0
 fi
 
-# ── 干跑：只输出合并去重后的最终列表 ─────────────────────────────
+# ── Dry run: print only the merged, deduped final list ─────────────
 if [[ -n "${INSTALL_DRY:-}" ]]; then
     printf '%s\n' "$merged"
     exit 0
 fi
 
-# ── 一次性安装 ───────────────────────────────────────────────────
+# ── One-shot install ───────────────────────────────────────────────
 pkgs=()
 while IFS= read -r p; do
     [[ -n "$p" ]] && pkgs+=("$p")
@@ -113,32 +108,32 @@ done <<< "$merged"
 
 case "$PLATFORM" in
     apt)
-        command -v apt &>/dev/null || error "未找到 apt"
-        info "正在通过 apt 安装 ${#pkgs[@]} 个软件包..."
+        command -v apt &>/dev/null || error "apt not found"
+        info "Installing ${#pkgs[@]} packages via apt..."
         if ! sudo apt install -y "${pkgs[@]}"; then
-            warn "apt 安装有失败项，请稍后重试"
+            warn "apt install had failures; retry later"
             exit 1
         fi
         ;;
     pacman)
-        command -v pacman &>/dev/null || error "未找到 pacman"
-        info "正在通过 pacman 安装 ${#pkgs[@]} 个软件包..."
+        command -v pacman &>/dev/null || error "pacman not found"
+        info "Installing ${#pkgs[@]} packages via pacman..."
         if ! sudo pacman -S --noconfirm --needed "${pkgs[@]}"; then
-            warn "pacman 安装有失败项，请稍后重试"
+            warn "pacman install had failures; retry later"
             exit 1
         fi
         ;;
     brew)
-        command -v brew &>/dev/null || error "未找到 brew"
+        command -v brew &>/dev/null || error "brew not found"
         tmp="$(mktemp "${TMPDIR:-/tmp}/install-brew.XXXXXX")"
         trap 'rm -f "$tmp"' EXIT
         printf '%s\n' "$merged" > "$tmp"
-        info "正在通过 brew bundle 安装（${#pkgs[@]} 项）..."
+        info "Installing via brew bundle (${#pkgs[@]} entries)..."
         if ! brew bundle --file="$tmp"; then
-            warn "brew 安装有失败项，请稍后重试"
+            warn "brew install had failures; retry later"
             exit 1
         fi
         ;;
 esac
 
-ok "$PLATFORM 组安装完成: ${groups[*]}"
+ok "$PLATFORM group install complete: ${groups[*]}"

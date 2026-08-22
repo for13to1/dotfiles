@@ -1,24 +1,18 @@
 #!/usr/bin/env bash
 #
-# stow-sync.sh — 统一的 Stow 同步入口
-# 用法: stow-sync.sh <dotfiles-dir> <target-dir> <module>...
-# 执行 preflight、冲突备份、共享目录创建、stow -R 和挂载后校验。
+# stow-sync.sh — single Stow sync entry point
+# Usage: stow-sync.sh <dotfiles-dir> <target-dir> <module>...
+# Runs preflight, conflict backup, shared dir creation, stow -R, and post-mount verify.
 #
 
 set -euo pipefail
 
-SCRIPT_PATH="${BASH_SOURCE[0]}"
-while [[ -L "$SCRIPT_PATH" ]]; do
-    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
-    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
-    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="${SCRIPT_DIR}/${SCRIPT_PATH}"
-done
-SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_PATH")" && pwd)"
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/common.sh"
 
 if (( $# < 2 )); then
-    echo "用法: $0 <dotfiles-dir> <target-dir> <module>..." >&2
+    echo "Usage: $0 <dotfiles-dir> <target-dir> <module>..." >&2
     exit 2
 fi
 
@@ -27,26 +21,27 @@ TARGET_DIR="$2"
 shift 2
 
 DOTFILES_DIR="$(dotfiles_dir "$DOTFILES_DIR")" || {
-    echo "无法访问 dotfiles 目录: $DOTFILES_DIR" >&2
+    echo "Cannot access dotfiles dir: $DOTFILES_DIR" >&2
     exit 1
 }
 TARGET_DIR="$(cd -P -- "$TARGET_DIR" 2>/dev/null && pwd -P)" || {
-    echo "无法访问目标目录: $TARGET_DIR" >&2
+    echo "Cannot access target dir: $TARGET_DIR" >&2
     exit 1
 }
 
 if (( $# == 0 )); then
-    warn "没有需要挂载的模块，跳过 Stow"
+    warn "No modules to mount; skipping Stow"
     exit 0
 fi
 
 cd "$DOTFILES_DIR"
-info "正在使用 Stow 同步模块: $* ..."
+info "Syncing Stow modules: $* ..."
 
 bash "$SCRIPT_DIR/check-links.sh" preflight "$DOTFILES_DIR" "$TARGET_DIR" "$@" \
-    || warn "挂载前检查有异常，继续尝试备份与挂载"
+    || warn "Preflight reported issues; continuing with backup and mount"
 
-# 这些是系统共享目录，不能被备份；备份后 stow 会对整个目录进行折叠。
+# These are system-shared directories that must not be backed up; after backup, stow
+# would fold the whole directory.
 SHARED_PARENT_DIRS=(".config")
 
 backup_explicit_conflicts() {
@@ -76,7 +71,7 @@ backup_explicit_conflicts() {
 
         local timestamp
         timestamp="$(date +%Y%m%d_%H%M%S)"
-        warn "发现冲突文件/目录 $full_target （非软链接），备份为 $full_target.bak.$timestamp"
+        warn "Found conflicting file/dir $full_target (not a symlink); backing up to $full_target.bak.$timestamp"
         mv "$full_target" "$full_target.bak.$timestamp"
     fi
 }
@@ -89,13 +84,13 @@ backup_module_conflicts() {
 
     while IFS= read -r -d '' path; do
         rel="${path#"$mod"/}"
-        # 目录冲突按目录整体备份。
+        # Back up directory conflicts as whole directories.
         backup_explicit_conflicts "$mod" "$rel"
     done < <(stow_find "$mod" -mindepth 1 -type d)
 
     while IFS= read -r -d '' path; do
         rel="${path#"$mod"/}"
-        # 文件冲突按文件路径备份。
+        # Back up file conflicts by file path.
         local parent
         parent="$TARGET_DIR/$(dirname "$rel")"
         [[ -e "$parent" || -L "$parent" ]] || continue
@@ -117,10 +112,10 @@ for ignore in "${STOW_IGNORE_NAMES[@]}"; do
 done
 stow_args+=( -t "$TARGET_DIR" )
 
-# 逐模块挂载：单个失败不影响其余模块，最后统一汇总。
+# Mount module by module: one failure does not affect the rest; failures are tallied.
 FAILED=0
 for mod in "$@"; do
-    stow "${stow_args[@]}" -R "$mod" || { error_msg "挂载失败: $mod"; FAILED=1; }
+    stow "${stow_args[@]}" -R "$mod" || { error_msg "Mount failed: $mod"; FAILED=1; }
 done
 
 if (( FAILED == 0 )); then
@@ -129,7 +124,7 @@ if (( FAILED == 0 )); then
 fi
 
 if (( FAILED )); then
-    error_msg "Stow 同步有失败项，请运行 make sync 修复"
+    error_msg "Stow sync had failures; run 'make sync' to fix"
     exit 1
 fi
-ok "Stow 同步完成"
+ok "Stow sync complete"
