@@ -232,8 +232,7 @@ if [[ -f "$DOTFILES_DIR/_scripts/modules.conf" && -f "$DOTFILES_DIR/_scripts/lis
 fi
 
 if (( ${#STOW_MODULES[@]} == 0 )); then
-    warn "No valid module list in modules.conf; falling back to the default list..."
-    STOW_MODULES=(agents zsh git vim nvim tmux ripgrep)
+    warn "No modules found in _scripts/modules.conf; nothing to mount"
 else
     info "Loaded modules from _scripts/modules.conf: ${STOW_MODULES[*]}"
 fi
