@@ -133,9 +133,12 @@ case "$OSTYPE" in
 esac
 # <<< rustup loading <<<
 
-# >>> postgresql@18 loading >>>
-[[ -d "/opt/homebrew/opt/postgresql@18/bin" ]] && export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
-# <<< postgresql@18 loading <<<
+# >>> postgresql loading >>>
+for _pg_dir in /opt/homebrew/opt/postgresql*(-/N); do
+    [[ -d "$_pg_dir/bin" ]] && export PATH="$_pg_dir/bin:$PATH"
+done
+unset _pg_dir
+# <<< postgresql loading <<<
 
 # >>> zoxide (better cd) loading >>>
 if command -v zoxide &>/dev/null; then

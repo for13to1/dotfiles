@@ -173,7 +173,11 @@ case "$OS" in
                     || warn "Generation failed; you can run 'sudo locale-gen en_US.UTF-8' later"
             fi
         elif command -v pacman &>/dev/null; then
-            sudo pacman -Syu --noconfirm
+            if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
+                sudo pacman -Syu --noconfirm
+            else
+                sudo pacman -Syu
+            fi
 
             # Ensure hard script dependencies are installed (zsh + stow + make).
             if ! command -v zsh &>/dev/null; then

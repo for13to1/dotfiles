@@ -129,6 +129,8 @@ check_optional_command nvim
 check_optional_command vim
 check_optional_command tmux
 check_optional_command rg
+check_optional_command fd
+check_optional_command bat
 check_optional_command fnm
 
 echo ""
