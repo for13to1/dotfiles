@@ -120,8 +120,17 @@ fi
 # <<< fnm loading <<<
 
 # >>> rustup (cargo) loading >>>
-# 只有当安装了 rustup 时才添加 bin 目录到 PATH
-[[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
+# 不同平台的 rustup 代理位置不同：
+#   - macOS：Homebrew 的 rustup 是 keg-only，代理在 brew 的 opt 目录（不建 ~/.cargo/bin）
+#   - Linux：Debian 官方安装器 / Arch pacman，代理统一在 ~/.cargo/bin
+case "$OSTYPE" in
+    darwin*)
+        [[ -d "/opt/homebrew/opt/rustup/bin" ]] && export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+        ;;
+    *)
+        [[ -d "$HOME/.cargo/bin" ]] && export PATH="$HOME/.cargo/bin:$PATH"
+        ;;
+esac
 # <<< rustup loading <<<
 
 # >>> postgresql@18 loading >>>

@@ -15,7 +15,7 @@
 .check_failed
 
 # 第三方安装器原始脚本（仅本地参考，不入库）
-_install/scratch/
+_install/installer/
 
 # Python 缓存
 __pycache__/

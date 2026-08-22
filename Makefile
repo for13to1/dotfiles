@@ -25,8 +25,8 @@ doctor:
 test: lint-shell test-shell test-skills
 
 lint-shell:
-	@if command -v shellcheck >/dev/null 2>&1; then \
-		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec shellcheck {} + ; \
+	@set -e; if command -v shellcheck >/dev/null 2>&1; then \
+		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/installer/*' -exec shellcheck {} + ; \
 		shellcheck _scripts/hooks/pre-push; \
 	else \
 		echo "❌ shellcheck 未安装，无法运行完整测试" >&2; \
@@ -34,7 +34,7 @@ lint-shell:
 	fi
 
 test-shell:
-	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/scratch/*' -exec bash -n {} \;
+	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/installer/*' -exec bash -n {} \;
 	@set -e; for t in _tests/test-*.sh; do bash "$$t"; done
 
 test-skills:
