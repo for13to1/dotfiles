@@ -1,67 +1,14 @@
 #!/usr/bin/env bash
-#
-# test-proj-setup.sh - proj-setup.sh behavior tests
-# Usage: bash _tests/test-proj-setup.sh
-#
+# test-proj-setup.sh — proj-setup/bin/proj-setup.sh 行为测试（模板与占位符定制）
+# 用法: bash _tests/test-proj-setup.sh
 
 set -euo pipefail
+# shellcheck disable=SC1091  # helpers.sh 动态路径
+source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/proj-setup.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-
-fail() {
-    echo "FAIL: $*" >&2
-    exit 1
-}
-
-assert_file() {
-    local desc="$1"
-    local path="$2"
-    [[ -f "$path" ]] || fail "$desc"
-}
-
-assert_dir() {
-    local desc="$1"
-    local path="$2"
-    [[ -d "$path" ]] || fail "$desc"
-}
-
-assert_missing() {
-    local desc="$1"
-    local path="$2"
-    [[ ! -e "$path" ]] || fail "$desc"
-}
-
-assert_contains() {
-    local desc="$1"
-    local path="$2"
-    local pattern="$3"
-    grep -q -- "$pattern" "$path" || fail "$desc"
-}
-
-assert_equals() {
-    local desc="$1"
-    local expected="$2"
-    local actual="$3"
-    [[ "$actual" == "$expected" ]] || fail "$desc: expected '$expected', got '$actual'"
-}
-
-assert_pass() {
-    local desc="$1"
-    shift
-    if ! "$@" >/dev/null; then
-        fail "$desc"
-    fi
-}
-
-assert_fail() {
-    local desc="$1"
-    shift
-    if "$@" >/dev/null 2>&1; then
-        fail "$desc"
-    fi
-}
 
 mkdir -p "$TMP/dotfiles/_scripts" "$TMP/dotfiles/proj-setup/bin" "$TMP/work"
 cp "$ROOT/_scripts/common.sh" "$TMP/dotfiles/_scripts/common.sh"
@@ -80,7 +27,7 @@ assert_pass "default setup should create target and initialize git" \
 assert_dir "new target directory should be created" "$new_target"
 assert_dir "default setup should initialize git" "$new_target/.git"
 assert_file "git template should be copied" "$new_target/.gitignore"
-assert_contains "base README should use normalized project name" \
+assert_file_contains "base README should use normalized project name" \
     "$new_target/README.md" '^# new-project$'
 
 python_target="$TMP/work/My App"
@@ -94,11 +41,11 @@ assert_missing "--vcs=none should not initialize git" "$python_target/.git"
 assert_file "python pyproject should be copied" "$python_target/pyproject.toml"
 assert_file "nested language template should be copied" \
     "$python_target/src/__PROJECT_NAME__/__init__.py"
-assert_contains "README placeholder should be customized" \
+assert_file_contains "README placeholder should be customized" \
     "$python_target/README.md" '^# my-app$'
-assert_contains "pyproject placeholder should be customized" \
+assert_file_contains "pyproject placeholder should be customized" \
     "$python_target/pyproject.toml" '^name = "my-app"$'
-assert_contains "nested template placeholder should be customized" \
+assert_file_contains "nested template placeholder should be customized" \
     "$python_target/src/__PROJECT_NAME__/__init__.py" '^PACKAGE = "my-app"$'
 assert_equals "existing files should not be customized" \
     'keep __PROJECT_NAME__ unchanged' "$(cat "$python_target/NOTES.md")"

@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
-#
 # test-install.sh — _install/install 行为测试（干跑模式）
 # 用法: bash _tests/test-install.sh
-#
 
 set -euo pipefail
+# shellcheck disable=SC1091  # helpers.sh 动态路径
+source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/install-test.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-
-fail() {
-    echo "FAIL: $*" >&2
-    exit 1
-}
 
 # ── 搭建临时 .group 文件树（apt/ pacman/ brew/ 三平台）──────────
 mkdir -p "$TMP/apt" "$TMP/pacman" "$TMP/brew"

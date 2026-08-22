@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# Behavior tests for the domain components orchestrated by bootstrap.sh.
+# test-bootstrap-components.sh — _bootstrap/*.sh 组件行为测试
+# 用法: bash _tests/test-bootstrap-components.sh
 
 set -euo pipefail
+# shellcheck disable=SC1091  # helpers.sh 动态路径
+source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/bootstrap-components.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-
-fail() {
-    echo "FAIL: $*" >&2
-    exit 1
-}
 
 TEST_HOME="$TMP/home"
 mkdir -p "$TEST_HOME"

@@ -1,31 +1,23 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2016  # 单引号字符串是刻意为之：传给 run() 后原样写入临时文件，在子 shell 中才求值
+# shellcheck disable=SC2016  # 单引号字符串刻意保留：传给 run() 后原样写盘，在子 shell 中才求值
 #
-# test-net-proxy.sh — net_proxy.sh 行为测试（网络代理开关与配置）
+# test-net-proxy.sh — zsh/.zsh.d/net_proxy.sh 行为测试（代理开关与配置）
 # 用法: bash _tests/test-net-proxy.sh
-#
 
 set -euo pipefail
+# shellcheck disable=SC1091  # helpers.sh 动态路径
+source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NET_PROXY_SH="$ROOT/zsh/.zsh.d/net_proxy.sh"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/net-proxy.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
-fail() {
-    echo "FAIL: $*" >&2
-    exit 1
-}
+NET_PROXY_SH="$ROOT/zsh/.zsh.d/net_proxy.sh"
 
 # 在隔离的 HOME 下执行一段脚本（每次全新 shell，模拟新终端）
 run() {
     printf '%s\n' "$1" > "$TMP/run.sh"
     HOME="$TMP/home" bash -c "source '$NET_PROXY_SH'; . '$TMP/run.sh'"
-}
-
-assert_contains() {
-    local desc="$1" haystack="$2" pattern="$3"
-    grep -q -- "$pattern" <<<"$haystack" || fail "$desc (实际输出: $haystack)"
 }
 
 # 读取配置文件中当前保存的代理地址

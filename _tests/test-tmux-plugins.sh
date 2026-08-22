@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
+# test-tmux-plugins.sh — _scripts/tmux-plugins.sh 行为测试（TPM 克隆与安装流程）
+# 用法: bash _tests/test-tmux-plugins.sh
 
 set -euo pipefail
+# shellcheck disable=SC1091  # helpers.sh 动态路径
+source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
-ROOT="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="$ROOT/_scripts/tmux-plugins.sh"
+ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/tmux-plugins-test.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
+
+SCRIPT="$ROOT/_scripts/tmux-plugins.sh"
 
 fake_bin="$TMP/bin"
 mkdir -p "$fake_bin"
 home="$TMP/home"
 mkdir -p "$home"
-
-fail() {
-    echo "FAIL $*" >&2
-    exit 1
-}
 
 # 模拟 clone 后的 tpm 命令。
 cat > "$fake_bin/git" <<'EOF'

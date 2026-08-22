@@ -56,15 +56,16 @@ dotfiles/
 │   ├── doctor.sh               # 环境健康诊断
 │   └── hooks/
 │       └── pre-push            # Git 钩子：push 前自动运行 make test
-├── _tests/                     # 行为测试（make test 自动发现）
-│   ├── test-bootstrap-components.sh # bootstrap 领域组件行为测试
+├── _tests/                     # 行为测试（make test 自动发现 test-*.sh）
+│   ├── helpers.sh              # 共享断言库（fail/assert_*）
+│   ├── README.md               # 测试分工与约定
+│   ├── test-bootstrap-components.sh # _bootstrap/* 组件行为测试
 │   ├── test-check-links.sh     # check-links 行为测试
-│   ├── test-doctor.sh          # doctor 行为测试
+│   ├── test-doctor.sh          # doctor 退出码契约测试
 │   ├── test-proj-setup.sh      # proj-setup 行为测试
 │   ├── test-stow-sync.sh       # stow-sync 集成测试
 │   ├── test-net-proxy.sh       # net_proxy 行为测试
 │   ├── test-install.sh         # _install/install 行为测试
-│   ├── test-install-ecosystem-tools.sh # 生态安装器行为测试
 │   └── test-tmux-plugins.sh    # tmux 插件同步行为测试
 ├── Makefile                    # 多平台模块管理与同步
 ├── bootstrap.sh                # 一键部署脚本

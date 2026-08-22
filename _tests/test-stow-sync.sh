@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
-#
-# test-stow-sync.sh — stow-sync.sh 集成测试
+# test-stow-sync.sh — _scripts/stow-sync.sh 集成测试（参数传递与备份）
 # 用法: bash _tests/test-stow-sync.sh
-#
 
 set -euo pipefail
+# shellcheck disable=SC1091  # helpers.sh 动态路径
+source "$(dirname "${BASH_SOURCE[0]}")/helpers.sh"
 
 ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/stow-sync.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-
-fail() {
-    echo "FAIL: $*" >&2
-    exit 1
-}
 
 mkdir -p "$TMP/bin" "$TMP/dotfiles/git/.venv/bin" "$TMP/home"
 printf 'new\n' > "$TMP/dotfiles/git/.gitconfig"
