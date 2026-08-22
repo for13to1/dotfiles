@@ -195,22 +195,15 @@ case "$OS" in
             warn "Unrecognized Linux package manager; please install zsh and required tools manually"
         fi
 
-        # On Debian-like platforms, set up tool managers first, then install CLIs
-        # via the npm/uv/Cargo channels.
-        if [[ -f "$DOTFILES_DIR/_install/install-by-curl.sh" ]]; then
-            bash "$DOTFILES_DIR/_install/install-by-curl.sh"
-        fi
-
-        if [[ -f "$DOTFILES_DIR/_install/install-by-npm.sh" ]]; then
-            bash "$DOTFILES_DIR/_install/install-by-npm.sh"
-        fi
-
-        if [[ -f "$DOTFILES_DIR/_install/install-by-uv.sh" ]]; then
-            bash "$DOTFILES_DIR/_install/install-by-uv.sh"
-        fi
-
-        if [[ -f "$DOTFILES_DIR/_install/install-by-cargo.sh" ]]; then
-            bash "$DOTFILES_DIR/_install/install-by-cargo.sh"
+        # Only on Debian-like platforms do we use these ecosystem channels (the
+        # distro repos ship stale tool versions there); macOS and Arch use their own.
+        if is_debian_like; then
+            for installer in install-by-curl.sh install-by-npm.sh install-by-uv.sh install-by-cargo.sh; do
+                if [[ -f "$DOTFILES_DIR/_install/$installer" ]]; then
+                    bash "$DOTFILES_DIR/_install/$installer"
+                fi
+            done
+            unset installer
         fi
         ;;
 

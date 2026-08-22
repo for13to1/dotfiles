@@ -181,14 +181,12 @@ dedupe_brewfile() {
 
 # ── Interactive install ──────────────────────────────────────────
 # Usage: install_with_prompt <check_cmd> <prompt> <install_fn> <success_msg> [known_paths...]
-# Skips when already installed (on PATH or a known path exists) or on non-Debian platforms.
+# Skips when already installed (on PATH or a known path exists).
 install_with_prompt() {
     local check_cmd="$1" prompt="$2" install_fn="$3" success_msg="$4"
     shift 4
 
     is_installed "$check_cmd" "$@" && return 0
-
-    is_debian_like || return 0
 
     warn "$prompt"
     if confirm "Install now? [y/N]: " 0; then

@@ -79,9 +79,6 @@ install_biome() {
 }
 
 main() {
-    # Take over npm CLI installs only on Debian-like platforms.
-    is_debian_like || return 0
-
     if ! ensure_fnm_node_env; then
         return 0
     fi

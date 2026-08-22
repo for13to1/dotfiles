@@ -20,8 +20,6 @@ install_uv() {
 }
 
 main() {
-    is_debian_like || return 0
-
     install_with_prompt \
         "fnm" \
         "fnm not found; install it via the official installer?" \

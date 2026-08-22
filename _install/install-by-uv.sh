@@ -22,8 +22,6 @@ install_ruff() {
 }
 
 main() {
-    is_debian_like || return 0
-
     if [[ -z "$(find_uv_bin || true)" ]]; then
         warn "uv not found; skipping Python CLI installs"
         return 0

@@ -22,8 +22,6 @@ install_stylua() {
 }
 
 main() {
-    is_debian_like || return 0
-
     if [[ -z "$(find_cargo_bin || true)" ]]; then
         warn "cargo not found; skipping Rust CLI installs"
         return 0
