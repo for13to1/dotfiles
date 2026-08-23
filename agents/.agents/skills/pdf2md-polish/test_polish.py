@@ -1,6 +1,7 @@
 """Tests for pdf2md-polish deterministic processing pipeline."""
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -214,42 +215,42 @@ class TestSentenceSplitting:
 
 class TestInlineMath:
     def test_currency_not_math(self):
-        text, mapping = polish.protect_inline_math("The cost is $100 per unit.")
+        _text, mapping = polish.protect_inline_math("The cost is $100 per unit.")
         assert len(mapping) == 0
 
     def test_simple_formula(self):
-        text, mapping = polish.protect_inline_math("The expression $x + y$ is simple.")
+        _text, mapping = polish.protect_inline_math("The expression $x + y$ is simple.")
         assert len(mapping) == 1
 
     def test_formula_starting_with_digit(self):
-        text, mapping = polish.protect_inline_math("$3x + 2y$ evaluates to 7.")
+        _text, mapping = polish.protect_inline_math("$3x + 2y$ evaluates to 7.")
         assert len(mapping) == 1
 
     def test_formula_with_backslash_commands(self):
-        text, mapping = polish.protect_inline_math("$\\alpha + \\beta$ is common.")
+        _text, mapping = polish.protect_inline_math("$\\alpha + \\beta$ is common.")
         assert len(mapping) == 1
 
     def test_formula_with_period_inside(self):
         """Period inside formula should be protected."""
-        text, mapping = polish.protect_inline_math("$f(3) = 9.$ proves the claim.")
+        _text, mapping = polish.protect_inline_math("$f(3) = 9.$ proves the claim.")
         assert len(mapping) == 1
 
     def test_comma_separated_variables(self):
-        text, mapping = polish.protect_inline_math("Variables $a, b, c$ are given.")
+        _text, mapping = polish.protect_inline_math("Variables $a, b, c$ are given.")
         assert len(mapping) == 1
 
     def test_escaped_dollar_in_formula(self):
-        text, mapping = polish.protect_inline_math(r"\$$b$")
+        _text, mapping = polish.protect_inline_math(r"\$$b$")
         assert len(mapping) == 1
         assert list(mapping.values()) == ["$b$"]
 
     def test_escaped_dollar_closing(self):
-        text, mapping = polish.protect_inline_math(r"$b\$$")
+        _text, mapping = polish.protect_inline_math(r"$b\$$")
         assert len(mapping) == 1
         assert list(mapping.values()) == [r"$b\$$"]
 
     def test_formula_with_decimal_spaces_protected(self):
-        text, mapping = polish.protect_inline_math(
+        _text, mapping = polish.protect_inline_math(
             "Once all the off-grid brightnesses $M _ { o } ( i + 0 . 5 , j + 0 . 5 )$ have been determined"
         )
         assert len(mapping) == 1
@@ -761,23 +762,23 @@ class TestCodeFencePreservation:
 class TestInlineMathEdgeCases:
     def test_escaped_opening_dollar(self):
         r"""Escaped \$ should not open inline math."""
-        text, mapping = polish.protect_inline_math(r"price is \$100 and $x+y$ ok")
+        _text, mapping = polish.protect_inline_math(r"price is \$100 and $x+y$ ok")
         assert len(mapping) == 1
         assert list(mapping.values()) == ["$x+y$"]
 
     def test_consecutive_double_dollars(self):
         """$$ should not be treated as two single $ for inline math."""
-        text, mapping = polish.protect_inline_math("$$E = mc^2$$")
+        _text, mapping = polish.protect_inline_math("$$E = mc^2$$")
         assert len(mapping) == 0
 
     def test_dollar_followed_by_punctuation(self):
         """$ followed by punctuation is not valid math open."""
-        text, mapping = polish.protect_inline_math("$.50 is cheap")
+        _text, mapping = polish.protect_inline_math("$.50 is cheap")
         assert len(mapping) == 0
 
     def test_empty_formula(self):
         """Empty $$ is not valid inline math."""
-        text, mapping = polish.protect_inline_math("price is $$ here")
+        _text, mapping = polish.protect_inline_math("price is $$ here")
         assert len(mapping) == 0
 
     def test_math_boundary_spacing_e2e(self):
@@ -1180,3 +1181,21 @@ class TestFinalization:
 
         assert source.read_text(encoding="utf-8") == "raw"
         assert polished.read_text(encoding="utf-8") == "clean"
+
+    def test_non_utf8_history_file_does_not_crash(self, tmp_path):
+        """Non-UTF-8 bytes in history.json must be handled gracefully by update_history."""
+        history_file = tmp_path / "history.json"
+        # Write invalid UTF-8 byte sequence
+        history_file.write_bytes(b"\xff\xfe\x00\x00corrupt_non_utf8_data")
+        dummy_input = tmp_path / "paper.md"
+        dummy_input.write_text("Hello world.", encoding="utf-8")
+
+        # Execute real update_history code path in polish.py
+        records = polish.update_history(dummy_input, "Polished output text.", history_path=history_file)
+
+        assert len(records) == 1
+        assert records[0]["file"] == "paper.md"
+        assert history_file.exists()
+        # Verify it successfully rewrote clean UTF-8 JSON
+        saved_data = json.loads(history_file.read_text(encoding="utf-8"))
+        assert len(saved_data) == 1

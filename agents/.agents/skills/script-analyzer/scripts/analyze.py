@@ -204,7 +204,7 @@ def detect_language(script_path: str) -> str:
                     return "perl"
                 elif "bash" in first_line or "sh" in first_line:
                     return "bash"
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         pass
 
     # Check extension
@@ -224,7 +224,7 @@ def analyze_patterns(content: str, language: str) -> dict[str, list[str]]:
     for line_num, line in enumerate(lines, 1):
         # Skip comments
         stripped = line.strip()
-        if stripped.startswith("#") or stripped.startswith("//"):
+        if stripped.startswith(("#", "//")):
             continue
 
         for category, pattern_list in patterns.items():
@@ -243,7 +243,7 @@ def detect_high_risk(content: str) -> list[str]:
 
     for line_num, line in enumerate(lines, 1):
         stripped = line.strip()
-        if stripped.startswith("#") or stripped.startswith("//"):
+        if stripped.startswith(("#", "//")):
             continue
         for pattern in HIGH_RISK_PATTERNS:
             if re.search(pattern, line, re.IGNORECASE):
@@ -532,7 +532,7 @@ def main():
 
             print("\n" + "=" * 60)
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"Error analyzing script: {e}", file=sys.stderr)
         sys.exit(1)
 

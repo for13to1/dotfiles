@@ -1,6 +1,6 @@
 # 忽略外部动态挂载的软链接，仅保留核心内置技能
-*
-!commit-summarizer/
-!pdf2md-polish/
-!script-analyzer/
-!.gitignore
+/*
+!/commit-summarizer/
+!/pdf2md-polish/
+!/script-analyzer/
+!/.gitignore

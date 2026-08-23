@@ -17,6 +17,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Sentinel placeholders for text protection ──────────────────────────────
@@ -521,7 +522,7 @@ def _unescaped_count(text: str, token: str) -> int:
 
 def is_display_math_start(line: str) -> bool:
     stripped = line.lstrip()
-    return stripped.startswith("$$") or stripped.startswith(r"\[") or bool(_LATEX_BEGIN_RE.match(line))
+    return stripped.startswith(("$$", r"\[")) or bool(_LATEX_BEGIN_RE.match(line))
 
 
 def is_html_table_start(line: str) -> bool:
@@ -799,9 +800,7 @@ def needs_join_space(left: str, right: str) -> bool:
     if left[-1] in "([{“‘（【《":
         return False
     # No space between two CJK runs; space everywhere else (CJK↔ASCII, CJK↔digit, ASCII↔ASCII)
-    if _is_cjk_or_punctuation(left[-1]) and _is_cjk_or_punctuation(right[0]):
-        return False
-    return True
+    return not (_is_cjk_or_punctuation(left[-1]) and _is_cjk_or_punctuation(right[0]))
 
 
 # CJK Han ranges (basic, extension A, compatibility, extension B+); excludes CJK punctuation/full-width forms
@@ -1184,7 +1183,7 @@ def process_block(block: Block) -> list[str]:
     # every block kind (not just paragraph/blockquote).
     try:
         return _process_block_inner(block)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         warn_block(block, f"{exc}; preserving block")
         return block.lines
 
@@ -1299,6 +1298,39 @@ def apply_headings(text: str, mapping: dict[int, str]) -> str:
     return "\n".join(lines)
 
 
+def update_history(input_path: Path, result: str, history_path: Path | None = None) -> list[dict]:
+    """Update history.json with run record, degrading gracefully on invalid/corrupted files."""
+    if history_path is None:
+        history_path = Path(__file__).parent / "history.json"
+
+    history_data: list[dict] = []
+    if history_path.exists():
+        try:
+            parsed = json.loads(history_path.read_text(encoding="utf-8"))
+            if isinstance(parsed, list):
+                history_data = parsed
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            history_data = []
+
+    sentences_count = len([s for s in re.split(r"[.!?。！？\n]+", result) if s.strip()])
+
+    history_data.append(
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat()[:19],
+            "file": input_path.name,
+            "sentences": sentences_count,
+            "warnings": get_warning_count(),
+            "notes": "Automated run log",
+        }
+    )
+    try:
+        history_path.write_text(json.dumps(history_data, indent=2), encoding="utf-8")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        print(f"Warning: Failed to update history.json: {e}", file=sys.stderr)
+
+    return history_data
+
+
 def finalize_files(input_path: Path) -> tuple[Path, Path]:
     """Back up the raw input and promote its polished sibling."""
     polished_path = input_path.with_name(f"{input_path.stem}-polished{input_path.suffix}")
@@ -1389,34 +1421,7 @@ def main():
         print(f"Done. Output: {output_path}")
 
         # Update history.json automatically
-        try:
-            history_path = Path(__file__).parent / "history.json"
-            history_data = []
-            if history_path.exists():
-                try:
-                    history_data = json.loads(history_path.read_text(encoding="utf-8"))
-                    if not isinstance(history_data, list):
-                        history_data = []
-                except Exception:
-                    pass
-
-            # Simple sentence count estimation
-            sentences_count = len([s for s in re.split(r"[.!?。！？\n]+", result) if s.strip()])
-
-            from datetime import datetime
-
-            history_data.append(
-                {
-                    "timestamp": datetime.now().isoformat()[:19],
-                    "file": input_path.name,
-                    "sentences": sentences_count,
-                    "warnings": get_warning_count(),
-                    "notes": "Automated run log",
-                }
-            )
-            history_path.write_text(json.dumps(history_data, indent=2), encoding="utf-8")
-        except Exception as e:
-            print(f"Warning: Failed to update history.json: {e}", file=sys.stderr)
+        update_history(input_path, result)
 
     elif args.command == "headings":
         input_path = Path(args.input)

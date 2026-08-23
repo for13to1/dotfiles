@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from analyze_staged import SCHEMA_VERSION, build_output, infer_change_type  # noqa: E402
+from analyze_staged import SCHEMA_VERSION, build_output, infer_change_type
 
 
 def _f(status, path, raw_status=None):

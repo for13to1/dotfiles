@@ -8,7 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from analyze import SCHEMA_VERSION, RiskLevel, analyze_script  # noqa: E402
+from analyze import SCHEMA_VERSION, RiskLevel, analyze_script
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 
@@ -118,6 +118,6 @@ if __name__ == "__main__":
         test_root_delete_variants_are_high_risk()
         test_non_regular_file_is_rejected()
         print("\n✓ All tests passed!")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"\n✗ Test failed: {e}")
         sys.exit(1)

@@ -39,7 +39,7 @@ SCHEMA_VERSION = 1
 
 def run(cmd: list[str], cwd: str | None = None) -> str:
     """Run a command and return stdout, stripped."""
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, check=False)
     return result.stdout.strip()
 
 
@@ -179,11 +179,11 @@ def classify_files(files: list[dict]) -> dict:
         "assets": [],
     }
 
-    test_patterns = re.compile(r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.|__tests__)", re.I)
-    config_patterns = re.compile(r"(\.env|config[._]|settings[._]|\.rc$|\.ya?ml$|\.toml$|\.json$|\.ini$)", re.I)
-    doc_patterns = re.compile(r"(\.md$|\.rst$|\.txt$|docs?/|README|CHANGELOG|LICENSE)", re.I)
-    ci_patterns = re.compile(r"(\.github/|\.gitlab|\.circleci|\.travis|Jenkinsfile|\.ci)", re.I)
-    asset_patterns = re.compile(r"(\.(png|jpg|jpeg|gif|svg|ico|woff|ttf|eot|mp[34]|wav)$)", re.I)
+    test_patterns = re.compile(r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.|__tests__)", re.IGNORECASE)
+    config_patterns = re.compile(r"(\.env|config[._]|settings[._]|\.rc$|\.ya?ml$|\.toml$|\.json$|\.ini$)", re.IGNORECASE)
+    doc_patterns = re.compile(r"(\.md$|\.rst$|\.txt$|docs?/|README|CHANGELOG|LICENSE)", re.IGNORECASE)
+    ci_patterns = re.compile(r"(\.github/|\.gitlab|\.circleci|\.travis|Jenkinsfile|\.ci)", re.IGNORECASE)
+    asset_patterns = re.compile(r"(\.(png|jpg|jpeg|gif|svg|ico|woff|ttf|eot|mp[34]|wav)$)", re.IGNORECASE)
 
     for f in files:
         p = f["path"]
@@ -222,14 +222,13 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
     """
     has_new = any(f["status"] == "A" for f in files)
     has_delete = any(f["status"] == "D" for f in files)
-    has_modify = any(f["status"] in ("M", "R") for f in files)
     has_rename = any(f["status"] == "R" for f in files)
-    has_tests = bool(re.search(r"(test[_/]|_test\.|\.test\.)", "\n".join(f["path"] for f in files), re.I))
-    has_docs = bool(re.search(r"(\.md$|docs?/)", "\n".join(f["path"] for f in files), re.I))
+    has_tests = bool(re.search(r"(test[_/]|_test\.|\.test\.)", "\n".join(f["path"] for f in files), re.IGNORECASE))
+    has_docs = bool(re.search(r"(\.md$|docs?/)", "\n".join(f["path"] for f in files), re.IGNORECASE))
     only_tests = has_tests and all(
-        re.search(r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.)", f["path"], re.I) for f in files
+        re.search(r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.)", f["path"], re.IGNORECASE) for f in files
     )
-    only_docs = has_docs and all(re.search(r"(\.md$|\.rst$|\.txt$|docs?/)", f["path"], re.I) for f in files)
+    only_docs = has_docs and all(re.search(r"(\.md$|\.rst$|\.txt$|docs?/)", f["path"], re.IGNORECASE) for f in files)
 
     # Check for refactoring signals: new + delete of similar files
     new_paths = {f["path"] for f in files if f["status"] == "A"}
@@ -239,13 +238,13 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
     # Check diff for feature/fix signals. Word boundaries avoid substring
     # false positives (e.g. "add" in "addition", "fix" in "prefix"). "new" is
     # intentionally dropped — too noisy (matches new_feature, renew, newest).
-    feat_signals = len(re.findall(r"^\+.*\b(?:feat|feature|add|implement|create)\b", diff_preview, re.I | re.M))
-    fix_signals = len(re.findall(r"^\+.*\b(?:fix|bug|patch|resolve|correct|repair)\b", diff_preview, re.I | re.M))
+    feat_signals = len(re.findall(r"^\+.*\b(?:feat|feature|add|implement|create)\b", diff_preview, re.IGNORECASE | re.MULTILINE))
+    fix_signals = len(re.findall(r"^\+.*\b(?:fix|bug|patch|resolve|correct|repair)\b", diff_preview, re.IGNORECASE | re.MULTILINE))
     refactor_signals = len(
         re.findall(
             r"^\+.*\b(?:refactor|rename|move|extract|reorganiz)\w*\b",
             diff_preview,
-            re.I | re.M,
+            re.IGNORECASE | re.MULTILINE,
         )
     )
 

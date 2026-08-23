@@ -64,7 +64,7 @@ cmd_attach() {
         if [[ -L "$target_link" ]]; then
             local existing_target
             existing_target="$(readlink "$target_link")"
-            if [[ "$existing_target" != *"_vendor/$vendor_name/"* && "$existing_target" != "../../../_vendor/$vendor_name/"* ]]; then
+            if [[ "$existing_target" != *"_vendor/$vendor_name/"* ]]; then
                 warn "Collision: '$skill_name' already linked from another vendor; prefixing as '$vendor_name-$skill_name'"
                 target_link="$SKILLS_ROOT/$vendor_name-$skill_name"
             fi
@@ -100,8 +100,8 @@ cmd_detach() {
     while IFS= read -r -d '' link; do
         local link_target
         link_target="$(readlink "$link")"
-        if [[ "$link_target" == *"_vendor"* ]]; then
-            if [[ -z "$target_vendor" || "$link_target" == *"_vendor/$target_vendor"* ]]; then
+        if [[ "$link_target" == *"_vendor/"* ]]; then
+            if [[ -z "$target_vendor" || "$link_target" == *"_vendor/$target_vendor/"* || "$link_target" == *"_vendor/$target_vendor" ]]; then
                 rm -f "$link"
                 ok "Detached: $(basename "$link")"
                 detached_count=$((detached_count + 1))
