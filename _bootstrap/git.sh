@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Ensure local Git identity and repository hooks.
-# Usage: git.sh <dotfiles-dir>
-# Inputs: explicit repository path; HOME and DOTFILES_NON_INTERACTIVE from the environment.
+# Usage: git.sh [dotfiles-dir]
+# Inputs: HOME and DOTFILES_NON_INTERACTIVE from the environment; the repository path defaults to the repo root.
 
 set -euo pipefail
 
@@ -10,11 +10,10 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../_scripts/common.sh"
 
 main() {
-    local repo_dir="${1:-}"
+    local repo_dir="${1:-$DOTFILES_DIR}"
     local resolved_dir=""
     local git_name git_email
 
-    [[ -n "$repo_dir" ]] || error "Usage: $0 <dotfiles-dir>"
     resolved_dir="$(dotfiles_dir "$repo_dir")" || error "Cannot access dotfiles dir: $repo_dir"
     repo_dir="$resolved_dir"
 

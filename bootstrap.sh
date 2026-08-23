@@ -18,10 +18,9 @@ OS="$(uname -s)"
 info "Detected OS: $OS"
 
 # ── 2. Package manager & environment bootstrap ────────────────
-SELECTED_MIRROR=""
 case "$OS" in
     Darwin*)
-        if ! SELECTED_MIRROR="$(bash "$DOTFILES_DIR/_bootstrap/pkg-mac.sh" "$DOTFILES_DIR")"; then
+        if ! bash "$DOTFILES_DIR/_bootstrap/pkg-mac.sh" "$DOTFILES_DIR"; then
             error "macOS package bootstrap did not complete. Please address the requirements above and rerun bootstrap.sh."
         fi
         ;;
@@ -38,7 +37,7 @@ esac
 # ── 3-5. Host base configuration ────────────────────────────────
 bash "$DOTFILES_DIR/_bootstrap/ssh.sh"
 bash "$DOTFILES_DIR/_bootstrap/git.sh" "$DOTFILES_DIR"
-bash "$DOTFILES_DIR/_bootstrap/shell.sh" "$OS" "${SELECTED_MIRROR:-}"
+bash "$DOTFILES_DIR/_bootstrap/shell.sh" "$OS"
 
 # ── 6. Mount configuration files (Stow) ─────────────────────────
 info "Mounting configuration files with Stow..."

@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/common.sh"
 
-# Progress/interactive output goes to stderr; stdout emits the selected mirror name for callers.
+# All progress/interactive output goes to stderr so callers can capture or redirect stdout freely.
 info()      { msg 'info'  "$*" >&2; }
 warn()      { msg 'warn'  "$*" >&2; }
 ok()        { msg 'ok'    "$*" >&2; }
@@ -36,7 +36,7 @@ main() {
         info "Xcode.app not found; installing Command Line Tools..."
         xcode-select --install >&2
         echo "Click \"Install\" in the dialog, then rerun bootstrap.sh." >&2
-        exit 10
+        exit 1
     else
         ok "Xcode Command Line Tools ready"
     fi
@@ -106,15 +106,12 @@ main() {
     fi
     hint_optional_groups brew "$DOTFILES_DIR"
 
-    # Apply macOS system preferences.
-    if [[ -f "$DOTFILES_DIR/_setup/mac/setup.sh" ]]; then
+    # Apply macOS system preferences (skippable in tests via DOTFILES_SKIP_SYSTEM_SETUP).
+    if [[ -f "$DOTFILES_DIR/_setup/mac/setup.sh" && -z "${DOTFILES_SKIP_SYSTEM_SETUP:-}" ]]; then
         info "Applying macOS system preferences..."
         bash "$DOTFILES_DIR/_setup/mac/setup.sh" >&2
         ok "macOS preferences applied"
     fi
-
-    # Emit ONLY the selected mirror name on stdout for callers (e.g. bootstrap.sh / shell.sh)
-    printf '%s\n' "${selected_mirror:-}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -68,8 +68,8 @@ grep -q 'brew_mirror' "$TEST_HOME/.zshrc.local" && fail "Linux local shell templ
 
 rm -f "$TEST_HOME/.zshrc.local"
 HOME="$TEST_HOME" SHELL=/bin/zsh ZSH_CUSTOM="$TEST_HOME/.oh-my-zsh/custom" DOTFILES_NON_INTERACTIVE=1 \
-    bash "$ROOT/_bootstrap/shell.sh" Darwin tuna >/dev/null
-grep -qx 'brew_mirror -q tuna' "$TEST_HOME/.zshrc.local" || fail "macOS local shell template must persist the selected mirror"
+    bash "$ROOT/_bootstrap/shell.sh" Darwin >/dev/null
+grep -q '# brew_mirror -q ustc' "$TEST_HOME/.zshrc.local" || fail "macOS local shell template must include the brew mirror example"
 
 # Non-interactive shell setup must not invoke sudo/chsh even when zsh is available.
 HOME="$TEST_HOME" SHELL=/bin/bash ZSH_CUSTOM="$TEST_HOME/.oh-my-zsh/custom" \
@@ -90,6 +90,10 @@ HOME="$TEST_HOME" DOTFILES_NON_INTERACTIVE=1 \
 expected_hooks="$(cd -P "$TMP/repo" && pwd)/_scripts/hooks"
 actual_hooks="$(git -C "$TMP/repo" config --get core.hooksPath)"
 [[ "$actual_hooks" == "$expected_hooks" ]] || fail "Git component must configure the repository hooks path"
+
+# Zero-arg invocation should gracefully fallback to DOTFILES_DIR
+HOME="$TEST_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_DIR="$TMP/repo" \
+    bash "$ROOT/_bootstrap/git.sh" >/dev/null
 
 # Invalid explicit repository paths must survive resolution in error messages.
 missing_repo="$TMP/missing-repo"
@@ -130,7 +134,7 @@ fi
 grep -q "installing Command Line Tools" "$TMP/pkg-mac-clt-fail.out" || fail "Pkg Mac must report CLT installation"
 [[ ! -f "$ROOT/_bootstrap/.last_brew_mirror" ]] || fail "Pkg Mac must not leave temporary .last_brew_mirror file"
 
-# Pkg-mac: stdout must contain ONLY the clean mirror name, untouched by subcommand stdout pollution
+# Pkg-mac: with a mirror override it runs quietly (nothing on stdout) and skips system settings in tests.
 MOCK_MAC_BIN="$TMP/mock-mac-bin"
 mkdir -p "$MOCK_MAC_BIN"
 cat > "$MOCK_MAC_BIN/xcode-select" <<'EOF'
@@ -143,9 +147,9 @@ echo "Already up-to-date."
 EOF
 chmod +x "$MOCK_MAC_BIN"/*
 
-captured_mirror="$(PATH="$MOCK_MAC_BIN:$PATH" HOME="$TEST_HOME" DOTFILES_NON_INTERACTIVE=1 \
-    bash "$ROOT/_bootstrap/pkg-mac.sh" "$ROOT" "ustc" 2>/dev/null)"
-[[ "$captured_mirror" == "ustc" ]] || fail "Pkg Mac must output only the mirror name on stdout, got: '$captured_mirror'"
+mac_stdout="$(PATH="$MOCK_MAC_BIN:$PATH" HOME="$TEST_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    DOTFILES_SKIP_SYSTEM_SETUP=1 bash "$ROOT/_bootstrap/pkg-mac.sh" "$ROOT" "ustc" 2>/dev/null)"
+[[ -z "$mac_stdout" ]] || fail "Pkg Mac must not write anything to stdout, got: '$mac_stdout'"
 
 if HOME="$TEST_HOME" bash "$ROOT/_bootstrap/pkg-linux.sh" "$missing_repo" > "$TMP/pkg-linux-error.out" 2>&1; then
     fail "Pkg Linux component must reject an inaccessible repository path"

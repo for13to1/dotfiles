@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Ensure Oh My Zsh, plugins, default shell, and local shell config.
-# Usage: shell.sh <os> [selected-brew-mirror]
-# Inputs: detected OS and mirror choice from bootstrap; HOME/SHELL/non-interactive mode from the environment.
+# Usage: shell.sh [os]
+# Inputs: HOME/SHELL/non-interactive mode from the environment; os defaults to uname -s.
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ omz_install_plugin() {
 }
 
 write_local_config() {
-    local os="$1" selected_mirror="$2"
+    local os="$1"
 
     [[ -f "$HOME/.zshrc.local" ]] && return 0
     info "Generating the ~/.zshrc.local example template..."
@@ -32,11 +32,7 @@ write_local_config() {
             '# ==========================================================' \
             '# Homebrew mirror switch (function defined in ~/.zsh.d/brew_mirror.sh)' \
             '# ==========================================================' >> "$HOME/.zshrc.local"
-        if [[ -n "$selected_mirror" ]]; then
-            printf 'brew_mirror -q %s\n' "$selected_mirror" >> "$HOME/.zshrc.local"
-        else
-            printf '%s\n' '# brew_mirror -q ustc  # uncomment to enable the USTC mirror' >> "$HOME/.zshrc.local"
-        fi
+        printf '%s\n' '# brew_mirror -q ustc  # uncomment to enable the USTC mirror' >> "$HOME/.zshrc.local"
     fi
 
     cat >> "$HOME/.zshrc.local" <<'EOF'
@@ -57,10 +53,9 @@ EOF
 }
 
 main() {
-    local os="${1:-}" selected_mirror="${2:-}"
+    local os="${1:-$(uname -s)}"
     local zsh_path
 
-    [[ -n "$os" ]] || error "Usage: $0 <os> [selected-brew-mirror]"
     if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
         info "Installing Oh My Zsh..."
         sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
@@ -87,7 +82,7 @@ main() {
     ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
     omz_install_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions
     omz_install_plugin zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting
-    write_local_config "$os" "$selected_mirror"
+    write_local_config "$os"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
