@@ -104,6 +104,54 @@ if HOME="$TEST_HOME" bash "$ROOT/_bootstrap/tools.sh" "$missing_repo" > "$TMP/to
 fi
 grep -q "$missing_repo" "$TMP/tools-error.out" || fail "Tools component error must retain the original path"
 
+if HOME="$TEST_HOME" bash "$ROOT/_bootstrap/pkg-mac.sh" "$missing_repo" > "$TMP/pkg-mac-error.out" 2>&1; then
+    fail "Pkg Mac component must reject an inaccessible repository path"
+fi
+grep -q "$missing_repo" "$TMP/pkg-mac-error.out" || fail "Pkg Mac component error must retain the original path"
+
+# Pkg-mac: when Xcode/CLT is missing, it must trigger installer and exit non-zero (must not exit 0).
+MOCK_CLT_BIN="$TMP/mock-clt-bin"
+mkdir -p "$MOCK_CLT_BIN"
+cat > "$MOCK_CLT_BIN/xcode-select" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$*" == "-p" ]]; then
+    exit 1
+fi
+if [[ "$*" == "--install" ]]; then
+    exit 0
+fi
+EOF
+chmod +x "$MOCK_CLT_BIN/xcode-select"
+
+if XCODE_APP_DIR="$TMP/no-xcode" PATH="$MOCK_CLT_BIN:$PATH" HOME="$TEST_HOME" \
+    bash "$ROOT/_bootstrap/pkg-mac.sh" "$ROOT" > "$TMP/pkg-mac-clt-fail.out" 2>&1; then
+    fail "Pkg Mac component must exit non-zero when Xcode CLT is missing"
+fi
+grep -q "installing Command Line Tools" "$TMP/pkg-mac-clt-fail.out" || fail "Pkg Mac must report CLT installation"
+[[ ! -f "$ROOT/_bootstrap/.last_brew_mirror" ]] || fail "Pkg Mac must not leave temporary .last_brew_mirror file"
+
+# Pkg-mac: stdout must contain ONLY the clean mirror name, untouched by subcommand stdout pollution
+MOCK_MAC_BIN="$TMP/mock-mac-bin"
+mkdir -p "$MOCK_MAC_BIN"
+cat > "$MOCK_MAC_BIN/xcode-select" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+cat > "$MOCK_MAC_BIN/brew" <<'EOF'
+#!/usr/bin/env bash
+echo "Already up-to-date."
+EOF
+chmod +x "$MOCK_MAC_BIN"/*
+
+captured_mirror="$(PATH="$MOCK_MAC_BIN:$PATH" HOME="$TEST_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    bash "$ROOT/_bootstrap/pkg-mac.sh" "$ROOT" "ustc" 2>/dev/null)"
+[[ "$captured_mirror" == "ustc" ]] || fail "Pkg Mac must output only the mirror name on stdout, got: '$captured_mirror'"
+
+if HOME="$TEST_HOME" bash "$ROOT/_bootstrap/pkg-linux.sh" "$missing_repo" > "$TMP/pkg-linux-error.out" 2>&1; then
+    fail "Pkg Linux component must reject an inaccessible repository path"
+fi
+grep -q "$missing_repo" "$TMP/pkg-linux-error.out" || fail "Pkg Linux component error must retain the original path"
+
 # Editors: non-interactive mode skips silently actionable UI and all commands.
 EDITOR_HOME="$TMP/editor-home"
 mkdir -p "$EDITOR_HOME"

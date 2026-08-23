@@ -179,6 +179,22 @@ dedupe_brewfile() {
     '
 }
 
+# ── Optional-group hint ──────────────────────────────────────────
+# Lists all optional groups (everything except default.group) for a platform.
+hint_optional_groups() {
+    local platform="$1" dotfiles_dir="${2:-$DOTFILES_DIR}"
+    local groups=() _f _t
+    for _f in "$dotfiles_dir/_install/$platform"/*.group; do
+        [[ -f "$_f" ]] || continue
+        _t="$(basename "$_f")"
+        [[ "$_t" == "default.group" ]] && continue
+        groups+=("${_t%.group}")
+    done
+    if (( ${#groups[@]} > 0 )); then
+        info "💡 Optional groups: bash _install/install --$platform ${groups[*]}"
+    fi
+}
+
 # ── Interactive install ──────────────────────────────────────────
 # Usage: install_with_prompt <check_cmd> <prompt> <install_fn> <success_msg> [known_paths...]
 # Skips when already installed (on PATH or a known path exists).
