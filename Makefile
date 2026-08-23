@@ -11,7 +11,7 @@ SHELL := /bin/bash
 # Parsing rules live in _scripts/list-modules.sh; Makefile and bootstrap.sh share this impl.
 MODULES := $(shell bash _scripts/list-modules.sh _scripts/modules.conf)
 
-.PHONY: sync check doctor test lint-shell test-shell test-skills help
+.PHONY: sync check doctor test lint-shell test-shell test-skills skills-attach skills-detach skills-update skills-list help
 
 # Default one-shot sync: restow all modules.
 sync:
@@ -28,7 +28,7 @@ test: lint-shell test-shell test-skills
 
 lint-shell:
 	@set -e; if command -v shellcheck >/dev/null 2>&1; then \
-		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/installer/*' -exec shellcheck {} + ; \
+		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*' -exec shellcheck {} + ; \
 		shellcheck _scripts/hooks/pre-push; \
 	else \
 		echo "❌ shellcheck not installed; cannot run the full test suite" >&2; \
@@ -36,7 +36,7 @@ lint-shell:
 	fi
 
 test-shell:
-	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_install/installer/*' -exec bash -n {} \;
+	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*' -exec bash -n {} \;
 	@set -e; for t in _tests/test-*.sh; do bash "$$t"; done
 
 test-skills:
@@ -55,15 +55,31 @@ test-skills:
 		exit 1; \
 	fi
 
+# Manage pluggable external skills (e.g. make skills-attach, make skills-detach, make skills-list)
+skills-attach:
+	@bash _scripts/skills-vendor.sh attach $(VENDOR)
+
+skills-detach:
+	@bash _scripts/skills-vendor.sh detach $(VENDOR)
+
+skills-update:
+	@bash _scripts/skills-vendor.sh update $(VENDOR)
+
+skills-list:
+	@bash _scripts/skills-vendor.sh list
 
 # Brief help.
 help:
 	@echo "Available commands:"
-	@echo "  make sync   - restow all core modules"
-	@echo "  make check  - verify every module's symlinks"
-	@echo "  make doctor - diagnose the local dotfiles environment"
-	@echo "  make test   - run all static checks and behavior tests"
-	@echo "  make lint-shell  - run ShellCheck"
-	@echo "  make test-shell  - run bash syntax checks and shell behavior tests"
-	@echo "  make test-skills - run the skill Python tests"
-	@echo "  make help   - show this help"
+	@echo "  make sync          - restow all core modules"
+	@echo "  make check         - verify every module's symlinks"
+	@echo "  make doctor        - diagnose the local dotfiles environment"
+	@echo "  make test          - run all static checks and behavior tests"
+	@echo "  make lint-shell    - run ShellCheck"
+	@echo "  make test-shell    - run bash syntax checks and shell behavior tests"
+	@echo "  make test-skills   - run the skill Python tests"
+	@echo "  make skills-attach - attach external skills from _vendor/ into ~/.agents/skills/"
+	@echo "  make skills-detach - detach external skills and restore clean built-in state"
+	@echo "  make skills-update - update external submodules to latest upstream"
+	@echo "  make skills-list   - list native built-in skills and active attached skills"
+	@echo "  make help          - show this help"
