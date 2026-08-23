@@ -148,7 +148,7 @@ EOF
 chmod +x "$MOCK_MAC_BIN"/*
 
 mac_stdout="$(PATH="$MOCK_MAC_BIN:$PATH" HOME="$TEST_HOME" DOTFILES_NON_INTERACTIVE=1 \
-    DOTFILES_SKIP_SYSTEM_SETUP=1 bash "$ROOT/_bootstrap/pkg-mac.sh" "$ROOT" "ustc" 2>/dev/null)"
+    DOTFILES_SKIP_SYSTEM_SETUP=1 bash "$ROOT/_bootstrap/pkg-mac.sh" "$ROOT" 2>/dev/null)"
 [[ -z "$mac_stdout" ]] || fail "Pkg Mac must not write anything to stdout, got: '$mac_stdout'"
 
 if HOME="$TEST_HOME" bash "$ROOT/_bootstrap/pkg-linux.sh" "$missing_repo" > "$TMP/pkg-linux-error.out" 2>&1; then

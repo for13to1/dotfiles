@@ -1,4 +1,4 @@
-# 忽略外部动态挂载的软链接，仅保留核心内置技能
+# Ignore externally attached vendor symlinks; keep only native built-in skills
 /*
 !/commit-summarizer/
 !/pdf2md-polish/

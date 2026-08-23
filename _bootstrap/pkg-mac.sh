@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # _bootstrap/pkg-mac.sh — macOS Homebrew and package manager setup
-# Usage: pkg-mac.sh [dotfiles_dir] [mirror_override]
+# Usage: pkg-mac.sh [dotfiles_dir]
 
 set -euo pipefail
 
@@ -16,7 +16,6 @@ error_msg() { msg 'error' "$*" >&2; }
 
 main() {
     local repo_dir="${1:-$DOTFILES_DIR}"
-    local mirror_override="${2:-}"
     local resolved_dir=""
 
     resolved_dir="$(dotfiles_dir "$repo_dir")" || error "Cannot access dotfiles dir: $repo_dir"
@@ -49,9 +48,7 @@ main() {
     fi
 
     local selected_mirror=""
-    if [[ -n "$mirror_override" ]]; then
-        selected_mirror="$mirror_override"
-    elif [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
+    if [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
         selected_mirror="tuna"
     else
         echo "" >&2

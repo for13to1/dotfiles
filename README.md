@@ -43,7 +43,16 @@ dotfiles/
 │   ├── apt/                    # Debian 系平台的 .group 文件
 │   ├── pacman/                 # Arch Linux 平台 .group 文件
 │   └── brew/                   # macOS 平台 .group 文件
-├── _bootstrap/                 # 环境部署阶段（SSH/Git/Shell/编辑器/工具）
+├── _bootstrap/                 # 环境部署脚本（SSH/Git/Shell/编辑器/工具）
+│   ├── pkg-mac.sh              # macOS 包管理与环境前置
+│   ├── pkg-linux.sh            # Linux (apt/pacman) 包管理前置
+│   ├── ssh.sh                  # SSH 密钥引导
+│   ├── git.sh                  # Git 全局与局部配置
+│   ├── shell.sh                # Shell 与 OMZ 插件部署
+│   ├── editors.sh              # 编辑器 (Neovim/Vim) 插件同步
+│   └── tools.sh                # 本地 CLI 工具软链接
+├── _vendor/                    # 外部 Skills Vendor 子模块（可插拔）
+│   └── mattpocock/             # 社区第三方 Agent Skills
 ├── _setup/                     # 操作系统级设置
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
@@ -53,6 +62,8 @@ dotfiles/
 │   ├── list-modules.sh         # Stow 模块列表解析
 │   ├── stow-sync.sh            # Stow 统一同步入口
 │   ├── check-links.sh          # Stow 挂载前检查与挂载后校验
+│   ├── skills-vendor.sh        # 多 Vendor 外部技能插拔管理器
+│   ├── tmux-plugins.sh         # tpm 插件同步
 │   ├── doctor.sh               # 环境健康诊断
 │   └── hooks/
 │       └── pre-push            # Git 钩子：push 前自动运行 make test
@@ -63,11 +74,13 @@ dotfiles/
 │   ├── test-check-links.sh     # check-links 行为测试
 │   ├── test-doctor.sh          # doctor 退出码契约测试
 │   ├── test-proj-setup.sh      # proj-setup 行为测试
+│   ├── test-skills-vendor.sh   # 多 Vendor 技能插拔与冲突消解测试
 │   ├── test-stow-sync.sh       # stow-sync 集成测试
 │   ├── test-net-proxy.sh       # net_proxy 行为测试
 │   ├── test-install.sh         # _install/install 行为测试
-│   └── test-tmux-plugins.sh    # tmux 插件同步行为测试
-├── Makefile                    # 多平台模块管理与同步
+│   ├── test-tmux-plugins.sh    # tmux 插件同步行为测试
+│   └── test-zsh-benchmark.sh   # Zsh 启动性能与正确性基准测试
+├── Makefile                    # 多平台模块管理、外部技能插拔与同步
 ├── bootstrap.sh                # 一键部署脚本
 ├── opencode.json               # OpenCode 权限配置（本仓库）
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
@@ -103,8 +116,10 @@ cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 4. **Git 身份配置**：交互式创建本地身份配置，启用 pre-push 钩子。
 5. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
 6. **配置挂载**：使用 `stow` 构建全局符号链接，自动备份文件冲突。
-7. **插件同步**：交互式同步开发环境 (Neovim/Vim) 的扩展插件。
-8. **自定义工具**：部署 proj-setup 等自定义工具到 `~/.local/bin`。
+7. **tmux 插件**：同步 tpm 插件（见 `_scripts/tmux-plugins.sh`）。
+8. **编辑器插件**：交互式同步 Neovim/Vim 的扩展插件。
+9. **自定义工具**：部署 proj-setup 等自定义工具到 `~/.local/bin`。
+10. **完成**：重启终端或 `source ~/.zshrc` 使配置生效。
 
 ## 🖥️ 本地配置
 
@@ -177,7 +192,13 @@ ssh-copy-id <user>@<host>
 
 ## 🤖 AI Agents 配置
 
-基于 Agent Skills 的目录约定，管理可跨工具复用的 AI 专家技能 (Skills)。
+基于 Agent Skills 目录约定，管理跨工具复用的 AI 专家技能 (Skills)：
+
+- **内置核心技能**：
+  - `commit-summarizer`：自动化 Git 暂存区分析与语义化 Commit 信息生成；
+  - `pdf2md-polish`：PDF 转 Markdown 后的确定性清洗、断句与标点排版对齐管道；
+  - `script-analyzer`：Shell / Python 脚本安全与语法分析工具。
+- **外部 Vendor 技能**：以 Git Submodule 引入的社区技能（如 `_vendor/mattpocock`）；挂载/卸载/更新命令见「日常维护 → 外部 AI 技能热插拔」。
 
 **生态兼容**: 挂载至 `~/.agents/` 后，可被 GitHub Copilot/VS Code、Gemini CLI、OpenCode、Zed、Warp、Codex CLI 等支持该路径的工具发现。
 
@@ -235,6 +256,17 @@ cd ~/dotfiles && stow tmux
 # 4. 持久化：将 'tmux' 添加到 _scripts/modules.conf 中
 ```
 
+### 外部 AI 技能热插拔 (Vendor Skills)
+
+通过 `Makefile` 一键管理第三方技能的接入与卸载（支持多 Vendor 同名冲突自动加前缀消解与原生技能免覆盖保护）：
+
+```bash
+make skills-attach            # 挂载所有 vendor 的 skills（创建软链接并同步 Stow）
+make skills-detach            # 卸载所有已挂载的外部 skills 软链接
+make skills-update            # 更新 submodule 并刷新软链接
+make skills-list              # 列出所有可用的外部 skills 及其挂载状态
+```
+
 ### Homebrew 镜像管理
 
 仓库内置了 `brew_mirror` 工具函数（定义于 `zsh/.zsh.d/brew_mirror.sh`），方便在不同镜像源之间快速切换：
@@ -259,10 +291,10 @@ make sync  # 优雅地仅刷新 _scripts/modules.conf 中记录的核心模块
 ### 运行自检
 
 ```bash
-make test   # ShellCheck、bash 语法检查、Stow 行为测试与 skill Python 测试
+make test   # ShellCheck、bash 语法检查、Stow 行为测试、Skills 测试与 Zsh 性能基准
 make lint-shell  # 仅运行 ShellCheck
-make test-shell  # bash 语法检查与 shell 行为测试
-make test-skills # skill Python 测试
+make test-shell  # bash 语法检查与全部 shell 行为测试（含 Zsh 性能基准）
+make test-skills # 全部 Skill Python 测试
 make check  # 验证当前 HOME 下的 Stow 链接状态
 make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 ```
