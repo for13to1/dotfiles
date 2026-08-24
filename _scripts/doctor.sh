@@ -138,6 +138,7 @@ info "Editor toolchain"
 check_optional_command biome
 check_optional_command ruff
 check_optional_command stylua
+check_optional_command tree-sitter
 check_optional_command shfmt
 check_optional_command clang-format
 check_optional_command clangd

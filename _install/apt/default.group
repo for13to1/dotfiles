@@ -15,6 +15,7 @@ shellcheck
 shfmt
 clang-format
 clangd
+tree-sitter-cli
 python3-pytest
 lazygit
 ripgrep

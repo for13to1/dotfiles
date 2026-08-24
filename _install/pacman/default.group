@@ -15,6 +15,7 @@ clang
 biome
 ruff
 stylua
+tree-sitter-cli
 python-pytest
 lazygit
 ripgrep

@@ -7,3 +7,4 @@ shfmt
 biome
 ruff
 stylua
+tree-sitter-cli

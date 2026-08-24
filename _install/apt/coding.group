@@ -5,3 +5,4 @@ cloc
 shellcheck
 shfmt
 clangd
+tree-sitter-cli
