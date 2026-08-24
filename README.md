@@ -106,7 +106,7 @@ cd ~/dotfiles && bash bootstrap.sh
 cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 ```
 
-该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换。其余安装和系统设置仍会正常执行。
+该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
 
 `bootstrap.sh` 会自动引导并处理以下流程：
 

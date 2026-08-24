@@ -23,6 +23,23 @@ install_bootstrap_groups() {
     fi
 }
 
+install_ecosystem_tools() {
+    local installer
+    local failed_installers=()
+
+    for installer in install-by-curl.sh install-by-npm.sh install-by-uv.sh install-by-cargo.sh; do
+        if [[ -f "$DOTFILES_DIR/_install/$installer" ]] \
+           && ! bash "$DOTFILES_DIR/_install/$installer"; then
+            failed_installers+=("$installer")
+        fi
+    done
+
+    if (( ${#failed_installers[@]} > 0 )); then
+        warn "Ecosystem installers failed: ${failed_installers[*]}"
+        return 1
+    fi
+}
+
 main() {
     local repo_dir="${1:-$DOTFILES_DIR}"
     local resolved_dir=""
@@ -92,12 +109,7 @@ main() {
     # Only on Debian-like platforms do we use these ecosystem channels (the
     # distro repos ship stale tool versions there); macOS and Arch use their own.
     if is_debian_like; then
-        for installer in install-by-curl.sh install-by-npm.sh install-by-uv.sh install-by-cargo.sh; do
-            if [[ -f "$DOTFILES_DIR/_install/$installer" ]]; then
-                bash "$DOTFILES_DIR/_install/$installer"
-            fi
-        done
-        unset installer
+        install_ecosystem_tools
     fi
 }
 

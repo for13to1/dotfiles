@@ -9,7 +9,7 @@ fi
 
 # ── Resolve the repository root ────────────────────────────────────
 # common.sh always lives at <repo-root>/_scripts/, so derive the root from it.
-DOTFILES_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+DOTFILES_DIR="${DOTFILES_DIR:-$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
 
 # dotfiles_dir [override]: resolve and print the repo root (-P canonicalized,
 # cd happens in a subshell so the caller's cwd is untouched).
@@ -195,9 +195,9 @@ hint_optional_groups() {
     fi
 }
 
-# ── Interactive install ──────────────────────────────────────────
 # Usage: install_with_prompt <check_cmd> <prompt> <install_fn> <success_msg> [known_paths...]
-# Skips when already installed (on PATH or a known path exists).
+# Skips when already installed. Declining is a successful skip; accepting an
+# installer that then fails returns non-zero.
 install_with_prompt() {
     local check_cmd="$1" prompt="$2" install_fn="$3" success_msg="$4"
     shift 4
@@ -205,11 +205,12 @@ install_with_prompt() {
     is_installed "$check_cmd" "$@" && return 0
 
     warn "$prompt"
-    if confirm "Install now? [y/N]: " 0; then
-        if "$install_fn"; then
-            ok "$success_msg"
-        else
-            warn "Installation incomplete; retry manually later"
-        fi
+    confirm "Install now? [y/N]: " 0 || return 0
+
+    if ! "$install_fn"; then
+        warn "Installation incomplete; retry manually later"
+        return 1
     fi
+
+    ok "$success_msg"
 }

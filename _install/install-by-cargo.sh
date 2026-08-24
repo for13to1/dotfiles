@@ -27,12 +27,11 @@ main() {
         return 0
     fi
 
-    install_with_prompt \
-        "stylua" \
-        "stylua not found; install it via cargo? (requires local compilation)" \
-        "install_stylua" \
-        "stylua installed" \
-        "$HOME/.cargo/bin/stylua"
+    if ! is_installed stylua "$HOME/.cargo/bin/stylua"; then
+        info "stylua not found; installing it via Cargo (requires local compilation)..."
+        install_stylua
+        ok "stylua installed"
+    fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

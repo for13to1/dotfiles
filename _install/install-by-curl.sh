@@ -7,39 +7,40 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/common.sh"
 
+download_installer() {
+    curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location "$1"
+}
+
 install_fnm() {
-    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
+    download_installer https://fnm.vercel.app/install | bash -s -- --skip-shell
 }
 
 install_rustup() {
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+    download_installer https://sh.rustup.rs | sh -s -- -y --no-modify-path
 }
 
 install_uv() {
-    curl -LsSf https://astral.sh/uv/install.sh | sh
+    download_installer https://astral.sh/uv/install.sh | sh
 }
 
 main() {
-    install_with_prompt \
-        "fnm" \
-        "fnm not found; install it via the official installer?" \
-        "install_fnm" \
-        "fnm installed" \
-        "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/fnm"
+    if ! is_installed fnm "${XDG_DATA_HOME:-$HOME/.local/share}/fnm/fnm"; then
+        info "fnm not found; installing it via the official installer..."
+        install_fnm
+        ok "fnm installed"
+    fi
 
-    install_with_prompt \
-        "rustup" \
-        "rustup not found; install it via the official installer?" \
-        "install_rustup" \
-        "rustup installed" \
-        "$HOME/.cargo/bin/rustup"
+    if ! is_installed rustup "$HOME/.cargo/bin/rustup"; then
+        info "rustup not found; installing it via the official installer..."
+        install_rustup
+        ok "rustup installed"
+    fi
 
-    install_with_prompt \
-        "uv" \
-        "uv not found; install it via the official installer?" \
-        "install_uv" \
-        "uv installed" \
-        "$HOME/.local/bin/uv"
+    if ! is_installed uv "$HOME/.local/bin/uv"; then
+        info "uv not found; installing it via the official installer..."
+        install_uv
+        ok "uv installed"
+    fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

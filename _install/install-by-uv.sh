@@ -27,12 +27,11 @@ main() {
         return 0
     fi
 
-    install_with_prompt \
-        "ruff" \
-        "ruff not found; install it via uv tool?" \
-        "install_ruff" \
-        "ruff installed" \
-        "$HOME/.local/bin/ruff"
+    if ! is_installed ruff "$HOME/.local/bin/ruff"; then
+        info "ruff not found; installing it via uv tool..."
+        install_ruff
+        ok "ruff installed"
+    fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

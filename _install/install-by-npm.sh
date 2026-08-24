@@ -88,12 +88,11 @@ main() {
         return 0
     fi
 
-    install_with_prompt \
-        "biome" \
-        "biome not found; install it to ~/.local via npm?" \
-        "install_biome" \
-        "biome installed" \
-        "$HOME/.local/bin/biome"
+    if ! is_installed biome "$HOME/.local/bin/biome"; then
+        info "biome not found; installing it to ~/.local via npm..."
+        install_biome
+        ok "biome installed"
+    fi
 
     install_with_prompt \
         "pi" \
