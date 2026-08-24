@@ -24,7 +24,9 @@ eza
 fd
 jq
 zoxide
+ffmpeg
 neovim
 rustup
 fnm
 uv
+yt-dlp

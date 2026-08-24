@@ -21,6 +21,12 @@ install_ruff() {
     "$uv_bin" tool install ruff
 }
 
+install_ytdlp() {
+    local uv_bin
+    uv_bin="$(find_uv_bin)" || return 1
+    "$uv_bin" tool install yt-dlp
+}
+
 main() {
     if [[ -z "$(find_uv_bin || true)" ]]; then
         warn "uv not found; skipping Python CLI installs"
@@ -31,6 +37,12 @@ main() {
         info "ruff not found; installing it via uv tool..."
         install_ruff
         ok "ruff installed"
+    fi
+
+    if ! is_installed yt-dlp "$HOME/.local/bin/yt-dlp"; then
+        info "yt-dlp not found; installing it via uv tool..."
+        install_ytdlp
+        ok "yt-dlp installed"
     fi
 }
 
