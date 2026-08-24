@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# test-bootstrap-components.sh — behavior tests for _bootstrap/*.sh components
-# Usage: bash _tests/test-bootstrap-components.sh
+# test-bootstrap.sh — behavior tests for _bootstrap/*.sh components
+# Usage: bash _tests/test-bootstrap.sh
 
 set -euo pipefail
 # shellcheck disable=SC1091  # helpers.sh is sourced via a dynamic path
@@ -202,4 +202,4 @@ HOME="$TEST_HOME" bash "$ROOT/_bootstrap/tools.sh" "$ROOT" >/dev/null
 [[ "$(readlink "$TEST_HOME/.local/bin/proj-setup")" == "$ROOT/proj-setup/bin/proj-setup.sh" ]] \
     || fail "proj-setup symlink must target the repository command"
 
-echo "PASS bootstrap component tests"
+echo "PASS bootstrap tests"

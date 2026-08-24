@@ -8,7 +8,7 @@
 
 | 测试文件 | 被测对象 | 覆盖要点 |
 | --- | --- | --- |
-| `test-bootstrap-components.sh` | `_bootstrap/{pkg-mac,pkg-linux,ssh,shell,git,tools,editors}.sh` | 组件契约、零参回退、缺少 CLT 中断、无污染静默 |
+| `test-bootstrap.sh` | `_bootstrap/{pkg-mac,pkg-linux,ssh,shell,git,tools,editors}.sh` | 组件契约、零参回退、缺少 CLT 中断、无污染静默 |
 | `test-check-links.sh` | `_scripts/check-links.sh` | verify/preflight 语义、`stow_find` 类型过滤与忽略目录 |
 | `test-doctor.sh` | `_scripts/doctor.sh` | 退出码契约：干净 0 / 警告 0 / 阻断非 0 |
 | `test-install.sh` | `_install/install` | 组解析、去重保序、brew 带选项行合并、缺失组报错 |

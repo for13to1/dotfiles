@@ -70,7 +70,7 @@ dotfiles/
 ├── _tests/                     # 行为测试（make test 自动发现 test-*.sh）
 │   ├── helpers.sh              # 共享断言库（fail/assert_*）
 │   ├── README.md               # 测试分工与约定
-│   ├── test-bootstrap-components.sh # _bootstrap/* 组件行为测试
+│   ├── test-bootstrap.sh       # _bootstrap/* 组件行为测试
 │   ├── test-check-links.sh     # check-links 行为测试
 │   ├── test-doctor.sh          # doctor 退出码契约测试
 │   ├── test-proj-setup.sh      # proj-setup 行为测试
