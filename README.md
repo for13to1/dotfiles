@@ -57,7 +57,7 @@ dotfiles/
 │   └── mac/
 │       └── setup.sh            # macOS 系统设置
 ├── _scripts/                   # shell 基础设施
-│   ├── common.sh               # 颜色定义、函数定义等
+│   ├── common.sh               # 常用颜色定义、函数定义等
 │   ├── modules.conf            # Stow 模块列表（单一真值源）
 │   ├── list-modules.sh         # Stow 模块列表解析
 │   ├── stow-sync.sh            # Stow 统一同步入口
@@ -100,14 +100,6 @@ git clone https://github.com/for13to1/dotfiles.git ~/dotfiles
 cd ~/dotfiles && bash bootstrap.sh
 ```
 
-### 非交互模式（CI / 容器 / 无 TTY）
-
-```bash
-cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
-```
-
-该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
-
 `bootstrap.sh` 会自动引导并处理以下流程：
 
 1. **环境检测**：自动安装 Xcode CLT (macOS) 与 Homebrew，校验核心依赖。
@@ -119,7 +111,15 @@ cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 7. **tmux 插件**：同步 tpm 插件（见 `_scripts/tmux-plugins.sh`）。
 8. **编辑器插件**：交互式同步 Neovim/Vim 的扩展插件。
 9. **自定义工具**：部署 proj-setup 等自定义工具到 `~/.local/bin`。
-10. **完成**：重启终端或 `source ~/.zshrc` 使配置生效。
+10. **引导完成**：重启终端或 `source ~/.zshrc` 使配置生效。
+
+### 非交互模式（CI / 容器 / 无 TTY）
+
+```bash
+cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
+```
+
+该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
 
 ## 🖥️ 本地配置
 
@@ -144,7 +144,7 @@ export GEMINI_API_KEY="your-api-key"
 export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
 ```
 
-### 1.1 网络代理开关（`net_proxy` 命令）
+### 2. 网络代理开关（`net_proxy` 命令）
 
 无需在这里配置任何代理变量——默认即为关闭，不导出任何环境变量。需要时用 `net_proxy`
 命令开关，配置保存在 `~/.net_proxy.conf`（不纳入版本控制），新终端自动恢复最近状态：
@@ -160,7 +160,7 @@ net_proxy status               # 查看状态
 `net_proxy on` 导出 `http_proxy`/`https_proxy`（`http://`）、`all_proxy`（`$scheme://`，
 默认 `socks5://`）及其大写形式，并设置 `no_proxy` 排除本地流量。
 
-### 2. `~/.gitconfig.local` 示例
+### 3. `~/.gitconfig.local` 示例
 
 ```ini
 [user]
@@ -318,7 +318,7 @@ make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 ## 💡 最佳实践记录
 
 - **Git**: 始终优先通过 Homebrew 安装 Git，以解决 macOS 自带版本在某些网络环境下的 SSL 报错问题。
-- **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为 `zsh/.zshrc` 已完全接管）：`rustup-init -y --no-modify-path`
+- **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为本项目已接管）：`rustup-init -y --no-modify-path`
 - **Conda (Miniforge)**: **不用**运行 `conda init`，直接依赖 `lazy loading` 实现加速启动。
 
 ## 📄 许可证
