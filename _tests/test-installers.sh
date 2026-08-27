@@ -50,7 +50,8 @@ grep -q 'install-by-npm.sh' "$TMP/ecosystem.out" \
 # interactive run installs only the explicitly accepted tool.
 NPM_HOME="$TMP/npm-home"
 NPM_BIN="$TMP/npm-bin"
-mkdir -p "$NPM_HOME/.local/bin" "$NPM_BIN"
+FNM_PREFIX="$TMP/fnm-prefix"
+mkdir -p "$NPM_HOME/.local/bin" "$NPM_BIN" "$FNM_PREFIX/bin"
 touch "$NPM_HOME/.local/bin/biome"
 chmod +x "$NPM_HOME/.local/bin/biome"
 cat > "$NPM_BIN/fnm" <<'EOF'
@@ -60,10 +61,13 @@ if [[ "$*" == *'node --version'* ]]; then
     printf '%s\n' 'v24.0.0'
 elif [[ "$*" == *'npm --version'* ]]; then
     printf '%s\n' '11.9.0'
+elif [[ "$*" == *'npm prefix -g'* ]]; then
+    printf '%s\n' "$FNM_PREFIX"
 fi
 EOF
 chmod +x "$NPM_BIN/fnm"
 export FNM_LOG="$TMP/fnm.log"
+export FNM_PREFIX
 
 HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
@@ -77,6 +81,26 @@ grep -q '@openai/codex' "$FNM_LOG" \
     || fail "accepting codex should invoke its npm install"
 grep -q '@earendil-works/pi-coding-agent\|opencode-ai' "$FNM_LOG" \
     && fail "declining pi and opencode should not invoke their npm installs"
+
+for cli in pi codex opencode; do
+    touch "$FNM_PREFIX/bin/$cli"
+    chmod +x "$FNM_PREFIX/bin/$cli"
+done
+
+# The CLIs can be installed in fnm's Node environment while remaining absent
+# from the parent shell's PATH. They must not trigger duplicate-install prompts.
+FNM_OUTPUT="$TMP/fnm-detection.out"
+HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" >"$FNM_OUTPUT"
+! grep -q 'pi not found\|codex not found\|opencode not found' "$FNM_OUTPUT" \
+    || fail "fnm-managed CLIs must be detected outside the parent PATH"
+
+# A runtime without npm must degrade to a clean skip, not an error.
+FNM_PREFIX="" HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" >"$TMP/npm-missing.out" 2>&1 \
+    || fail "missing npm must skip cleanly"
+grep -q 'skipping npm CLI installs' "$TMP/npm-missing.out" \
+    || fail "missing npm must warn and skip"
 
 # Default official downloads run without prompting and use hardened HTTPS flags.
 MOCK_BIN="$TMP/bin"

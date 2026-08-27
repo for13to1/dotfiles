@@ -78,15 +78,34 @@ install_biome() {
     npm_install_global --prefix "$HOME/.local" @biomejs/biome
 }
 
+# Prompt to install an npm CLI into the pinned runtime. `fnm exec` installs
+# into that runtime's global bin without updating this script's PATH, so bin
+# (probed once in main) is checked alongside PATH for existing installs.
+install_npm_cli() {
+    local name="$1" install_fn="$2" bin="$3"
+    install_with_prompt \
+        "$name" \
+        "$name not found; install it via npm?" \
+        "$install_fn" \
+        "$name installed" \
+        "$bin/$name"
+}
+
 main() {
     if ! ensure_fnm_node_env; then
         return 0
     fi
 
-    if ! fnm_exec npm --version &>/dev/null; then
+    # Probe the pinned runtime: a non-empty prefix both confirms npm is present
+    # and yields the global bin `fnm exec` installs into — which this script's
+    # PATH cannot see, so the checks below must include it explicitly.
+    local fnm_global_prefix fnm_global_bin
+    fnm_global_prefix="$(fnm_exec npm prefix -g 2>/dev/null || true)"
+    if [[ -z "$fnm_global_prefix" ]]; then
         warn "npm not found; skipping npm CLI installs"
         return 0
     fi
+    fnm_global_bin="$fnm_global_prefix/bin"
 
     if ! is_installed biome "$HOME/.local/bin/biome"; then
         info "biome not found; installing it to ~/.local via npm..."
@@ -94,23 +113,9 @@ main() {
         ok "biome installed"
     fi
 
-    install_with_prompt \
-        "pi" \
-        "pi not found; install it via npm?" \
-        "install_pi" \
-        "pi installed"
-
-    install_with_prompt \
-        "codex" \
-        "codex not found; install it via npm?" \
-        "install_codex" \
-        "codex installed"
-
-    install_with_prompt \
-        "opencode" \
-        "opencode not found; install it via npm?" \
-        "install_opencode" \
-        "opencode installed"
+    install_npm_cli pi install_pi "$fnm_global_bin"
+    install_npm_cli codex install_codex "$fnm_global_bin"
+    install_npm_cli opencode install_opencode "$fnm_global_bin"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
