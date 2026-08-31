@@ -53,11 +53,32 @@ release_age_flag() {
     awk -F. '{ exit !($1 > 11 || ($1 == 11 && $2 >= 10)) }' <<<"$npm_version"
 }
 
+# npm 11.x introduced the install-scripts policy (12.x hard-blocks lifecycle
+# scripts by default); packages not on the allowlist get their postinstall
+# skipped. Older npm does not understand the --allow-scripts flag.
+npm_supports_allow_scripts() {
+    fnm_exec npm install --help 2>/dev/null | grep -q -- '--allow-scripts'
+}
+
+# Install npm globals: pass through policy flags (--min-release-age,
+# --allow-scripts) only when this npm supports them, dropping them otherwise
+# and forwarding the remaining args untouched.
 npm_install_global() {
+    local resolved=()
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            --allow-scripts=*)
+                npm_supports_allow_scripts || continue
+                ;;
+        esac
+        resolved+=("$arg")
+    done
+
     if release_age_flag; then
-        fnm_exec npm install -g --min-release-age=0 "$@"
+        fnm_exec npm install -g --min-release-age=0 "${resolved[@]}"
     else
-        fnm_exec npm install -g "$@"
+        fnm_exec npm install -g "${resolved[@]}"
     fi
 }
 
@@ -72,6 +93,12 @@ install_codex() {
 
 install_opencode() {
     npm_install_global opencode-ai
+}
+
+# wrangler depends on workerd/esbuild, whose postinstall seeds the native
+# binaries; allow their scripts (npm_install_global drops the flag on old npm).
+install_wrangler() {
+    npm_install_global --allow-scripts=esbuild,workerd wrangler
 }
 
 install_biome() {
@@ -127,6 +154,7 @@ main() {
     install_npm_cli pi install_pi "$fnm_global_bin"
     install_npm_cli codex install_codex "$fnm_global_bin"
     install_npm_cli opencode install_opencode "$fnm_global_bin"
+    install_npm_cli wrangler install_wrangler "$fnm_global_bin"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
