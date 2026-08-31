@@ -39,7 +39,7 @@ dotfiles/
 │   ├── install-by-curl.sh      # 官方安装器途径的工具管理器安装
 │   ├── install-by-npm.sh       # npm 途径的 Node.js CLI 安装
 │   ├── install-by-uv.sh        # uv tool 途径的 Python CLI 安装
-│   ├── install-by-cargo.sh     # Cargo 途径的 Rust CLI 安装
+│   ├── install-by-cargo.sh     # Cargo 途径的 Rust CLI 安装（备用渠道，暂不启用）
 │   ├── apt/                    # Debian 系平台的 .group 文件
 │   ├── pacman/                 # Arch Linux 平台 .group 文件
 │   └── brew/                   # macOS 平台 .group 文件
@@ -223,14 +223,11 @@ bash ~/dotfiles/_install/install --brew
 
 **安装途径边界**：
 
-- `.group` 文件只包含各平台包管理器可安装的软件；
-- `install-by-curl.sh` 通过官方安装器安装 fnm、rustup、uv（Debian 系平台）；
-- `install-by-npm.sh` 通过 npm 安装 Node.js CLI（Debian 系平台）；
-- `install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（Debian 系平台）；
-- `install-by-cargo.sh` 通过 Cargo 安装 Rust CLI（Debian 系平台）。
+- `.group` 文件只包含各平台包管理器可安装的软件（`_install/install` 为统一安装入口）；
+- **平台差异层**（`pkg-*`）：仅 apt 缺 fnm/rustup/uv，由 `install-by-curl.sh` 官方安装器补齐（brew/pacman 经 default 组提供，无需此渠道）；
+- **平台无关层**（bootstrap 步骤 3，三平台同一份）：`install-by-npm.sh` 安装 Node.js CLI 及预编译分发的工具（pi、codex、opencode、biome、stylua）、`install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（ruff、yt-dlp）；`install-by-cargo.sh` 保留为 Rust CLI 备用渠道（暂不启用）。
 
-Debian 系发行版的软件仓库中部分开发工具版本较旧或缺失，因此在该平台由上述生态渠道
-提供较新的版本；macOS 与 Arch Linux 仍优先使用各自的系统包管理器。
+各渠道按需通过 `is_installed` 幂等跳过已装工具，不重复安装；`DOTFILES_SKIP_ECOSYSTEM_TOOLS=1` 跳过全部生态安装（测试/无网络环境）。
 
 Vim 和 Neovim 从 `PATH` 或项目本地环境解析 formatter，不自行下载；平台默认组和上述生态安装脚本负责提供全局命令。
 

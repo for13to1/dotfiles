@@ -4,7 +4,4 @@ astyle
 cloc
 shellcheck
 shfmt
-biome
-ruff
-stylua
 tree-sitter-cli

@@ -214,3 +214,31 @@ install_with_prompt() {
 
     ok "$success_msg"
 }
+
+# ── Ecosystem installers ──────────────────────────────────────────
+# Platform-independent tool layer: npm (Node CLIs: pi/codex/opencode/biome/
+# stylua/wrangler) and uv (Python CLIs: ruff/yt-dlp). No system package
+# manager provides them, so they are identical on every platform and run
+# once here as bootstrap step 3.
+# Each script is self-contained: idempotent via is_installed, and it skips
+# cleanly when a prerequisite (fnm/uv) is missing.
+# The curl channel (runtimes fnm/rustup/uv via official installers) is NOT
+# part of this layer: brew/pacman provide them via default groups, only apt
+# lacks them, so pkg-linux runs that single script directly.
+# DOTFILES_SKIP_ECOSYSTEM_TOOLS=1 skips everything (tests: no network).
+install_ecosystem_tools() {
+    if [[ -n "${DOTFILES_SKIP_ECOSYSTEM_TOOLS:-}" ]]; then
+        return 0
+    fi
+
+    local rc=0
+    local installer
+    for installer in install-by-npm.sh install-by-uv.sh; do
+        if [[ -f "$DOTFILES_DIR/_install/$installer" ]] \
+           && ! bash "$DOTFILES_DIR/_install/$installer"; then
+            warn "$installer failed; run it manually to retry"
+            rc=1
+        fi
+    done
+    return "$rc"
+}

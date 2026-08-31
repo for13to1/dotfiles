@@ -1,7 +1,3 @@
 # AI 组
 brew "llama.cpp"
-brew "pi-coding-agent"
-brew "opencode"
 brew "cliproxyapi"
-
-cask "codex"

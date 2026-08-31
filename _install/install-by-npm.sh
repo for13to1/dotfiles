@@ -78,6 +78,11 @@ install_biome() {
     npm_install_global --prefix "$HOME/.local" @biomejs/biome
 }
 
+# Prebuilt binary from the official npm distribution (@johnnymorganz/stylua-bin).
+install_stylua() {
+    npm_install_global @johnnymorganz/stylua-bin
+}
+
 # Prompt to install an npm CLI into the pinned runtime. `fnm exec` installs
 # into that runtime's global bin without updating this script's PATH, so bin
 # (probed once in main) is checked alongside PATH for existing installs.
@@ -111,6 +116,12 @@ main() {
         info "biome not found; installing it to ~/.local via npm..."
         install_biome
         ok "biome installed"
+    fi
+
+    if ! is_installed stylua "$fnm_global_bin/stylua"; then
+        info "stylua not found; installing it via npm (prebuilt binary)..."
+        install_stylua
+        ok "stylua installed"
     fi
 
     install_npm_cli pi install_pi "$fnm_global_bin"

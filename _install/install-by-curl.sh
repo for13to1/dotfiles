@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# _install/install-by-curl.sh — tool managers via their official installers
+# _install/install-by-curl.sh — installs fnm, rustup, uv via official installers
 
 set -euo pipefail
 

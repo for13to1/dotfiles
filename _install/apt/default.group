@@ -1,5 +1,4 @@
 # default 组 — 默认安装的软件
-# apt 缺失的工具由 fnm/rustup/uv 生态安装脚本补齐：biome、ruff、stylua、yt-dlp
 zsh
 stow
 tmux

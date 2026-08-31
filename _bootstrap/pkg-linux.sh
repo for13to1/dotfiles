@@ -23,23 +23,6 @@ install_bootstrap_groups() {
     fi
 }
 
-install_ecosystem_tools() {
-    local installer
-    local failed_installers=()
-
-    for installer in install-by-curl.sh install-by-npm.sh install-by-uv.sh install-by-cargo.sh; do
-        if [[ -f "$DOTFILES_DIR/_install/$installer" ]] \
-           && ! bash "$DOTFILES_DIR/_install/$installer"; then
-            failed_installers+=("$installer")
-        fi
-    done
-
-    if (( ${#failed_installers[@]} > 0 )); then
-        warn "Ecosystem installers failed: ${failed_installers[*]}"
-        return 1
-    fi
-}
-
 main() {
     local repo_dir="${1:-$DOTFILES_DIR}"
     local resolved_dir=""
@@ -71,6 +54,23 @@ main() {
 
         install_bootstrap_groups apt
         hint_optional_groups apt "$DOTFILES_DIR"
+
+        # apt lacks fnm/rustup/uv; fill the gap with their official
+        # installers. (brew/pacman provide them via default groups, so only
+        # apt runs this single script; it skips anything already installed.)
+        if [[ -f "$DOTFILES_DIR/_install/install-by-curl.sh" \
+              && -z "${DOTFILES_SKIP_ECOSYSTEM_TOOLS:-}" ]]; then
+            if bash "$DOTFILES_DIR/_install/install-by-curl.sh"; then
+                ok "fnm/rustup/uv installed"
+            else
+                warn "fnm/rustup/uv install failed; run 'bash _install/install-by-curl.sh' later to retry"
+                if confirm "Continue with the remaining setup? [Y/n]: " 1; then
+                    warn "Continuing with the remaining setup"
+                else
+                    error "Stopped bootstrap as requested"
+                fi
+            fi
+        fi
 
         # Ensure en_US.UTF-8 locale exists to avoid stow/perl locale warnings.
         if command -v locale-gen &>/dev/null \
@@ -104,12 +104,6 @@ main() {
         hint_optional_groups pacman "$DOTFILES_DIR"
     else
         warn "Unrecognized Linux package manager; please install zsh and required tools manually"
-    fi
-
-    # Only on Debian-like platforms do we use these ecosystem channels (the
-    # distro repos ship stale tool versions there); macOS and Arch use their own.
-    if is_debian_like; then
-        install_ecosystem_tools
     fi
 }
 

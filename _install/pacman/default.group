@@ -12,9 +12,6 @@ make
 shellcheck
 shfmt
 clang
-biome
-ruff
-stylua
 tree-sitter-cli
 python-pytest
 lazygit
@@ -30,4 +27,3 @@ neovim
 rustup
 fnm
 uv
-yt-dlp

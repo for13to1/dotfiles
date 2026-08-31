@@ -34,12 +34,20 @@ case "$OS" in
         ;;
 esac
 
-# ── 3-5. Host base configuration ────────────────────────────────
+# ── 3. Ecosystem tools (platform-independent npm/uv) ───────────
+# pi/codex/opencode/... have no system package source; identical on every
+# platform. The curl channel (fnm/rustup/uv runtimes) is platform-specific
+# and lives inside pkg-linux's apt branch.
+if ! install_ecosystem_tools; then
+    warn "Some ecosystem tool installs failed; run the affected _install/install-by-*.sh scripts later to retry."
+fi
+
+# ── 4-6. Host base configuration ────────────────────────────────
 bash "$DOTFILES_DIR/_bootstrap/ssh.sh"
 bash "$DOTFILES_DIR/_bootstrap/git.sh" "$DOTFILES_DIR"
 bash "$DOTFILES_DIR/_bootstrap/shell.sh" "$OS"
 
-# ── 6. Mount configuration files (Stow) ─────────────────────────
+# ── 7. Mount configuration files (Stow) ─────────────────────────
 info "Mounting configuration files with Stow..."
 
 ## 1. Resolve the module list (single source of truth, see _scripts/modules.conf).
@@ -69,7 +77,7 @@ else
     warn "Stow mount had failures (see errors above); run 'make sync' later to fix"
 fi
 
-# ── 7. Sync tmux plugins (tpm) ──────────────────────────────────
+# ── 8. Sync tmux plugins (tpm) ──────────────────────────────────
 echo ""
 info "Syncing tmux plugins (tpm)..."
 if bash "$DOTFILES_DIR/_scripts/tmux-plugins.sh"; then
@@ -78,14 +86,14 @@ else
     warn "tmux plugin sync had errors; run 'bash _scripts/tmux-plugins.sh' later to retry"
 fi
 
-# ── 8. Sync editor plugins ──────────────────────────────────────
+# ── 9. Sync editor plugins ──────────────────────────────────────
 echo ""
 bash "$DOTFILES_DIR/_bootstrap/editors.sh"
 
-# ── 9. Deploy custom scripts ────────────────────────────────────
+# ── 10. Deploy custom scripts ──────────────────────────────────
 bash "$DOTFILES_DIR/_bootstrap/tools.sh" "$DOTFILES_DIR"
 
-# ── 10. Done ────────────────────────────────────────────────────
+# ── 11. Done ────────────────────────────────────────────────────
 echo ""
 ok "🎉 All done! Restart your terminal or run 'source ~/.zshrc' to apply the config."
 echo ""

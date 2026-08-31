@@ -24,27 +24,31 @@ if printf 'y\n' | install_with_prompt \
     fail "an accepted optional installer failure must return non-zero"
 fi
 
-# pkg-linux must try every ecosystem installer before returning a failure summary.
+# install_ecosystem_tools (bootstrap step #3) must run its platform-
+# independent npm/uv channels: a failing channel must not skip the other,
+# the failure must propagate, and the summary must name the failed channel.
+# (The curl channel is apt-specific and lives in pkg-linux's apt branch.)
 INSTALLER_REPO="$TMP/repo"
 mkdir -p "$INSTALLER_REPO/_install"
-for installer in install-by-curl.sh install-by-npm.sh install-by-uv.sh install-by-cargo.sh; do
+for installer in install-by-npm.sh install-by-uv.sh; do
     cat > "$INSTALLER_REPO/_install/$installer" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$(basename "$0")" >> "$INSTALLER_LOG"
-[[ "$(basename "$0")" != "install-by-npm.sh" ]]
+[[ "$(basename "$0")" == "install-by-uv.sh" ]]
 EOF
 done
 export INSTALLER_LOG="$TMP/installer.log"
-# shellcheck disable=SC1091
-source "$ROOT/_bootstrap/pkg-linux.sh"
+# Used by install_ecosystem_tools (defined in common.sh) via DOTFILES_DIR.
+# shellcheck disable=SC2034
 DOTFILES_DIR="$INSTALLER_REPO"
+
 if install_ecosystem_tools > "$TMP/ecosystem.out" 2>&1; then
-    fail "an ecosystem installer failure must propagate"
+    fail "an ecosystem channel failure must propagate"
 fi
-[[ "$(wc -l < "$INSTALLER_LOG" | tr -d ' ')" == 4 ]] \
-    || fail "all ecosystem installers must run even when one fails"
+[[ "$(wc -l < "$INSTALLER_LOG" | tr -d ' ')" == 2 ]] \
+    || fail "a failing channel must not skip the other channels"
 grep -q 'install-by-npm.sh' "$TMP/ecosystem.out" \
-    || fail "the failure summary must name the failed installer"
+    || fail "the failure summary must name the npm channel"
 
 # AI CLIs are optional: non-interactive mode declines all three, while an
 # interactive run installs only the explicitly accepted tool.
@@ -86,13 +90,15 @@ for cli in pi codex opencode; do
     touch "$FNM_PREFIX/bin/$cli"
     chmod +x "$FNM_PREFIX/bin/$cli"
 done
+touch "$FNM_PREFIX/bin/stylua"
+chmod +x "$FNM_PREFIX/bin/stylua"
 
 # The CLIs can be installed in fnm's Node environment while remaining absent
 # from the parent shell's PATH. They must not trigger duplicate-install prompts.
 FNM_OUTPUT="$TMP/fnm-detection.out"
 HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >"$FNM_OUTPUT"
-! grep -q 'pi not found\|codex not found\|opencode not found' "$FNM_OUTPUT" \
+! grep -q 'pi not found\|codex not found\|opencode not found\|stylua not found' "$FNM_OUTPUT" \
     || fail "fnm-managed CLIs must be detected outside the parent PATH"
 
 # A runtime without npm must degrade to a clean skip, not an error.
