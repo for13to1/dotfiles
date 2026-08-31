@@ -91,8 +91,10 @@ install_codex() {
     npm_install_global @openai/codex
 }
 
+# opencode's postinstall copies the platform binary into bin/ (required);
+# allow it (npm_install_global drops the flag on old npm).
 install_opencode() {
-    npm_install_global opencode-ai
+    npm_install_global --allow-scripts=opencode-ai opencode-ai
 }
 
 # wrangler depends on workerd/esbuild, whose postinstall seeds the native

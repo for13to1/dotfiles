@@ -103,15 +103,16 @@ cd ~/dotfiles && bash bootstrap.sh
 `bootstrap.sh` 会自动引导并处理以下流程：
 
 1. **环境检测**：自动安装 Xcode CLT (macOS) 与 Homebrew，校验核心依赖。
-2. **软件安装**：按组安装软件工具，应用 macOS 系统设置。
-3. **SSH 基础设施**：交互式生成/检测 SSH 密钥，加固目录权限。
-4. **Git 身份配置**：交互式创建本地身份配置，启用 pre-push 钩子。
-5. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
-6. **配置挂载**：使用 `stow` 构建全局符号链接，自动备份文件冲突。
-7. **tmux 插件**：同步 tpm 插件（见 `_scripts/tmux-plugins.sh`）。
-8. **编辑器插件**：交互式同步 Neovim/Vim 的扩展插件。
-9. **自定义工具**：部署 proj-setup 等自定义工具到 `~/.local/bin`。
-10. **引导完成**：重启终端或 `source ~/.zshrc` 使配置生效。
+2. **软件安装**：按组安装系统软件（brew/apt/pacman），macOS 应用系统设置；apt 缺失的 fnm/rustup/uv 由官方安装器补齐。
+3. **生态工具**：通过 npm/uv 统一安装 CLI（pi、codex、opencode、wrangler、biome、stylua、ruff、yt-dlp），三平台一致。
+4. **SSH 基础设施**：交互式生成/检测 SSH 密钥，加固目录权限。
+5. **Git 身份配置**：交互式创建本地身份配置，启用 pre-push 钩子。
+6. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
+7. **配置挂载**：使用 `stow` 构建全局符号链接，自动备份文件冲突。
+8. **tmux 插件**：同步 tpm 插件（见 `_scripts/tmux-plugins.sh`）。
+9. **编辑器插件**：交互式同步 Neovim/Vim 的扩展插件。
+10. **自定义工具**：部署 proj-setup 等自定义工具到 `~/.local/bin`。
+11. **引导完成**：重启终端或 `source ~/.zshrc` 使配置生效。
 
 ### 非交互模式（CI / 容器 / 无 TTY）
 

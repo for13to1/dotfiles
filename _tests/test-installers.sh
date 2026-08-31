@@ -50,8 +50,9 @@ fi
 grep -q 'install-by-npm.sh' "$TMP/ecosystem.out" \
     || fail "the failure summary must name the npm channel"
 
-# AI CLIs are optional: non-interactive mode declines all three, while an
-# interactive run installs only the explicitly accepted tool.
+# Optional npm CLIs (pi/codex/opencode/wrangler) are interactive-only:
+# non-interactive mode declines all of them, while an interactive run
+# installs only the explicitly accepted tool.
 NPM_HOME="$TMP/npm-home"
 NPM_BIN="$TMP/npm-bin"
 FNM_PREFIX="$TMP/fnm-prefix"
@@ -94,6 +95,14 @@ grep -q '@openai/codex' "$FNM_LOG" \
     || fail "accepting codex should invoke its npm install"
 grep -q '@earendil-works/pi-coding-agent\|opencode-ai\|wrangler' "$FNM_LOG" \
     && fail "declining pi/opencode/wrangler should not invoke their npm installs"
+
+: > "$FNM_LOG"
+# opencode's postinstall copies its platform binary into bin/; accepting
+# opencode must carry --allow-scripts (the mock npm understands it).
+printf 'n\nn\ny\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" >/dev/null
+grep -q -- 'npm install -g --allow-scripts=opencode-ai opencode-ai' "$FNM_LOG" \
+    || fail "accepting opencode should pass --allow-scripts for its postinstall"
 
 : > "$FNM_LOG"
 # wrangler relies on workerd/esbuild whose postinstall seeds native binaries;
