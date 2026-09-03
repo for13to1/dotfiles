@@ -20,3 +20,6 @@ __pycache__/
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
+
+# CodeGraph 每项目索引（本地生成，不入库）
+.codegraph/

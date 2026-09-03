@@ -216,8 +216,8 @@ install_with_prompt() {
 }
 
 # ── Ecosystem installers ──────────────────────────────────────────
-# Platform-independent tool layer: npm (Node CLIs: pi/codex/opencode/biome/
-# stylua/wrangler) and uv (Python CLIs: ruff/yt-dlp). No system package
+# Platform-independent tool layer: npm (Node CLIs: pi/codex/opencode/codegraph/
+# biome/stylua/wrangler) and uv (Python CLIs: ruff/yt-dlp). No system package
 # manager provides them, so they are identical on every platform and run
 # once here as bootstrap step 3.
 # Each script is self-contained: idempotent via is_installed, and it skips

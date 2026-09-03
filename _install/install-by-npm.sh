@@ -103,6 +103,12 @@ install_wrangler() {
     npm_install_global --allow-scripts=esbuild,workerd wrangler
 }
 
+# codegraph's npm distro is a launcher shim (npm-shim.js) with no lifecycle
+# scripts, so a plain global install suffices — no --allow-scripts needed.
+install_codegraph() {
+    npm_install_global @colbymchenry/codegraph
+}
+
 install_biome() {
     npm_install_global --prefix "$HOME/.local" @biomejs/biome
 }
@@ -112,18 +118,11 @@ install_stylua() {
     npm_install_global @johnnymorganz/stylua-bin
 }
 
-# Prompt to install an npm CLI into the pinned runtime. `fnm exec` installs
-# into that runtime's global bin without updating this script's PATH, so bin
-# (probed once in main) is checked alongside PATH for existing installs.
-install_npm_cli() {
-    local name="$1" install_fn="$2" bin="$3"
-    install_with_prompt \
-        "$name" \
-        "$name not found; install it via npm?" \
-        "$install_fn" \
-        "$name installed" \
-        "$bin/$name"
-}
+# Interactive optional CLIs, installed only after confirmation. Each entry must
+# have a matching install_<name> function above (carrying its npm flags) — add
+# a CLI here AND its function there. biome/stylua install unconditionally when
+# missing, so they intentionally stay out of this list.
+PROMPTED_CLIS=(pi codex opencode codegraph wrangler)
 
 main() {
     if ! ensure_fnm_node_env; then
@@ -133,7 +132,7 @@ main() {
     # Probe the pinned runtime: a non-empty prefix both confirms npm is present
     # and yields the global bin `fnm exec` installs into — which this script's
     # PATH cannot see, so the checks below must include it explicitly.
-    local fnm_global_prefix fnm_global_bin
+    local fnm_global_prefix fnm_global_bin name
     fnm_global_prefix="$(fnm_exec npm prefix -g 2>/dev/null || true)"
     if [[ -z "$fnm_global_prefix" ]]; then
         warn "npm not found; skipping npm CLI installs"
@@ -153,10 +152,14 @@ main() {
         ok "stylua installed"
     fi
 
-    install_npm_cli pi install_pi "$fnm_global_bin"
-    install_npm_cli codex install_codex "$fnm_global_bin"
-    install_npm_cli opencode install_opencode "$fnm_global_bin"
-    install_npm_cli wrangler install_wrangler "$fnm_global_bin"
+    for name in "${PROMPTED_CLIS[@]}"; do
+        install_with_prompt \
+            "$name" \
+            "$name not found; install it via npm?" \
+            "install_$name" \
+            "$name installed" \
+            "$fnm_global_bin/$name"
+    done
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

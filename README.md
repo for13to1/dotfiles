@@ -104,7 +104,7 @@ cd ~/dotfiles && bash bootstrap.sh
 
 1. **环境检测**：自动安装 Xcode CLT (macOS) 与 Homebrew，校验核心依赖。
 2. **软件安装**：按组安装系统软件（brew/apt/pacman），macOS 应用系统设置；apt 缺失的 fnm/rustup/uv 由官方安装器补齐。
-3. **生态工具**：通过 npm/uv 统一安装 CLI（pi、codex、opencode、wrangler、biome、stylua、ruff、yt-dlp），三平台一致。
+3. **生态工具**：通过 npm/uv 统一安装 CLI（pi、codex、opencode、codegraph、wrangler、biome、stylua、ruff、yt-dlp），三平台一致。
 4. **SSH 基础设施**：交互式生成/检测 SSH 密钥，加固目录权限。
 5. **Git 身份配置**：交互式创建本地身份配置，启用 pre-push 钩子。
 6. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
@@ -226,7 +226,7 @@ bash ~/dotfiles/_install/install --brew
 
 - `.group` 文件只包含各平台包管理器可安装的软件（`_install/install` 为统一安装入口）；
 - **平台差异层**（`pkg-*`）：仅 apt 缺 fnm/rustup/uv，由 `install-by-curl.sh` 官方安装器补齐（brew/pacman 经 default 组提供，无需此渠道）；
-- **平台无关层**（bootstrap 步骤 3，三平台同一份）：`install-by-npm.sh` 安装 Node.js CLI 及预编译分发的工具（pi、codex、opencode、wrangler、biome、stylua）、`install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（ruff、yt-dlp）；`install-by-cargo.sh` 保留为 Rust CLI 备用渠道（暂不启用）。
+- **平台无关层**（bootstrap 步骤 3，三平台同一份）：`install-by-npm.sh` 安装 Node.js CLI 及预编译分发的工具（pi、codex、opencode、codegraph、wrangler、biome、stylua）、`install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（ruff、yt-dlp）；`install-by-cargo.sh` 保留为 Rust CLI 备用渠道（暂不启用）。
 
 各渠道按需通过 `is_installed` 幂等跳过已装工具，不重复安装；`DOTFILES_SKIP_ECOSYSTEM_TOOLS=1` 跳过全部生态安装（测试/无网络环境）。
 

@@ -50,7 +50,7 @@ fi
 grep -q 'install-by-npm.sh' "$TMP/ecosystem.out" \
     || fail "the failure summary must name the npm channel"
 
-# Optional npm CLIs (pi/codex/opencode/wrangler) are interactive-only:
+# Optional npm CLIs (pi/codex/opencode/codegraph/wrangler) are interactive-only:
 # non-interactive mode declines all of them, while an interactive run
 # installs only the explicitly accepted tool.
 NPM_HOME="$TMP/npm-home"
@@ -85,34 +85,42 @@ export FNM_PREFIX
 
 HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
-grep -q '@earendil-works/pi-coding-agent\|@openai/codex\|opencode-ai\|wrangler' "$FNM_LOG" \
+grep -q '@earendil-works/pi-coding-agent\|@openai/codex\|opencode-ai\|wrangler\|@colbymchenry/codegraph' "$FNM_LOG" \
     && fail "non-interactive mode should decline optional CLI installs"
 
 : > "$FNM_LOG"
-printf 'n\ny\nn\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
+printf 'n\ny\nn\nn\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
 grep -q '@openai/codex' "$FNM_LOG" \
     || fail "accepting codex should invoke its npm install"
-grep -q '@earendil-works/pi-coding-agent\|opencode-ai\|wrangler' "$FNM_LOG" \
-    && fail "declining pi/opencode/wrangler should not invoke their npm installs"
+grep -q '@earendil-works/pi-coding-agent\|opencode-ai\|wrangler\|@colbymchenry/codegraph' "$FNM_LOG" \
+    && fail "declining pi/opencode/wrangler/codegraph should not invoke their npm installs"
 
 : > "$FNM_LOG"
 # opencode's postinstall copies its platform binary into bin/; accepting
 # opencode must carry --allow-scripts (the mock npm understands it).
-printf 'n\nn\ny\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
+printf 'n\nn\ny\nn\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
 grep -q -- 'npm install -g --allow-scripts=opencode-ai opencode-ai' "$FNM_LOG" \
     || fail "accepting opencode should pass --allow-scripts for its postinstall"
 
 : > "$FNM_LOG"
+# codegraph ships a launcher shim with no lifecycle scripts; accepting it must
+# run a plain global install, without --allow-scripts.
+printf 'n\nn\nn\ny\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" >/dev/null
+grep -q -- 'npm install -g @colbymchenry/codegraph' "$FNM_LOG" \
+    || fail "accepting codegraph should run a plain global npm install"
+
+: > "$FNM_LOG"
 # wrangler relies on workerd/esbuild whose postinstall seeds native binaries;
 # accepting wrangler must carry --allow-scripts (the mock npm understands it).
-printf 'n\nn\nn\ny\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
+printf 'n\nn\nn\nn\ny\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
 grep -q -- 'npm install -g --allow-scripts=esbuild,workerd wrangler' "$FNM_LOG" \
     || fail "accepting wrangler should pass --allow-scripts for its lifecycle deps"
 
-for cli in pi codex opencode wrangler; do
+for cli in pi codex opencode codegraph wrangler; do
     touch "$FNM_PREFIX/bin/$cli"
     chmod +x "$FNM_PREFIX/bin/$cli"
 done
@@ -122,7 +130,7 @@ done
 FNM_OUTPUT="$TMP/fnm-detection.out"
 HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >"$FNM_OUTPUT"
-! grep -q 'pi not found\|codex not found\|opencode not found\|wrangler not found\|stylua not found' "$FNM_OUTPUT" \
+! grep -q 'pi not found\|codex not found\|opencode not found\|wrangler not found\|codegraph not found\|stylua not found' "$FNM_OUTPUT" \
     || fail "fnm-managed CLIs must be detected outside the parent PATH"
 
 # A runtime without npm must degrade to a clean skip, not an error.

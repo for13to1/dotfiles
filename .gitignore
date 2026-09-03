@@ -26,3 +26,6 @@ __pycache__/
 
 # Neovim 插件锁文件（每台机器各自生成，不入库）
 nvim/.config/nvim/lazy-lock.json
+
+# CodeGraph 每项目索引（本地生成，不入库）
+.codegraph/
