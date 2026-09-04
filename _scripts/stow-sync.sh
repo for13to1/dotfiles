@@ -107,7 +107,7 @@ for shared in "${SHARED_PARENT_DIRS[@]}"; do
 done
 
 stow_args=()
-for ignore in "${STOW_IGNORE_NAMES[@]}"; do
+for ignore in "${STOW_IGNORE_REGEXES[@]}"; do
     stow_args+=( "--ignore=$ignore" )
 done
 stow_args+=( -t "$TARGET_DIR" )

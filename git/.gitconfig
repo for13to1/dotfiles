@@ -4,6 +4,7 @@
 [core]
     ignorecase = false
     quotepath = false
+    excludesFile = ~/.config/git/ignore
 
 [i18n]
     commitEncoding = utf-8

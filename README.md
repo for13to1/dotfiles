@@ -6,6 +6,8 @@
 
 ## 📂 目录结构
 
+以下划线（`_`）开头的目录是项目骨架部分；其他目录是由 GNU Stow 管理、部署到用户环境中的配置包。
+
 ```text
 dotfiles/
 ├── agents/                     # Stow 包：通用 AI Agent 能力
@@ -18,7 +20,8 @@ dotfiles/
 │       ├── brew_mirror.sh      # Homebrew 镜像源切换
 │       └── net_proxy.sh        # 网络代理设置
 ├── git/                        # Stow 包：Git 全局配置
-│   └── .gitconfig
+│   ├── .gitconfig
+│   └── .config/git/ignore      # 用户级 Git excludes（CodeGraph 等本地索引）
 ├── vim/                        # Stow 包：Vim 配置
 │   └── .vimrc
 ├── nvim/                       # Stow 包：Neovim 配置
@@ -51,6 +54,7 @@ dotfiles/
 │   ├── shell.sh                # Shell 与 OMZ 插件部署
 │   ├── editors.sh              # 编辑器 (Neovim/Vim) 插件同步
 │   └── tools.sh                # 本地 CLI 工具软链接
+├── _docs/                      # 组件使用文档（Git/SSH/网络代理/AI skills/软件安装）
 ├── _vendor/                    # 外部 Skills Vendor 子模块（可插拔）
 │   └── mattpocock/             # 社区第三方 Agent Skills
 ├── _setup/                     # 操作系统级设置
@@ -141,27 +145,11 @@ export OPENAI_BASE_URL="https://api.openai.com/v1"
 export ANTHROPIC_API_KEY="sk-ant-..."
 export ANTHROPIC_BASE_URL="https://api.anthropic.com"
 
-export GEMINI_API_KEY="your-api-key"
-export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
+export DEEPSEEK_API_KEY="your-api-key"
+export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 ```
 
-### 2. 网络代理开关（`net_proxy` 命令）
-
-无需在这里配置任何代理变量——默认即为关闭，不导出任何环境变量。需要时用 `net_proxy`
-命令开关，配置保存在 `~/.net_proxy.conf`（不纳入版本控制），新终端自动恢复最近状态：
-
-```bash
-net_proxy set 127.0.0.1:7890   # 设置代理地址；也可省略地址交互式输入
-net_proxy on                   # 开启：导出 http_proxy/https_proxy/all_proxy 等
-net_proxy off                  # 关闭：清除上述环境变量
-net_proxy scheme http          # 可选：调整 all_proxy 协议（默认 socks5）
-net_proxy status               # 查看状态
-```
-
-`net_proxy on` 导出 `http_proxy`/`https_proxy`（`http://`）、`all_proxy`（`$scheme://`，
-默认 `socks5://`）及其大写形式，并设置 `no_proxy` 排除本地流量。
-
-### 3. `~/.gitconfig.local` 示例
+### 2. `~/.gitconfig.local` 示例
 
 ```ini
 [user]
@@ -169,103 +157,55 @@ net_proxy status               # 查看状态
     email = for13to1@outlook.com
 ```
 
-## 🔑 SSH 密钥管理
-
-`bootstrap.sh` 已集成 SSH 密钥检测与生成，如需手动维护可参考：
-
-```bash
-# 1. 生成现代 Ed25519 密钥
-ssh-keygen -t ed25519 -C "for13to1@outlook.com"
-
-# 2. 将私钥加入 SSH Agent (macOS Keychain 会自动处理，Linux 需要手动)
-eval "$(ssh-agent -s)"
-ssh-add ~/.ssh/id_ed25519
-
-# 3. 复制公钥并粘贴到 GitHub (Settings -> SSH and GPG Keys)
-cat ~/.ssh/id_ed25519.pub
-
-# 4. 验证连接
-ssh -T git@github.com
-
-# 5. 分发公钥到远程服务器
-ssh-copy-id <user>@<host>
-```
-
-## 🤖 AI Agents 配置
-
-基于 Agent Skills 目录约定，管理跨工具复用的 AI 专家技能 (Skills)：
-
-- **内置核心技能**：
-  - `commit-summarizer`：自动化 Git 暂存区分析与语义化 Commit 信息生成；
-  - `pdf2md-polish`：PDF 转 Markdown 后的确定性清洗、断句与标点排版对齐管道；
-  - `script-analyzer`：Shell / Python 脚本安全与语法分析工具。
-- **外部 Vendor 技能**：以 Git Submodule 引入的社区技能（如 `_vendor/mattpocock`）；挂载/卸载/更新命令见「日常维护 → 外部 AI 技能热插拔」。
-
-**生态兼容**: 挂载至 `~/.agents/` 后，可被 GitHub Copilot/VS Code、Gemini CLI、OpenCode、Zed、Warp、Codex CLI 等支持该路径的工具发现。
-
 ## 🔄 日常维护
 
-### 按组安装软件
+### 模块管理
 
-`_install/<platform>/<group>.group` 是组文件，`_install/install` 是统一安装入口：
+Stow 包由 `_scripts/modules.conf` 统一登记。使用 `make sync` 同步配置，使用 `make check`
+检查链接；新增或调整配置包时，同时更新模块目录和这份清单。
 
-```bash
-# 预览合并去重后的最终列表（不真正安装）
-INSTALL_DRY=1 bash ~/dotfiles/_install/install --brew default shell editor
-
-# 实际安装：多选组，自动合并去重后一次性交给包管理器
-bash ~/dotfiles/_install/install --apt default shell editor
-
-# 不指定组 = 默认安装 default 组（见 _install/<platform>/default.group）
-bash ~/dotfiles/_install/install --brew
-```
-
-`.group` 文件是各平台系统包的唯一数据源，组间允许重复包名，安装前统一去重。
-
-**安装途径边界**：
-
-- `.group` 文件只包含各平台包管理器可安装的软件（`_install/install` 为统一安装入口）；
-- **平台差异层**（`pkg-*`）：仅 apt 缺 fnm/rustup/uv，由 `install-by-curl.sh` 官方安装器补齐（brew/pacman 经 default 组提供，无需此渠道）；
-- **平台无关层**（bootstrap 步骤 3，三平台同一份）：`install-by-npm.sh` 安装 Node.js CLI 及预编译分发的工具（pi、codex、opencode、codegraph、wrangler、biome、stylua）、`install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（ruff、yt-dlp）；`install-by-cargo.sh` 保留为 Rust CLI 备用渠道（暂不启用）。
-
-各渠道按需通过 `is_installed` 幂等跳过已装工具，不重复安装；`DOTFILES_SKIP_ECOSYSTEM_TOOLS=1` 跳过全部生态安装（测试/无网络环境）。
-
-Vim 和 Neovim 从 `PATH` 或项目本地环境解析 formatter，不自行下载；平台默认组和上述生态安装脚本负责提供全局命令。
+若要将新配置纳入管理：
 
 ```bash
-# 编辑某平台的 .group 文件
-${EDITOR:-vi} ~/dotfiles/_install/brew/vcs.group
-
-# 提交更新
-cd ~/dotfiles && git add -A && git commit -m "feat: update brew groups" && git push
-```
-
-### 添加新配置模块
-
-若要将系统中现有的配置文件（如 `tmux`）纳入管理：
-
-```bash
-# 1. 创建符合 Stow 规范的目录结构
 mkdir -p ~/dotfiles/tmux
-# 2. 移动配置文件至仓库目录
 mv ~/.tmux.conf ~/dotfiles/tmux/.tmux.conf
-# 3. 建立软链接映射
 cd ~/dotfiles && stow tmux
-# 4. 持久化：将 'tmux' 添加到 _scripts/modules.conf 中
 ```
 
-### 外部 AI 技能热插拔 (Vendor Skills)
+然后将模块名 `tmux` 加入 `_scripts/modules.conf`，使其在 `bootstrap.sh` 和 `make sync` 中持续生效。
 
-通过 `Makefile` 一键管理第三方技能的接入与卸载（支持多 Vendor 同名冲突自动加前缀消解与原生技能免覆盖保护）：
+当配置在远程或其他设备上发生变化时，拉取更新后重新同步：
 
 ```bash
-make skills-attach            # 挂载所有 vendor 的 skills（创建软链接并同步 Stow）
-make skills-detach            # 卸载所有已挂载的外部 skills 软链接
-make skills-update            # 更新 submodule 并刷新软链接
-make skills-list              # 列出所有可用的外部 skills 及其挂载状态
+cd ~/dotfiles
+git pull
+make sync
 ```
 
-### Homebrew 镜像管理
+`make sync` 只同步 `_scripts/modules.conf` 中登记的核心 Stow 包。
+
+### 🧩 Git 全局配置
+
+用户级 excludes 的说明见 [`_docs/git.md`](_docs/git.md)。
+
+### 🌐 网络代理
+
+详细用法见 [`_docs/network-proxy.md`](_docs/network-proxy.md)。
+
+### 🔑 SSH 密钥管理
+
+详细操作见 [`_docs/ssh.md`](_docs/ssh.md)。
+
+### 🤖 AI Agents 配置
+
+详细说明见 [`_docs/ai-agents.md`](_docs/ai-agents.md)。
+
+### 软件安装
+
+软件按平台分组安装，`_install/<platform>/<group>.group` 是组文件，`_install/install` 是统一安装入口
+（预览合并安装、多选组安装、途径边界与 `.group` 文件编辑方式见 [`_docs/install.md`](_docs/install.md)）。
+
+### 镜像管理
 
 仓库内置了 `brew_mirror` 工具函数（定义于 `zsh/.zsh.d/brew_mirror.sh`），方便在不同镜像源之间快速切换：
 
@@ -277,16 +217,7 @@ brew_mirror ali          # 切换至 阿里巴巴 (Aliyun) 镜像源
 brew_mirror reset        # 重置为官方源
 ```
 
-### 增量更新 dotfiles
-
-当你在远程或其他设备修改了配置，拉取更新后一键刷新：
-
-```bash
-cd ~/dotfiles && git pull
-make sync  # 优雅地仅刷新 _scripts/modules.conf 中记录的核心模块
-```
-
-### 运行自检
+### 框架自检
 
 ```bash
 make test   # ShellCheck、bash 语法检查、Stow 行为测试、Skills 测试与 Zsh 性能基准
@@ -318,6 +249,7 @@ make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 - **Git**: 始终优先通过 Homebrew 安装 Git，以解决 macOS 自带版本在某些网络环境下的 SSL 报错问题。
 - **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为本项目已接管）：`rustup-init -y --no-modify-path`
 - **Conda (Miniforge)**: **不用**运行 `conda init`，直接依赖 `lazy loading` 实现加速启动。
+- **Formatter**: Vim 和 Neovim 从 `PATH` 或项目本地环境解析 formatter，不自行下载。
 
 ## 📄 许可证
 

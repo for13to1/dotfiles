@@ -78,6 +78,26 @@ STOW_IGNORE_NAMES=(
     "history.json"
 )
 
+# GNU Stow '--ignore' matches the END of a package-relative path as a Perl regex
+# (e.g. --ignore=.git also matches `.config/git`, whose tail is `/git`). Those directory
+# names are therefore anchored here (^|/)\.git so a real `.git` dir is skipped without
+# also dropping legitimate config paths that merely end in `git` (such as the
+# `git` Stow package's own `.config/git/ignore`). STOW_IGNORE_NAMES above stays exact for
+# `find -name` (glob) in stow_find(); this list carries the regex forms for stow.
+# shellcheck disable=SC2034  # consumed by _scripts/stow-sync.sh (sourced)
+STOW_IGNORE_REGEXES=(
+    "__pycache__"
+    ".pytest_cache"
+    ".ruff_cache"
+    ".mypy_cache"
+    ".venv"
+    ".stow-local-ignore"
+    ".DS_Store"
+    '(^|/)\.git'
+    ".gitignore"
+    "history.json"
+)
+
 # find wrapper whose final command is:
 #   find ROOT [-mindepth N -maxdepth M] -name IGN -prune -o … -o '(' user-preds ')' -print0
 # Relies on -a binding tighter than -o: when an ignore matches, -prune is true and

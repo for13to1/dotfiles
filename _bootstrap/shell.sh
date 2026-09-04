@@ -46,8 +46,8 @@ write_local_config() {
 # export ANTHROPIC_API_KEY="sk-ant-..."
 # export ANTHROPIC_BASE_URL="https://api.anthropic.com"
 
-# export GEMINI_API_KEY="your-api-key"
-# export GEMINI_BASE_URL="https://generativelanguage.googleapis.com"
+# export DEEPSEEK_API_KEY="your-api-key"
+# export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 EOF
     ok "$HOME/.zshrc.local example template created"
 }

@@ -3,9 +3,9 @@
 # with bootstrap.sh).
 #
 # Use the default folding behavior: stow folds directories into symlinks, so ~/.zsh.d,
-# ~/.agents, and ~/.config/nvim each become a single symlink into the dotfiles repo.
-# ~/.config is a system-shared dir ensured by mkdir -p, so stow folding stops at the
-# nvim level rather than the .config level.
+# ~/.agents, ~/.config/nvim, and ~/.config/git each become a single symlink into the
+# dotfiles repo. ~/.config is a system-shared dir ensured by mkdir -p, so stow folding
+# stops at the nvim/git level rather than the .config level.
 
 SHELL := /bin/bash
 # Parsing rules live in _scripts/list-modules.sh; Makefile and bootstrap.sh share this impl.
