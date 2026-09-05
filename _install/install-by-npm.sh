@@ -115,7 +115,7 @@ install_biome() {
 
 # Prebuilt binary from the official npm distribution (@johnnymorganz/stylua-bin).
 install_stylua() {
-    npm_install_global @johnnymorganz/stylua-bin
+    npm_install_global --prefix "$HOME/.local" @johnnymorganz/stylua-bin
 }
 
 # Interactive optional CLIs, installed only after confirmation. Each entry must
@@ -146,10 +146,16 @@ main() {
         ok "biome installed"
     fi
 
-    if ! is_installed stylua "$fnm_global_bin/stylua"; then
-        info "stylua not found; installing it via npm (prebuilt binary)..."
-        install_stylua
-        ok "stylua installed"
+    if ! is_installed stylua "$HOME/.local/bin/stylua"; then
+        if [[ -x "$fnm_global_bin/stylua" ]]; then
+            mkdir -p "$HOME/.local/bin"
+            ln -sf "$fnm_global_bin/stylua" "$HOME/.local/bin/stylua"
+            ok "stylua symlinked to ~/.local/bin/stylua"
+        else
+            info "stylua not found; installing it to ~/.local via npm (prebuilt binary)..."
+            install_stylua
+            ok "stylua installed"
+        fi
     fi
 
     for name in "${PROMPTED_CLIS[@]}"; do

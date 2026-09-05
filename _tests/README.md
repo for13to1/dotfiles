@@ -15,7 +15,7 @@
 | `test-installers.sh` | `common.sh`、`install-by-curl.sh`、`install-by-npm.sh` | 安装确认、生态安装调度、默认工具自动安装、失败汇总、curl 参数 |
 | `test-net-proxy.sh` | `zsh/.zsh.d/net_proxy.sh` | on/off/set/scheme、环境变量持久化、地址校验 |
 | `test-proj-setup.sh` | `proj-setup/bin/proj-setup.sh` | 模板占位符定制、vcs、rerun 不覆盖 |
-| `test-skills-vendor.sh` | `_scripts/skills-vendor.sh` | 多 Vendor 发现、挂载、原生保护、同名加前缀、卸载 |
+| `test-skills-vendor.sh` | `_scripts/skills-vendor.sh` | 多 Vendor 发现、挂载、随仓技能保护、同名加前缀、卸载 |
 | `test-stow-sync.sh` | `_scripts/stow-sync.sh` | stow 参数传递、已有文件备份、忽略目录 |
 | `test-tmux-plugins.sh` | `_scripts/tmux-plugins.sh` | TPM 克隆、set-environment、安装失败/无 server |
 | `test-zsh-benchmark.sh` | `zsh/.zshrc` | 启动正确性无未捕获异常、耗时门禁（可环境变量配置） |

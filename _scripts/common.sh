@@ -75,7 +75,6 @@ STOW_IGNORE_NAMES=(
     ".DS_Store"
     ".git"
     ".gitignore"
-    "history.json"
 )
 
 # GNU Stow '--ignore' matches the END of a package-relative path as a Perl regex
@@ -95,7 +94,6 @@ STOW_IGNORE_REGEXES=(
     ".DS_Store"
     '(^|/)\.git'
     ".gitignore"
-    "history.json"
 )
 
 # find wrapper whose final command is:

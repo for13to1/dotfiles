@@ -5,7 +5,7 @@
 #   skills-vendor.sh attach [vendor]   # Initialize submodule(s) and symlink skills into agents/
 #   skills-vendor.sh detach [vendor]   # Remove external skill symlinks from agents/
 #   skills-vendor.sh update [vendor]   # Update submodule(s) to latest upstream commit
-#   skills-vendor.sh list              # List built-in skills, attached vendor skills, and available vendors
+#   skills-vendor.sh list              # List bundled skills, attached vendor skills, and available vendors
 #
 
 set -euo pipefail
@@ -54,9 +54,9 @@ cmd_attach() {
 
         target_link="$SKILLS_ROOT/$skill_name"
 
-        # 1. Protect native non-symlink skills from being overwritten
+        # 1. Protect bundled non-symlink skills from being overwritten
         if [[ -d "$target_link" && ! -L "$target_link" ]]; then
-            warn "Skipping '$skill_name' from $vendor_name (collides with native built-in skill)"
+            warn "Skipping '$skill_name' from $vendor_name (collides with bundled skill)"
             continue
         fi
 
@@ -135,7 +135,7 @@ cmd_update() {
 
 cmd_list() {
     echo ""
-    info "🌟 Native Built-in Skills (Permanent):"
+    info "🌟 Bundled Skills (In-repo):"
     if [[ -d "$SKILLS_ROOT" ]]; then
         find "$SKILLS_ROOT" -mindepth 1 -maxdepth 1 -type d ! -type l | sort | while read -r dir; do
             echo "  • $(basename "$dir")"

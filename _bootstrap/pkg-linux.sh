@@ -33,6 +33,11 @@ main() {
     info "🐧 Linux environment, starting setup..."
 
     if command -v apt &>/dev/null; then
+        # Ensure the universe repository is enabled on Ubuntu (required for eza, 7zip, etc.).
+        if command -v add-apt-repository &>/dev/null; then
+            sudo add-apt-repository -y universe &>/dev/null || true
+        fi
+
         info "Updating the apt package index..."
         if ! sudo apt update; then
             warn "apt update failed (possibly a network issue); continuing with cached packages..."

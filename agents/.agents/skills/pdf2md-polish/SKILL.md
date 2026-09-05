@@ -17,10 +17,9 @@ Load on demand:
 - **[ocr-patterns.md](references/ocr-patterns.md)** — Deterministic vs LLM-judgment OCR fixes.
 - **[formatting-rules.md](references/formatting-rules.md)** — Heading hierarchy and semantic review rules.
 
-## Configuration & History
+## Configuration
 
 - **Language detection**: handled automatically by character rules (CJK / CJK punctuation / full-width forms). No `config.json` is needed; the script auto-detects Chinese-English mixed prose and inserts a space at CJK↔ASCII boundaries (`使用 Python`).
-- **`history.json`**: append-only run log stored alongside the Skill. LLM should not edit it. Write failures are non-fatal.
 
 ## Gotchas
 

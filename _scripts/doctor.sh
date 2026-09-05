@@ -102,6 +102,22 @@ check_modules_config() {
     done
 }
 
+check_bundled_skills() {
+    local skills_dir="$DOTFILES_DIR/agents/.agents/skills"
+    [[ -d "$skills_dir" ]] || return 0
+    command -v git >/dev/null 2>&1 || return 0
+    git -C "$DOTFILES_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+    for d in "$skills_dir"/*/; do
+        [[ -d "$d" && ! -L "$d" ]] || continue
+        local sname
+        sname="$(basename "$d")"
+        if git -C "$DOTFILES_DIR" check-ignore -q "agents/.agents/skills/$sname"; then
+            doctor_warn "bundled skill '$sname' is gitignored (check agents/.agents/skills/.gitignore whitelist)"
+        fi
+    done
+}
+
 check_link_state() {
     (( ${#MODULES[@]} > 0 )) || return
 
@@ -154,6 +170,7 @@ info "Stow modules"
 load_modules || true
 check_modules_config
 check_link_state
+check_bundled_skills
 
 echo ""
 if (( failed > 0 )); then
