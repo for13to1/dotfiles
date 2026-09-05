@@ -207,12 +207,24 @@ function ytdf() { yt-dlp -f bestvideo+bestaudio --write-subs --cookies-from-brow
 function ytds() { yt-dlp -f bestvideo+bestaudio --write-subs --cookies-from-browser safari "$1"; }
 
 function grnh() {
+    local inc_dir="/usr/include"
+    if [[ "$OSTYPE" == "darwin"* ]] && command -v xcrun &>/dev/null; then
+        local sdk_path
+        sdk_path="$(xcrun --show-sdk-path 2>/dev/null)"
+        [[ -n "$sdk_path" && -d "$sdk_path/usr/include" ]] && inc_dir="$sdk_path/usr/include"
+    fi
+
+    if [[ ! -d "$inc_dir" ]]; then
+        echo "Error: include directory not found: $inc_dir" >&2
+        return 1
+    fi
+
     if command -v rg &>/dev/null; then
-        rg -n -w "$1" /usr/include/*.h
+        rg --max-depth 1 -n -w -g '*.h' "$1" "$inc_dir"
     elif grep --help 2>/dev/null | grep -q -- '--color'; then
-        grep --color=auto -rnw "$1" /usr/include/*.h
+        find "$inc_dir" -maxdepth 1 -name '*.h' -exec grep --color=auto -nw "$1" {} + 2>/dev/null
     else
-        grep -rnw "$1" /usr/include/*.h
+        find "$inc_dir" -maxdepth 1 -name '*.h' -exec grep -nw "$1" {} + 2>/dev/null
     fi
 }
 

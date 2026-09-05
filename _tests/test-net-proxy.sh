@@ -14,15 +14,20 @@ trap 'rm -rf "$TMP"' EXIT
 
 NET_PROXY_SH="$ROOT/zsh/.zsh.d/net_proxy.sh"
 
+# Unset host environment variables to preserve strict test isolation
+unset XDG_STATE_HOME NET_PROXY_CONF_FILE http_proxy https_proxy all_proxy no_proxy \
+      HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY
+
 # Run a snippet under an isolated HOME (a fresh shell each time, simulating a new terminal).
 run() {
     printf '%s\n' "$1" > "$TMP/run.sh"
-    HOME="$TMP/home" bash -c "source '$NET_PROXY_SH'; . '$TMP/run.sh'"
+    env -u XDG_STATE_HOME -u NET_PROXY_CONF_FILE HOME="$TMP/home" bash -c "source '$NET_PROXY_SH'; . '$TMP/run.sh'"
 }
 
 # Read the currently saved proxy address from the config file.
+CONF_FILE="$TMP/home/.local/state/net_proxy.conf"
 conf_addr() {
-    sed -n 's/^net_proxy_addr=//p' "$TMP/home/.net_proxy.conf" | head -1 | sed 's/^"//; s/"$//'
+    sed -n 's/^net_proxy_addr=//p' "$CONF_FILE" | head -1 | sed 's/^"//; s/"$//'
 }
 
 mkdir -p "$TMP/home"
@@ -31,18 +36,18 @@ mkdir -p "$TMP/home"
 out="$(run 'net_proxy status')"
 assert_contains "status shows off with no config" "$out" 'Proxy status: ⭕ off'
 
-# ── set: save the address to ~/.net_proxy.conf ──
+# ── set: save the address to ~/.local/state/net_proxy.conf ──
 run 'net_proxy set 192.168.1.5:8888' >/dev/null || fail "net_proxy set should succeed"
-grep -q '^net_proxy_addr=192.168.1.5:8888$' "$TMP/home/.net_proxy.conf" \
+grep -q '^net_proxy_addr=192.168.1.5:8888$' "$CONF_FILE" \
     || fail "config should contain the new address"
-grep -q 'net_proxy_enabled=0' "$TMP/home/.net_proxy.conf" \
+grep -q 'net_proxy_enabled=0' "$CONF_FILE" \
     || fail "net_proxy_enabled should be 0 when off"
 
 # ── on: export env vars and persist the on/off state ──
 out="$(run 'net_proxy on >/dev/null; printf "%s|%s|%s" "$http_proxy" "$https_proxy" "$all_proxy"')"
 [[ "$out" == "http://192.168.1.5:8888|http://192.168.1.5:8888|socks5://192.168.1.5:8888" ]] \
     || fail "on should export http:// and socks5:// proxy vars; got: $out"
-grep -q 'net_proxy_enabled=1' "$TMP/home/.net_proxy.conf" \
+grep -q 'net_proxy_enabled=1' "$CONF_FILE" \
     || fail "on should write net_proxy_enabled=1"
 
 # ── on should set no_proxy ──
@@ -52,7 +57,7 @@ out="$(run 'net_proxy on >/dev/null; printf "%s" "$no_proxy"')"
 # ── off: clear env vars and persist the on/off state ──
 out="$(run 'net_proxy on >/dev/null; net_proxy off >/dev/null; printf "%s|%s" "${http_proxy:-unset}" "${all_proxy:-unset}"')"
 [[ "$out" == "unset|unset" ]] || fail "off should clear proxy vars; got: $out"
-grep -q 'net_proxy_enabled=0' "$TMP/home/.net_proxy.conf" \
+grep -q 'net_proxy_enabled=0' "$CONF_FILE" \
     || fail "off should write net_proxy_enabled=0"
 
 # ── Auto-restore in a new terminal: on should reapply after reopening a shell ──
@@ -68,7 +73,7 @@ out="$(run 'printf "%s" "${http_proxy:-unset}"')"
 
 # ── Shortcut: passing ip:port directly equals set ──
 run 'net_proxy 127.0.0.1:9999' >/dev/null || fail "net_proxy ip:port should equal set"
-grep -q '^net_proxy_addr=127.0.0.1:9999$' "$TMP/home/.net_proxy.conf" \
+grep -q '^net_proxy_addr=127.0.0.1:9999$' "$CONF_FILE" \
     || fail "the shortcut should update the address"
 
 # ── scheme switch: all_proxy follows when http ──
@@ -123,5 +128,26 @@ fi
 if run 'net_proxy set user:pass@host:7890' >/dev/null 2>&1; then
     fail "an unsupported auth address should be explicitly rejected"
 fi
+
+# ── Legacy config auto-migration: ~/.net_proxy.conf migrated to ~/.local/state/net_proxy.conf ──
+rm -rf "$TMP/home/.local/state"
+cat > "$TMP/home/.net_proxy.conf" <<'EOF'
+net_proxy_addr=10.10.10.10:8080
+net_proxy_scheme=http
+net_proxy_enabled=1
+EOF
+chmod 600 "$TMP/home/.net_proxy.conf"
+out="$(run 'printf "%s" "$http_proxy"')"
+[[ "$out" == "http://10.10.10.10:8080" ]] || fail "legacy ~/.net_proxy.conf should be migrated and honored; got: $out"
+[[ -f "$TMP/home/.local/state/net_proxy.conf" ]] || fail "legacy config must be moved to XDG state file"
+[[ ! -f "$TMP/home/.net_proxy.conf" ]] || fail "legacy file must be removed after migration"
+
+# ── Custom XDG_STATE_HOME: config stored in $XDG_STATE_HOME/net_proxy.conf ──
+custom_state="$TMP/custom_xdg_state"
+mkdir -p "$custom_state"
+HOME="$TMP/home" XDG_STATE_HOME="$custom_state" bash -c "source '$NET_PROXY_SH'; net_proxy set 192.168.99.1:9090 >/dev/null"
+[[ -f "$custom_state/net_proxy.conf" ]] || fail "net_proxy should respect custom XDG_STATE_HOME"
+grep -q '^net_proxy_addr=192.168.99.1:9090$' "$custom_state/net_proxy.conf" \
+    || fail "custom XDG_STATE_HOME should record the configured address"
 
 echo "PASS net_proxy tests"

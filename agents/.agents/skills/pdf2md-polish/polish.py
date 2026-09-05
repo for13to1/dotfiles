@@ -17,7 +17,6 @@ import json
 import re
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Sentinel placeholders for text protection ──────────────────────────────
@@ -32,8 +31,7 @@ _SENTINEL_WS = "\x04"  # Protects internal whitespace during inline-whitespace c
 
 # ── Warning state ───────────────────────────────────────────────────────────
 # process() is used recursively for list items and blockquotes. Keep warning
-# accounting scoped to the outermost call so CLI history can record a truthful
-# count for the full run.
+# accounting scoped to the outermost call for the full run.
 _WARNING_COUNT = 0
 _PROCESS_DEPTH = 0
 
@@ -1298,39 +1296,6 @@ def apply_headings(text: str, mapping: dict[int, str]) -> str:
     return "\n".join(lines)
 
 
-def update_history(input_path: Path, result: str, history_path: Path | None = None) -> list[dict]:
-    """Update history.json with run record, degrading gracefully on invalid/corrupted files."""
-    if history_path is None:
-        history_path = Path(__file__).parent / "history.json"
-
-    history_data: list[dict] = []
-    if history_path.exists():
-        try:
-            parsed = json.loads(history_path.read_text(encoding="utf-8"))
-            if isinstance(parsed, list):
-                history_data = parsed
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            history_data = []
-
-    sentences_count = len([s for s in re.split(r"[.!?。！？\n]+", result) if s.strip()])
-
-    history_data.append(
-        {
-            "timestamp": datetime.now(timezone.utc).isoformat()[:19],
-            "file": input_path.name,
-            "sentences": sentences_count,
-            "warnings": get_warning_count(),
-            "notes": "Automated run log",
-        }
-    )
-    try:
-        history_path.write_text(json.dumps(history_data, indent=2), encoding="utf-8")
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
-        print(f"Warning: Failed to update history.json: {e}", file=sys.stderr)
-
-    return history_data
-
-
 def finalize_files(input_path: Path) -> tuple[Path, Path]:
     """Back up the raw input and promote its polished sibling."""
     polished_path = input_path.with_name(f"{input_path.stem}-polished{input_path.suffix}")
@@ -1419,9 +1384,6 @@ def main():
         result = process(text)
         output_path.write_text(result, encoding="utf-8")
         print(f"Done. Output: {output_path}")
-
-        # Update history.json automatically
-        update_history(input_path, result)
 
     elif args.command == "headings":
         input_path = Path(args.input)

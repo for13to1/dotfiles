@@ -1,4 +1,4 @@
-# Ignore externally attached vendor symlinks; keep only native built-in skills
+# Ignore externally attached vendor symlinks; keep only bundled skills
 /*
 !/commit-summarizer/
 !/pdf2md-polish/

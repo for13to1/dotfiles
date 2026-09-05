@@ -4,14 +4,24 @@
 # Usage: net_proxy [on|off|set [ip:port]|scheme [http|https|socks5]|status|help]
 #   No argument = status; a bare ip:port is equivalent to set (with interactive prompt).
 #
-# Config is stored in ~/.net_proxy.conf (off by default; no env vars are exported).
+# Config is stored in ~/.local/state/net_proxy.conf (off by default; no env vars are exported).
 # `net_proxy on` exports:
 #   http_proxy / https_proxy = http://$addr (plus uppercase variants)
 #   all_proxy / ALL_PROXY    = $scheme://$addr (socks5 by default)
 #   no_proxy / NO_PROXY      = localhost,127.0.0.1,0.0.0.0,::1
 # A new terminal auto-restores the last state.
 
-NET_PROXY_CONF_FILE="${NET_PROXY_CONF_FILE:-$HOME/.net_proxy.conf}"
+if [[ -z "${NET_PROXY_CONF_FILE:-}" ]]; then
+    _xdg_conf="${XDG_STATE_HOME:-$HOME/.local/state}/net_proxy.conf"
+    _legacy_conf="$HOME/.net_proxy.conf"
+    # Compatibility: auto-migrate legacy config if present
+    if [[ -f "$_legacy_conf" && ! -f "$_xdg_conf" ]]; then
+        mkdir -p "$(dirname "$_xdg_conf")"
+        mv "$_legacy_conf" "$_xdg_conf" 2>/dev/null || true
+    fi
+    NET_PROXY_CONF_FILE="$_xdg_conf"
+    unset _xdg_conf _legacy_conf
+fi
 NET_PROXY_DEFAULT_ADDR="${NET_PROXY_DEFAULT_ADDR:-127.0.0.1:7890}"
 NET_PROXY_DEFAULT_SCHEME="${NET_PROXY_DEFAULT_SCHEME:-socks5}"
 NET_PROXY_NO_PROXY="${NET_PROXY_NO_PROXY:-localhost,127.0.0.1,0.0.0.0,::1}"
@@ -85,7 +95,7 @@ net_proxy_apply() {
     net_proxy_save_conf
 }
 
-# Persist config to ~/.net_proxy.conf (a plain data file, permissions tightened to 600).
+# Persist config to $NET_PROXY_CONF_FILE (a plain data file, permissions tightened to 600).
 net_proxy_save_conf() {
     local fdir
     fdir="$(dirname "$NET_PROXY_CONF_FILE")"
@@ -160,8 +170,8 @@ Usage: net_proxy <command> [args]
   scheme [http|https|socks5]  set the all_proxy scheme (default socks5)
   status              show the current status
   help                show this help
-Config is stored in ~/.net_proxy.conf, off by default; a new terminal auto-restores
- the last state.
+Config is stored in ~/.local/state/net_proxy.conf,
+  off by default; a new terminal auto-restores the last state.
 EOF
 }
 

@@ -2,94 +2,44 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-我的跨平台开发环境配置，使用 [GNU Stow](https://www.gnu.org/software/stow/) 管理软链接。
+我的跨平台 (macOS, arch Linux, Debian-like) 开发环境配置，使用 [GNU Stow](https://www.gnu.org/software/stow/) 管理软链接。
+
+## 🧭 核心概念
+
+- **基础设施**（`_` 前缀：`_install`/`_bootstrap`/`_scripts`/`_docs`/`_setup`/`_tests`/`_vendor`）：安装、部署、测试与文档，只存在于仓库内，不部署到用户环境。
+- **本地配置**（`~/.zshrc.local`、`~/.gitconfig.local`）：每台机器独有，不纳入版本控制。
+- **配置包**（`agents`/`zsh`/`git`/`vim`/`nvim`/`tmux`/`ripgrep`）：由 GNU Stow 软链接部署到 `~`；模块清单见 `_scripts/modules.conf`（单一真值源，`bootstrap.sh` 与 `make sync` 共同读取）。
+
+`vscode/` 暂为配置备份，`proj-setup/` 是项目工具与模板，均不参与 Stow 部署。
 
 ## 📂 目录结构
-
-以下划线（`_`）开头的目录是项目骨架部分；其他目录是由 GNU Stow 管理、部署到用户环境中的配置包。
 
 ```text
 dotfiles/
 ├── agents/                     # Stow 包：通用 AI Agent 能力
-│   └── .agents/
-│       ├── AGENTS.md           # Agent 通用原则
-│       └── skills/             # AI agent skills
 ├── zsh/                        # Stow 包：Zsh 配置
-│   ├── .zshrc
-│   └── .zsh.d/
-│       ├── brew_mirror.sh      # Homebrew 镜像源切换
-│       └── net_proxy.sh        # 网络代理设置
 ├── git/                        # Stow 包：Git 全局配置
-│   ├── .gitconfig
-│   └── .config/git/ignore      # 用户级 Git excludes（CodeGraph 等本地索引）
 ├── vim/                        # Stow 包：Vim 配置
-│   └── .vimrc
 ├── nvim/                       # Stow 包：Neovim 配置
-│   └── .config/nvim/
-│       └── init.lua
 ├── tmux/                       # Stow 包：tmux 配置
-│   └── .tmux.conf
 ├── ripgrep/                    # Stow 包：ripgrep 配置
-│   └── .ripgreprc
 ├── vscode/                     # VSCode 配置备份
-│   └── settings.json
 ├── proj-setup/                 # 项目配置工具及模板
-│   ├── bin/
-│   ├── templates/
-│   └── README.md
-├── _install/                   # 软件安装：.group 文件 + 安装工具
-│   ├── install                 # 安装入口
-│   ├── install-by-curl.sh      # 官方安装器途径的工具管理器安装
-│   ├── install-by-npm.sh       # npm 途径的 Node.js CLI 安装
-│   ├── install-by-uv.sh        # uv tool 途径的 Python CLI 安装
-│   ├── install-by-cargo.sh     # Cargo 途径的 Rust CLI 安装（备用渠道，暂不启用）
-│   ├── apt/                    # Debian 系平台的 .group 文件
-│   ├── pacman/                 # Arch Linux 平台 .group 文件
-│   └── brew/                   # macOS 平台 .group 文件
+├── _install/                   # 软件安装：按分组安装+npm/uv 生态安装
 ├── _bootstrap/                 # 环境部署脚本（SSH/Git/Shell/编辑器/工具）
-│   ├── pkg-mac.sh              # macOS 包管理与环境前置
-│   ├── pkg-linux.sh            # Linux (apt/pacman) 包管理前置
-│   ├── ssh.sh                  # SSH 密钥引导
-│   ├── git.sh                  # Git 全局与局部配置
-│   ├── shell.sh                # Shell 与 OMZ 插件部署
-│   ├── editors.sh              # 编辑器 (Neovim/Vim) 插件同步
-│   └── tools.sh                # 本地 CLI 工具软链接
-├── _docs/                      # 组件使用文档（Git/SSH/网络代理/AI skills/软件安装）
-├── _vendor/                    # 外部 Skills Vendor 子模块（可插拔）
-│   └── mattpocock/             # 社区第三方 Agent Skills
+├── _docs/                      # 使用文档说明
+├── _vendor/                    # Vendor Skills
 ├── _setup/                     # 操作系统级设置
-│   └── mac/
-│       └── setup.sh            # macOS 系统设置
 ├── _scripts/                   # shell 基础设施
-│   ├── common.sh               # 常用颜色定义、函数定义等
-│   ├── modules.conf            # Stow 模块列表（单一真值源）
-│   ├── list-modules.sh         # Stow 模块列表解析
-│   ├── stow-sync.sh            # Stow 统一同步入口
-│   ├── check-links.sh          # Stow 挂载前检查与挂载后校验
-│   ├── skills-vendor.sh        # 多 Vendor 外部技能插拔管理器
-│   ├── tmux-plugins.sh         # tpm 插件同步
-│   ├── doctor.sh               # 环境健康诊断
-│   └── hooks/
-│       └── pre-push            # Git 钩子：push 前自动运行 make test
 ├── _tests/                     # 行为测试（make test 自动发现 test-*.sh）
-│   ├── helpers.sh              # 共享断言库（fail/assert_*）
-│   ├── README.md               # 测试分工与约定
-│   ├── test-bootstrap.sh       # _bootstrap/* 组件行为测试
-│   ├── test-check-links.sh     # check-links 行为测试
-│   ├── test-doctor.sh          # doctor 退出码契约测试
-│   ├── test-proj-setup.sh      # proj-setup 行为测试
-│   ├── test-skills-vendor.sh   # 多 Vendor 技能插拔与冲突消解测试
-│   ├── test-stow-sync.sh       # stow-sync 集成测试
-│   ├── test-net-proxy.sh       # net_proxy 行为测试
-│   ├── test-install.sh         # _install/install 行为测试
-│   ├── test-tmux-plugins.sh    # tmux 插件同步行为测试
-│   └── test-zsh-benchmark.sh   # Zsh 启动性能与正确性基准测试
 ├── Makefile                    # 多平台模块管理、外部技能插拔与同步
 ├── bootstrap.sh                # 一键部署脚本
 ├── opencode.json               # OpenCode 权限配置（本仓库）
+├── .github/                    # CI：make test 流水线
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
 ├── .gitattributes
 ├── .gitignore
+├── .gitmodules                 # _vendor 外部技能子模块
 ├── LICENSE                     # MIT
 └── README.md
 ```
@@ -100,19 +50,19 @@ dotfiles/
 # 1. 克隆仓库
 git clone https://github.com/for13to1/dotfiles.git ~/dotfiles
 
-# 2. 一键安装
+# 2. 一键部署
 cd ~/dotfiles && bash bootstrap.sh
 ```
 
 `bootstrap.sh` 会自动引导并处理以下流程：
 
-1. **环境检测**：自动安装 Xcode CLT (macOS) 与 Homebrew，校验核心依赖。
-2. **软件安装**：按组安装系统软件（brew/apt/pacman），macOS 应用系统设置；apt 缺失的 fnm/rustup/uv 由官方安装器补齐。
-3. **生态工具**：通过 npm/uv 统一安装 CLI（pi、codex、opencode、codegraph、wrangler、biome、stylua、ruff、yt-dlp），三平台一致。
-4. **SSH 基础设施**：交互式生成/检测 SSH 密钥，加固目录权限。
-5. **Git 身份配置**：交互式创建本地身份配置，启用 pre-push 钩子。
+1. **环境检测**：识别操作系统并准备核心依赖——macOS 校验 Xcode CLT（缺失时触发安装引导，需在系统对话框确认后重跑）并自动安装 Homebrew；Linux 确保 zsh、stow、make 可用。
+2. **软件安装**：按默认组安装系统软件（brew/apt/pacman），macOS 应用系统设置；apt 缺失的 fnm/rustup/uv 由官方安装器补齐。
+3. **生态工具**：通过 npm/uv 统一安装 CLI（pi、codex、opencode、codegraph、wrangler 为交互式询问，biome、stylua、ruff、yt-dlp 自动安装），三平台一致。
+4. **SSH 设施**：交互式生成/检测 SSH 密钥，加固目录权限。
+5. **Git 配置**：交互式创建本地身份配置，启用 pre-push 钩子。
 6. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
-7. **配置挂载**：使用 `stow` 构建全局符号链接，自动备份文件冲突。
+7. **Stow 挂载**：使用 `stow` 构建全局符号链接，自动备份文件冲突。
 8. **tmux 插件**：同步 tpm 插件（见 `_scripts/tmux-plugins.sh`）。
 9. **编辑器插件**：交互式同步 Neovim/Vim 的扩展插件。
 10. **自定义工具**：部署 proj-setup 等自定义工具到 `~/.local/bin`。
@@ -124,7 +74,7 @@ cd ~/dotfiles && bash bootstrap.sh
 cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 ```
 
-该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
+该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；交互式询问的 CLI（pi、codex、opencode、codegraph、wrangler）会全部跳过，生态工具仅自动安装 biome、stylua（npm）与 ruff、yt-dlp（uv）；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
 
 ## 🖥️ 本地配置
 
@@ -159,22 +109,28 @@ export DEEPSEEK_BASE_URL="https://api.deepseek.com"
 
 ## 🔄 日常维护
 
-### 模块管理
+### 核心操作
 
-Stow 包由 `_scripts/modules.conf` 统一登记。使用 `make sync` 同步配置，使用 `make check`
-检查链接；新增或调整配置包时，同时更新模块目录和这份清单。
+#### 模块管理
 
-若要将新配置纳入管理：
+Stow 包由 `_scripts/modules.conf` 统一登记，`make sync` 与 `bootstrap.sh` 共同读取该清单。
+
+##### 新增配置包
+
+以 `example` 模块为例
 
 ```bash
-mkdir -p ~/dotfiles/tmux
-mv ~/.tmux.conf ~/dotfiles/tmux/.tmux.conf
-cd ~/dotfiles && stow tmux
+mkdir -p ~/dotfiles/example
+mv ~/.example.conf ~/dotfiles/example/.example.conf
 ```
 
-然后将模块名 `tmux` 加入 `_scripts/modules.conf`，使其在 `bootstrap.sh` 和 `make sync` 中持续生效。
+在 `_scripts/modules.conf` 中登记模块名 `example`，然后挂载：
 
-当配置在远程或其他设备上发生变化时，拉取更新后重新同步：
+```bash
+make sync
+```
+
+##### 拉取远程更新
 
 ```bash
 cd ~/dotfiles
@@ -182,23 +138,32 @@ git pull
 make sync
 ```
 
-`make sync` 只同步 `_scripts/modules.conf` 中登记的核心 Stow 包。
+#### 框架自检
 
-### 🧩 Git 全局配置
+```bash
+make test   # ShellCheck、bash 语法检查、Stow 行为测试、Skills 测试与 Zsh 性能基准
+make lint-shell  # 仅运行 ShellCheck
+make test-shell  # bash 语法检查与全部 shell 行为测试（含 Zsh 性能基准）
+make test-skills # 全部 Skill Python 测试
+make check  # 验证当前 HOME 下的 Stow 链接状态
+make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
+```
 
-用户级 excludes 的说明见 [`_docs/git.md`](_docs/git.md)。
+`make test` 要求 `shellcheck`，并要求 `pytest` 或 `uv` 可用；缺少检查依赖时会失败，
+避免 pre-push 在跳过部分检查后继续放行。
 
-### 🌐 网络代理
+`bootstrap.sh` 会将本仓库的 `core.hooksPath` 指向 `_scripts/hooks`，
+使 `pre-push` 钩子在每次 `git push` 前自动运行 `make test` 拦截回归。
 
-详细用法见 [`_docs/network-proxy.md`](_docs/network-proxy.md)。
+#### 环境注入
 
-### 🔑 SSH 密钥管理
+新增工具 PATH 时，使用条件判断包裹，如：
 
-详细操作见 [`_docs/ssh.md`](_docs/ssh.md)。
-
-### 🤖 AI Agents 配置
-
-详细说明见 [`_docs/ai-agents.md`](_docs/ai-agents.md)。
+```bash
+# >>> postgresql@18 loading >>>
+[[ -d "/opt/homebrew/opt/postgresql@18/bin" ]] && export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
+# <<< postgresql@18 loading <<<
+```
 
 ### 软件安装
 
@@ -217,32 +182,14 @@ brew_mirror ali          # 切换至 阿里巴巴 (Aliyun) 镜像源
 brew_mirror reset        # 重置为官方源
 ```
 
-### 框架自检
+### 组件文档
 
-```bash
-make test   # ShellCheck、bash 语法检查、Stow 行为测试、Skills 测试与 Zsh 性能基准
-make lint-shell  # 仅运行 ShellCheck
-make test-shell  # bash 语法检查与全部 shell 行为测试（含 Zsh 性能基准）
-make test-skills # 全部 Skill Python 测试
-make check  # 验证当前 HOME 下的 Stow 链接状态
-make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
-```
-
-`make test` 要求 `shellcheck`，并要求 `pytest` 或 `uv` 可用；缺少检查依赖时会失败，
-避免 pre-push 在跳过部分检查后继续放行。
-
-`bootstrap.sh` 会将本仓库的 `core.hooksPath` 指向 `_scripts/hooks`，
-使 `pre-push` 钩子在每次 `git push` 前自动运行 `make test` 拦截回归。
-
-### 增加工具环境依赖
-
-新增工具 PATH 时，使用条件判断包裹，如：
-
-```bash
-# >>> postgresql@18 loading >>>
-[[ -d "/opt/homebrew/opt/postgresql@18/bin" ]] && export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
-# <<< postgresql@18 loading <<<
-```
+| 组件 | 文档 |
+| --- | --- |
+| Git 配置 | [`_docs/git.md`](_docs/git.md) |
+| 网络代理 | [`_docs/net-proxy.md`](_docs/net-proxy.md) |
+| SSH 管理 | [`_docs/ssh.md`](_docs/ssh.md) |
+| AI Agents | [`_docs/ai-agents.md`](_docs/ai-agents.md) |
 
 ## 💡 最佳实践记录
 

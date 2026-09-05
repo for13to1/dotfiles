@@ -20,6 +20,9 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/home/.zsh.d"
 cp "$ROOT/zsh/.zshrc" "$TMP/home/.zshrc"
 cp -r "$ROOT/zsh/.zsh.d/"* "$TMP/home/.zsh.d/"
+if [[ -d "$HOME/.oh-my-zsh" ]]; then
+    ln -s "$HOME/.oh-my-zsh" "$TMP/home/.oh-my-zsh"
+fi
 
 # 1. Correctness check: source in isolated zsh subshell
 assert_pass "zshrc should source cleanly without syntax or runtime error" \
