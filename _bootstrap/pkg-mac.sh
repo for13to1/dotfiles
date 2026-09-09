@@ -104,10 +104,9 @@ main() {
     hint_optional_groups brew "$DOTFILES_DIR"
 
     # Apply macOS system preferences (skippable in tests via DOTFILES_SKIP_SYSTEM_SETUP).
+    # setup.sh reports its own progress, so no extra info/ok is emitted here.
     if [[ -f "$DOTFILES_DIR/_setup/mac/setup.sh" && -z "${DOTFILES_SKIP_SYSTEM_SETUP:-}" ]]; then
-        info "Applying macOS system preferences..."
         bash "$DOTFILES_DIR/_setup/mac/setup.sh" >&2
-        ok "macOS preferences applied"
     fi
 }
 

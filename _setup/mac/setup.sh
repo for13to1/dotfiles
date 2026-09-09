@@ -10,7 +10,11 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../../_scripts/common.sh"
 
-echo "Applying macOS system preferences..."
+info "Applying macOS system preferences..."
+# Set to 1 whenever a default is actually written; used for the final summary.
+CHANGED=0
+# Number of failed writes; a non-zero value makes the script exit non-zero.
+ERRORS=0
 
 # ── Helpers ─────────────────────────────────────────────────
 
@@ -44,11 +48,12 @@ set_default() {
     if [[ "$old_norm" == "$value" ]]; then
         echo "  ✓ $msg: $old_norm (unchanged)"
     else
-        if defaults write "$target" "$key" "$type" "$value" 2>/dev/null; then
+        if defaults write "$target" "$key" "$type" "$value"; then
             echo "  ✓ $msg: $old_norm → $value"
+            CHANGED=1
         else
             echo "  ✗ $msg: write failed"
-            return 1
+            ERRORS=$((ERRORS + 1))
         fi
     fi
 }
@@ -63,15 +68,28 @@ set_default com.apple.finder ShowPathbar -bool true "Show the path bar"
 set_default com.apple.finder FinderSpawnTab -bool true "Open folders in tabs"
 set_default com.apple.finder FXPreferredViewStyle -string "Nlsv" "Default list view"
 
-# ── Reload ─────────────────────────────────────────────────────
-echo ""
-if confirm "Restart Finder now to apply the settings? [y/N]: " 0; then
-    info "Restarting Finder..."
-    # killall is the recommended macOS reload; safer and cleaner than pkill -9.
-    killall Finder 2>/dev/null || true
-    ok "Finder reloaded"
-else
-    info "Settings written. Finder will apply them on the next system restart or a manual restart."
+# ── Reload & Summary ───────────────────────────────────────────
+if (( ERRORS )); then
+    echo ""
+    plural=""
+    if (( ERRORS > 1 )); then
+        plural="s"
+    fi
+    warn "$ERRORS preference$plural failed to apply — see the ✗ lines above."
+    exit 1
 fi
 
-ok "macOS preferences applied."
+if (( CHANGED )); then
+    echo ""
+    if confirm "Restart Finder now to apply the settings? [y/N]: " 0; then
+        info "Restarting Finder..."
+        # killall is the recommended macOS reload; safer and cleaner than pkill -9.
+        killall Finder 2>/dev/null || true
+        ok "Finder reloaded"
+    else
+        info "Settings written. Finder will apply them on the next system restart or a manual restart."
+    fi
+    ok "macOS preferences applied."
+else
+    info "macOS preferences already up to date."
+fi
