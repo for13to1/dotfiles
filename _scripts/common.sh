@@ -63,6 +63,20 @@ is_installed() {
     return 1
 }
 
+# ── Stale-file cleanup ────────────────────────────────────────────
+# A dangling symlink or non-executable placeholder at a CLI's install path
+# makes is_installed report it as missing while the path still BLOCKS a fresh
+# install (npm errors EEXIST). Clear such stale markers first; only
+# non-executable non-directories are removed, so real binaries stay safe.
+clean_stale_installs() {
+    local p
+    for p in "$@"; do
+        [[ (-e "$p" || -L "$p") && ! -d "$p" && ! -x "$p" ]] || continue
+        rm -f -- "$p"
+        warn "removed stale install entry: $p"
+    done
+}
+
 # ── Stow paths and ignore rules ─────────────────────────────────
 # These directories/files never participate in Stow checks, backup, or mounting.
 STOW_IGNORE_NAMES=(
@@ -221,6 +235,7 @@ install_with_prompt() {
     shift 4
 
     is_installed "$check_cmd" "$@" && return 0
+    clean_stale_installs "$@"
 
     warn "$prompt"
     confirm "Install now? [y/N]: " 0 || return 0

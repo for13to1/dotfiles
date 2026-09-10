@@ -34,12 +34,14 @@ main() {
     fi
 
     if ! is_installed ruff "$HOME/.local/bin/ruff"; then
+        clean_stale_installs "$HOME/.local/bin/ruff"
         info "ruff not found; installing it via uv tool..."
         install_ruff
         ok "ruff installed"
     fi
 
     if ! is_installed yt-dlp "$HOME/.local/bin/yt-dlp"; then
+        clean_stale_installs "$HOME/.local/bin/yt-dlp"
         info "yt-dlp not found; installing it via uv tool..."
         install_ytdlp
         ok "yt-dlp installed"

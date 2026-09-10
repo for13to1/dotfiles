@@ -144,12 +144,14 @@ main() {
     fi
 
     if ! is_installed biome "$LOCAL_PREFIX/bin/biome"; then
+        clean_stale_installs "$LOCAL_PREFIX/bin/biome"
         info "biome not found; installing it to ~/.local via npm..."
         install_biome
         ok "biome installed"
     fi
 
     if ! is_installed stylua "$LOCAL_PREFIX/bin/stylua"; then
+        clean_stale_installs "$LOCAL_PREFIX/bin/stylua"
         info "stylua not found; installing it to ~/.local via npm (prebuilt binary)..."
         install_stylua
         ok "stylua installed"
