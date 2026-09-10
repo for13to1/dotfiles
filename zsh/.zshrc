@@ -2,6 +2,11 @@
 # 1. Foundation Framework
 # =============================================================================
 
+# Keep PATH duplicate-free when this config is sourced in a shell nested inside
+# another (tmux panes, subshells, re-exec): the parent's PATH is inherited, so
+# "PATH=dir:$PATH" would re-append entries. -U keeps the highest-priority one.
+typeset -U path PATH
+
 # Homebrew (macOS)
 if [[ "$OSTYPE" == "darwin"* ]]; then
     if [[ -f /opt/homebrew/bin/brew ]]; then
@@ -115,6 +120,8 @@ if [[ "$OSTYPE" == linux* ]] && ! command -v fnm &>/dev/null; then
         && export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/fnm:$PATH"
 fi
 if command -v fnm &>/dev/null; then
+    # Drop multishell dirs inherited from a parent shell; `fnm env` adds its own.
+    path=(${path:#*/fnm_multishells/*})
     eval "$(fnm env --use-on-cd --shell zsh)"
 fi
 # <<< fnm loading <<<
