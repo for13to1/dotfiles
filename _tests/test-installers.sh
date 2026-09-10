@@ -61,8 +61,8 @@ touch "$NPM_HOME/.local/bin/biome"
 chmod +x "$NPM_HOME/.local/bin/biome"
 # stylua installs unconditionally (no interactive prompt), so seat it now
 # to keep the prompt-flow tests below free of an extra install call.
-touch "$FNM_PREFIX/bin/stylua"
-chmod +x "$FNM_PREFIX/bin/stylua"
+touch "$NPM_HOME/.local/bin/stylua"
+chmod +x "$NPM_HOME/.local/bin/stylua"
 cat > "$NPM_BIN/fnm" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FNM_LOG"
@@ -101,37 +101,37 @@ grep -q '@earendil-works/pi-coding-agent\|opencode-ai\|wrangler\|@colbymchenry/c
 # opencode must carry --allow-scripts (the mock npm understands it).
 printf 'n\nn\ny\nn\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
-grep -q -- 'npm install -g --allow-scripts=opencode-ai opencode-ai' "$FNM_LOG" \
-    || fail "accepting opencode should pass --allow-scripts for its postinstall"
+grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=opencode-ai opencode-ai' "$FNM_LOG" \
+    || fail "accepting opencode should install to ~/.local with --allow-scripts"
 
 : > "$FNM_LOG"
 # codegraph ships a launcher shim with no lifecycle scripts; accepting it must
 # run a plain global install, without --allow-scripts.
 printf 'n\nn\nn\ny\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
-grep -q -- 'npm install -g @colbymchenry/codegraph' "$FNM_LOG" \
-    || fail "accepting codegraph should run a plain global npm install"
+grep -qE -- 'npm install -g --prefix [^ ]+ @colbymchenry/codegraph' "$FNM_LOG" \
+    || fail "accepting codegraph should run a plain global npm install into ~/.local"
 
 : > "$FNM_LOG"
 # wrangler relies on workerd/esbuild whose postinstall seeds native binaries;
 # accepting wrangler must carry --allow-scripts (the mock npm understands it).
 printf 'n\nn\nn\nn\ny\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
-grep -q -- 'npm install -g --allow-scripts=esbuild,workerd wrangler' "$FNM_LOG" \
-    || fail "accepting wrangler should pass --allow-scripts for its lifecycle deps"
+grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=esbuild,workerd wrangler' "$FNM_LOG" \
+    || fail "accepting wrangler should install to ~/.local with --allow-scripts"
 
 for cli in pi codex opencode codegraph wrangler; do
-    touch "$FNM_PREFIX/bin/$cli"
-    chmod +x "$FNM_PREFIX/bin/$cli"
+    touch "$NPM_HOME/.local/bin/$cli"
+    chmod +x "$NPM_HOME/.local/bin/$cli"
 done
 
-# The CLIs can be installed in fnm's Node environment while remaining absent
-# from the parent shell's PATH. They must not trigger duplicate-install prompts.
+# Global CLIs install into ~/.local, which may not be on the parent shell's
+# PATH. They must still be detected and must not trigger duplicate-install prompts.
 FNM_OUTPUT="$TMP/fnm-detection.out"
 HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >"$FNM_OUTPUT"
 ! grep -q 'pi not found\|codex not found\|opencode not found\|wrangler not found\|codegraph not found\|stylua not found' "$FNM_OUTPUT" \
-    || fail "fnm-managed CLIs must be detected outside the parent PATH"
+    || fail "CLIs in the ~/.local prefix must be detected outside the parent PATH"
 
 # A runtime without npm must degrade to a clean skip, not an error.
 FNM_PREFIX="" HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \

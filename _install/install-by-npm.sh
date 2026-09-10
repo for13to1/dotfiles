@@ -13,6 +13,11 @@ source "$SCRIPT_DIR/../_scripts/common.sh"
 # multishell's internal path layout.
 FNM_BIN=""
 
+# Global npm CLIs install into a Node-version-independent prefix. fnm's `default`
+# alias follows `lts-latest`, so an LTS patch bump re-points PATH at a fresh Node
+# with an empty global bin — which used to make every CLI look missing.
+LOCAL_PREFIX="$HOME/.local"
+
 find_fnm_bin() {
     if command -v fnm &>/dev/null; then
         command -v fnm
@@ -60,9 +65,9 @@ npm_supports_allow_scripts() {
     fnm_exec npm install --help 2>/dev/null | grep -q -- '--allow-scripts'
 }
 
-# Install npm globals: pass through policy flags (--min-release-age,
-# --allow-scripts) only when this npm supports them, dropping them otherwise
-# and forwarding the remaining args untouched.
+# Install npm globals into $LOCAL_PREFIX. Drop --allow-scripts when this npm
+# rejects it and disable the release-age gate when this npm enforces one;
+# forward all other args untouched.
 npm_install_global() {
     local resolved=()
     local arg
@@ -76,9 +81,9 @@ npm_install_global() {
     done
 
     if release_age_flag; then
-        fnm_exec npm install -g --min-release-age=0 "${resolved[@]}"
+        fnm_exec npm install -g --prefix "$LOCAL_PREFIX" --min-release-age=0 "${resolved[@]}"
     else
-        fnm_exec npm install -g "${resolved[@]}"
+        fnm_exec npm install -g --prefix "$LOCAL_PREFIX" "${resolved[@]}"
     fi
 }
 
@@ -110,18 +115,19 @@ install_codegraph() {
 }
 
 install_biome() {
-    npm_install_global --prefix "$HOME/.local" @biomejs/biome
+    npm_install_global @biomejs/biome
 }
 
 # Prebuilt binary from the official npm distribution (@johnnymorganz/stylua-bin).
 install_stylua() {
-    npm_install_global --prefix "$HOME/.local" @johnnymorganz/stylua-bin
+    npm_install_global @johnnymorganz/stylua-bin
 }
 
 # Interactive optional CLIs, installed only after confirmation. Each entry must
 # have a matching install_<name> function above (carrying its npm flags) — add
-# a CLI here AND its function there. biome/stylua install unconditionally when
-# missing, so they intentionally stay out of this list.
+# a CLI here AND its function there. Detection checks $LOCAL_PREFIX/bin (plus
+# PATH), so a CLI already installed there never re-prompts. biome/stylua install
+# unconditionally when missing, so they intentionally stay out of this list.
 PROMPTED_CLIS=(pi codex opencode codegraph wrangler)
 
 main() {
@@ -129,33 +135,24 @@ main() {
         return 0
     fi
 
-    # Probe the pinned runtime: a non-empty prefix both confirms npm is present
-    # and yields the global bin `fnm exec` installs into — which this script's
-    # PATH cannot see, so the checks below must include it explicitly.
-    local fnm_global_prefix fnm_global_bin name
-    fnm_global_prefix="$(fnm_exec npm prefix -g 2>/dev/null || true)"
-    if [[ -z "$fnm_global_prefix" ]]; then
+    # `npm prefix -g` prints nothing when npm is missing; use it as a presence gate.
+    local npm_prefix name
+    npm_prefix="$(fnm_exec npm prefix -g 2>/dev/null || true)"
+    if [[ -z "$npm_prefix" ]]; then
         warn "npm not found; skipping npm CLI installs"
         return 0
     fi
-    fnm_global_bin="$fnm_global_prefix/bin"
 
-    if ! is_installed biome "$HOME/.local/bin/biome"; then
+    if ! is_installed biome "$LOCAL_PREFIX/bin/biome"; then
         info "biome not found; installing it to ~/.local via npm..."
         install_biome
         ok "biome installed"
     fi
 
-    if ! is_installed stylua "$HOME/.local/bin/stylua"; then
-        if [[ -x "$fnm_global_bin/stylua" ]]; then
-            mkdir -p "$HOME/.local/bin"
-            ln -sf "$fnm_global_bin/stylua" "$HOME/.local/bin/stylua"
-            ok "stylua symlinked to ~/.local/bin/stylua"
-        else
-            info "stylua not found; installing it to ~/.local via npm (prebuilt binary)..."
-            install_stylua
-            ok "stylua installed"
-        fi
+    if ! is_installed stylua "$LOCAL_PREFIX/bin/stylua"; then
+        info "stylua not found; installing it to ~/.local via npm (prebuilt binary)..."
+        install_stylua
+        ok "stylua installed"
     fi
 
     for name in "${PROMPTED_CLIS[@]}"; do
@@ -164,7 +161,7 @@ main() {
             "$name not found; install it via npm?" \
             "install_$name" \
             "$name installed" \
-            "$fnm_global_bin/$name"
+            "$LOCAL_PREFIX/bin/$name"
     done
 }
 
