@@ -80,9 +80,9 @@ proj-setup myproject --lang=python
 
 ## 添加新语言模板
 
-1. 在 `templates/language/` 下创建新目录（如 `templates/language/go/`）
+1. 在 `templates/language/` 下创建新目录（如 `templates/language/zig/`）
 2. 添加该语言的配置文件或子目录
-3. 使用 `proj-setup --lang=go` 即可应用该模板，无需修改代码
+3. 使用 `proj-setup --lang=zig` 即可应用该模板，无需修改代码
 
 ## 维护
 

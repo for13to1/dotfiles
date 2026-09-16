@@ -175,7 +175,7 @@ if has_nvim_011 then
       "williamboman/mason-lspconfig.nvim",
       config = function()
         require("mason-lspconfig").setup({
-          -- clangd is resolved directly from PATH.
+          -- clangd and gopls come from PATH (dotfiles toolchain), not from Mason.
           ensure_installed = { "pyright", "rust_analyzer", "ts_ls", "bashls" },
         })
       end,
@@ -183,7 +183,7 @@ if has_nvim_011 then
     {
       "neovim/nvim-lspconfig",
       config = function()
-        local servers = { "pyright", "rust_analyzer", "ts_ls", "bashls", "clangd" }
+        local servers = { "pyright", "rust_analyzer", "ts_ls", "bashls", "clangd", "gopls" }
         local capabilities = require("cmp_nvim_lsp").default_capabilities()
         for _, server in ipairs(servers) do
           vim.lsp.config(server, { capabilities = capabilities })
@@ -215,6 +215,7 @@ if has_nvim_011 then
             lua = { "stylua" },
             python = { "ruff_format" },
             rust = { "rustfmt" },
+            go = { "gofumpt" },
             javascript = { "biome" },
             javascriptreact = { "biome" },
             typescript = { "biome" },
@@ -242,7 +243,7 @@ if has_nvim_012 then
       build = ":TSUpdate",
       config = function()
         local treesitter = require("nvim-treesitter")
-        local parsers = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" }
+        local parsers = { "c", "go", "lua", "vim", "vimdoc", "query", "rust", "python" }
 
         treesitter.setup({
           install_dir = vim.fn.stdpath("data") .. "/site",
@@ -266,7 +267,7 @@ elseif has_nvim_010 then
       build = ":TSUpdate",
       config = function()
         require("nvim-treesitter.configs").setup({
-          ensure_installed = { "c", "lua", "vim", "vimdoc", "query", "rust", "python" },
+          ensure_installed = { "c", "go", "lua", "vim", "vimdoc", "query", "rust", "python" },
           auto_install = true,
           highlight = { enable = true },
         })

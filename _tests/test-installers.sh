@@ -25,12 +25,12 @@ if printf 'y\n' | install_with_prompt \
 fi
 
 # install_ecosystem_tools (bootstrap step #3) must run its platform-
-# independent npm/uv channels: a failing channel must not skip the other,
+# independent npm/uv/go channels: a failing channel must not skip the other,
 # the failure must propagate, and the summary must name the failed channel.
 # (The curl channel is apt-specific and lives in pkg-linux's apt branch.)
 INSTALLER_REPO="$TMP/repo"
 mkdir -p "$INSTALLER_REPO/_install"
-for installer in install-by-npm.sh install-by-uv.sh; do
+for installer in install-by-npm.sh install-by-uv.sh install-by-go.sh; do
     cat > "$INSTALLER_REPO/_install/$installer" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$(basename "$0")" >> "$INSTALLER_LOG"
@@ -45,7 +45,7 @@ DOTFILES_DIR="$INSTALLER_REPO"
 if install_ecosystem_tools > "$TMP/ecosystem.out" 2>&1; then
     fail "an ecosystem channel failure must propagate"
 fi
-[[ "$(wc -l < "$INSTALLER_LOG" | tr -d ' ')" == 2 ]] \
+[[ "$(wc -l < "$INSTALLER_LOG" | tr -d ' ')" == 3 ]] \
     || fail "a failing channel must not skip the other channels"
 grep -q 'install-by-npm.sh' "$TMP/ecosystem.out" \
     || fail "the failure summary must name the npm channel"
@@ -139,6 +139,121 @@ FNM_PREFIX="" HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bi
     || fail "missing npm must skip cleanly"
 grep -q 'skipping npm CLI installs' "$TMP/npm-missing.out" \
     || fail "missing npm must warn and skip"
+
+# The Go channel needs a `go` runtime; a missing runtime must degrade to a
+# clean skip, not an error. Simulate a machine without Go by exposing a PATH
+# that holds only the few commands the script needs (env/dirname) — never `go`
+# — so this branch fails identically on machines that already have Go installed.
+NOGO_BIN="$TMP/nogo-bin"
+mkdir -p "$NOGO_BIN"
+for cmd in env dirname bash; do
+    ln -sf "$(command -v "$cmd")" "$NOGO_BIN/$cmd"
+done
+GO_HOME="$TMP/go-home"
+mkdir -p "$GO_HOME"
+HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NOGO_BIN:/nonexistent" \
+    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-missing.out" 2>&1 \
+    || fail "missing go must skip cleanly"
+grep -q 'skipping Go CLI installs' "$TMP/go-missing.out" \
+    || fail "missing go must warn and skip"
+
+# With a runtime present, gopls/gofumpt install into ~/.local/bin (GOBIN) —
+# the same CLI prefix as the npm/uv channels — via `go install tool@latest`.
+MOCK_GO="$TMP/mock-go"
+mkdir -p "$MOCK_GO"
+cat > "$MOCK_GO/go" <<'EOF'
+#!/usr/bin/env bash
+# `go install` records to the install log; `go env` answers the layout or stays
+# silent, matching real go, so the idempotent-run log stays empty. `go env -w`
+# records the persisted keys so the test can assert the full layout is written.
+if [[ "$1" == install ]]; then
+    printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
+elif [[ "$1" == env && "$2" == -w ]]; then
+    shift 2
+    printf '%s\n' "$@" >> "$GO_WRITE_LOG"
+elif [[ "$1" == env && "$2" == GOBIN ]]; then
+    printf '%s\n' "$HOME/.local/bin"
+fi
+EOF
+chmod +x "$MOCK_GO/go"
+export GO_LOG="$TMP/go.log" GO_WRITE_LOG="$TMP/go-write.log"
+: > "$GO_LOG"
+: > "$GO_WRITE_LOG"
+
+# A failed `go env -w` is best effort, not fatal: as long as the effective
+# GOBIN resolves, the tools must still install there.
+BAD_GO="$TMP/bad-go"
+cat > "$BAD_GO" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == env && "$2" == -w ]]; then
+    printf 'go env is disabled\n' >&2
+    exit 1
+fi
+if [[ "$1" == install ]]; then
+    printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
+elif [[ "$1" == env && "$2" == GOBIN ]]; then
+    printf '%s\n' "$HOME/.local/bin"
+fi
+EOF
+chmod +x "$BAD_GO"
+: > "$GO_LOG"
+if ! HOME="$GO_HOME" PATH="$TMP:/usr/bin:/bin" GO_LOG="$GO_LOG" \
+    bash -c 'mkdir -p "$0"; ln -sf "$1" "$0/go"; PATH="$0:/usr/bin:/bin" bash "$2/_install/install-by-go.sh"' \
+    "$TMP/bad-go-bin" "$BAD_GO" "$ROOT" >"$TMP/go-bad.out" 2>&1; then
+    fail "a failed go env -w must not fail the Go channel"
+fi
+grep -q 'go env -w failed' "$TMP/go-bad.out" \
+    || fail "a failed go env -w must be reported"
+[[ "$(grep -c 'tool=' "$GO_LOG")" == 2 ]] \
+    || fail "tools must still install after a failed go env -w"
+
+# An empty GOBIN (the GOENV write failed silently) falls back to the
+# ~/.local/bin prefix, never to Go's implicit GOPATH/bin.
+EMPTY_GO_BIN="$TMP/empty-go-bin"
+mkdir -p "$EMPTY_GO_BIN"
+cat > "$EMPTY_GO_BIN/go" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == env && "$2" == GOBIN ]]; then
+    exit 0
+fi
+if [[ "$1" == install ]]; then
+    printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
+fi
+EOF
+chmod +x "$EMPTY_GO_BIN/go"
+: > "$GO_LOG"
+HOME="$GO_HOME" PATH="$EMPTY_GO_BIN:/usr/bin:/bin" GO_LOG="$GO_LOG" \
+    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-empty.out" 2>&1 \
+    || fail "an empty GOBIN must fall back to ~/.local/bin, not fail"
+grep -q 'GOBIN=.*\.local/bin tool=golang.org/x/tools/gopls@latest' "$GO_LOG" \
+    || fail "an empty GOBIN must fall back to the ~/.local/bin prefix"
+
+: > "$GO_WRITE_LOG"
+HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" >/dev/null
+grep -q 'GOBIN=.*\.local/bin tool=golang.org/x/tools/gopls@latest' "$GO_LOG" \
+    || fail "gopls should install into ~/.local/bin via go install"
+grep -q 'GOBIN=.*\.local/bin tool=mvdan.cc/gofumpt@latest' "$GO_LOG" \
+    || fail "gofumpt should install into ~/.local/bin via go install"
+# The full layout is persisted, not just GOBIN.
+grep -q '^GOBIN=.*\.local/bin$' "$GO_WRITE_LOG" \
+    || fail "the layout write must persist GOBIN"
+grep -q '^GOPATH=.*\.cache/go$' "$GO_WRITE_LOG" \
+    || fail "the layout write must persist GOPATH"
+grep -q '^GOMODCACHE=.*\.cache/go-mod$' "$GO_WRITE_LOG" \
+    || fail "the layout write must persist GOMODCACHE"
+
+# Idempotent: CLIs already seated in the ~/.local/bin prefix are skipped.
+mkdir -p "$GO_HOME/.local/bin"
+touch "$GO_HOME/.local/bin/gopls" "$GO_HOME/.local/bin/gofumpt"
+chmod +x "$GO_HOME/.local/bin/gopls" "$GO_HOME/.local/bin/gofumpt"
+: > "$GO_LOG"
+HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-idempotent.out" 2>&1
+[[ ! -s "$GO_LOG" ]] \
+    || fail "existing gopls/gofumpt must not be reinstalled"
+! grep -q 'not found' "$TMP/go-idempotent.out" \
+    || fail "installed Go CLIs must be detected and skipped"
 
 # Default official downloads run without prompting and use hardened HTTPS flags.
 MOCK_BIN="$TMP/bin"

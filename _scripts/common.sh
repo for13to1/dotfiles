@@ -250,11 +250,11 @@ install_with_prompt() {
 
 # ── Ecosystem installers ──────────────────────────────────────────
 # Platform-independent tool layer: npm (Node CLIs: pi/codex/opencode/codegraph/
-# biome/stylua/wrangler) and uv (Python CLIs: ruff/yt-dlp). No system package
-# manager provides them, so they are identical on every platform and run
-# once here as bootstrap step 3.
+# biome/stylua/wrangler), uv (Python CLIs: ruff/yt-dlp) and go (gopls/gofumpt
+# via `go install` → ~/.local/bin). No system package manager provides them, so
+# they are identical on every platform and run once here as bootstrap step 3.
 # Each script is self-contained: idempotent via is_installed, and it skips
-# cleanly when a prerequisite (fnm/uv) is missing.
+# cleanly when a prerequisite (fnm/uv/go) is missing.
 # The curl channel (runtimes fnm/rustup/uv via official installers) is NOT
 # part of this layer: brew/pacman provide them via default groups, only apt
 # lacks them, so pkg-linux runs that single script directly.
@@ -266,7 +266,7 @@ install_ecosystem_tools() {
 
     local rc=0
     local installer
-    for installer in install-by-npm.sh install-by-uv.sh; do
+    for installer in install-by-npm.sh install-by-uv.sh install-by-go.sh; do
         if [[ -f "$DOTFILES_DIR/_install/$installer" ]] \
            && ! bash "$DOTFILES_DIR/_install/$installer"; then
             warn "$installer failed; run it manually to retry"

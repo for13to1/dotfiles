@@ -34,10 +34,10 @@ case "$OS" in
         ;;
 esac
 
-# ── 3. Ecosystem tools (platform-independent npm/uv) ───────────
-# pi/codex/opencode/... have no system package source; identical on every
-# platform. The curl channel (fnm/rustup/uv runtimes) is platform-specific
-# and lives inside pkg-linux's apt branch.
+# ── 3. Ecosystem tools (platform-independent npm/uv/go) ────────
+# pi/codex/opencode/... and gopls/gofumpt have no system package source;
+# identical on every platform. The curl channel (fnm/rustup/uv runtimes) is
+# platform-specific and lives inside pkg-linux's apt branch.
 if ! install_ecosystem_tools; then
     warn "Some ecosystem tool installs failed; run the affected _install/install-by-*.sh scripts later to retry."
 fi

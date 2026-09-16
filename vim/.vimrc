@@ -303,6 +303,7 @@ let g:neoformat_enabled_json = ['biome']
 let g:neoformat_enabled_jsonc = ['biome']
 let g:neoformat_enabled_c = ['clangformat']
 let g:neoformat_enabled_cpp = ['clangformat']
+let g:neoformat_enabled_go = ['gofumpt']
 
 " ── Lightline ────────────────────────────────────────────────────
 set laststatus=2                        " 始终显示状态栏

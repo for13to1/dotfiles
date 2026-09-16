@@ -31,6 +31,7 @@ ${EDITOR:-vi} ~/dotfiles/_install/brew/vcs.group
 - **平台无关层**：
   - `install-by-npm.sh` 安装 Node.js CLI 及预编译分发的工具（pi、codex、opencode、codegraph、wrangler、biome、stylua）；
   - `install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（ruff、yt-dlp）；
+  - `install-by-go.sh` 通过 `go install` 安装 Go 编辑器工具（gopls、gofumpt），落入 `~/.local/bin`；布局（`GOBIN`/`GOPATH`/`GOMODCACHE`）经 `go env -w` 写入用户级 GOENV——同值重写为 no-op，已有不同值会被覆盖且不告警——写入失败只告警、不阻断安装，安装目标回读生效的 `GOBIN`（shell 已导出者优先，缺失时兜底 `~/.local/bin`）；写入成功后 Go 默认的 `~/go` 不再使用；
   - `install-by-cargo.sh` 保留为 Rust CLI 备用渠道（暂不启用）。
 
 各渠道按需通过 `is_installed` 幂等跳过已装工具，不重复安装；`DOTFILES_SKIP_ECOSYSTEM_TOOLS=1` 跳过全部生态安装（测试/无网络环境）。

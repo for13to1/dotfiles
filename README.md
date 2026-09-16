@@ -25,7 +25,7 @@ dotfiles/
 ├── ripgrep/                    # Stow 包：ripgrep 配置
 ├── vscode/                     # VSCode 配置备份
 ├── proj-setup/                 # 项目配置工具及模板
-├── _install/                   # 软件安装：按分组安装+npm/uv 生态安装
+├── _install/                   # 软件安装：按分组安装+npm/uv/go 生态安装
 ├── _bootstrap/                 # 环境部署脚本（SSH/Git/Shell/编辑器/工具）
 ├── _docs/                      # 使用文档说明
 ├── _vendor/                    # Vendor Skills
@@ -58,7 +58,7 @@ cd ~/dotfiles && bash bootstrap.sh
 
 1. **环境检测**：识别操作系统并准备核心依赖——macOS 校验 Xcode CLT（缺失时触发安装引导，需在系统对话框确认后重跑）并自动安装 Homebrew；Linux 确保 zsh、stow、make 可用。
 2. **软件安装**：按默认组安装系统软件（brew/apt/pacman），macOS 应用系统设置；apt 缺失的 fnm/rustup/uv 由官方安装器补齐。
-3. **生态工具**：通过 npm/uv 统一安装 CLI（pi、codex、opencode、codegraph、wrangler 为交互式询问，biome、stylua、ruff、yt-dlp 自动安装），三平台一致。
+3. **生态工具**：通过 npm/uv/go 统一安装 CLI（pi、codex、opencode、codegraph、wrangler 为交互式询问，biome、stylua、ruff、yt-dlp、gopls、gofumpt 自动安装），三平台一致。
 4. **SSH 设施**：交互式生成/检测 SSH 密钥，加固目录权限。
 5. **Git 配置**：交互式创建本地身份配置，启用 pre-push 钩子。
 6. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
@@ -74,7 +74,7 @@ cd ~/dotfiles && bash bootstrap.sh
 cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 ```
 
-该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；交互式询问的 CLI（pi、codex、opencode、codegraph、wrangler）会全部跳过，生态工具仅自动安装 biome、stylua（npm）与 ruff、yt-dlp（uv）；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
+该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；交互式询问的 CLI（pi、codex、opencode、codegraph、wrangler）会全部跳过，生态工具仅自动安装 biome、stylua（npm）、ruff、yt-dlp（uv）与 gopls、gofumpt（go）；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
 
 ## 🖥️ 本地配置
 
@@ -194,7 +194,8 @@ brew_mirror reset        # 重置为官方源
 ## 💡 最佳实践记录
 
 - **Git**: 始终优先通过 Homebrew 安装 Git，以解决 macOS 自带版本在某些网络环境下的 SSL 报错问题。
-- **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为本项目已接管）：`rustup-init -y --no-modify-path`
+- **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为本项目已接管）：`rustup-init -y --no-modify-path`。
+- **Go (golang)**: `go env -w` 把 `GOBIN` 指向 `~/.local/bin`、`GOPATH`/`GOMODCACHE` 指向 `~/.cache`（会覆盖 GOENV 中已有的同名值），取代 Go 默认的 `~/go`；写入失败只告警，安装仍定向到生效的 `GOBIN`。
 - **Conda (Miniforge)**: **不用**运行 `conda init`，直接依赖 `lazy loading` 实现加速启动。
 - **Formatter**: Vim 和 Neovim 从 `PATH` 或项目本地环境解析 formatter，不自行下载。
 

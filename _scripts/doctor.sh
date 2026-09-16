@@ -148,6 +148,7 @@ check_optional_command rg
 check_optional_command fd
 check_optional_command bat
 check_optional_command fnm
+check_optional_command go
 
 echo ""
 info "Editor toolchain"
@@ -159,6 +160,8 @@ check_optional_command shfmt
 check_optional_command clang-format
 check_optional_command clangd
 check_optional_command rustfmt
+check_optional_command gopls
+check_optional_command gofumpt
 
 echo ""
 info "Local private config"
