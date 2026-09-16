@@ -19,6 +19,15 @@ mkdir -p "$TMP/dotfiles/proj-setup/templates/language/python/src/__PROJECT_NAME_
 printf 'PACKAGE = "__PROJECT_NAME__"\n' \
     > "$TMP/dotfiles/proj-setup/templates/language/python/src/__PROJECT_NAME__/__init__.py"
 
+# Caches/tool artifacts that can appear in a template dir must never be copied
+# into a generated project.
+mkdir -p "$TMP/dotfiles/proj-setup/templates/language/python/.ruff_cache/0.1"
+mkdir -p "$TMP/dotfiles/proj-setup/templates/language/python/__pycache__"
+printf 'cache\n' > "$TMP/dotfiles/proj-setup/templates/language/python/.ruff_cache/CACHEDIR.TAG"
+printf 'cache\n' > "$TMP/dotfiles/proj-setup/templates/language/python/.ruff_cache/0.1/blob"
+printf 'cache\n' > "$TMP/dotfiles/proj-setup/templates/language/python/__pycache__/mod.pyc"
+printf 'cache\n' > "$TMP/dotfiles/proj-setup/templates/language/python/.DS_Store"
+
 PROJ_SETUP="$TMP/dotfiles/proj-setup/bin/proj-setup.sh"
 
 new_target="$TMP/work/New Project"
@@ -51,6 +60,12 @@ assert_equals "existing files should not be customized" \
     'keep __PROJECT_NAME__ unchanged' "$(cat "$python_target/NOTES.md")"
 assert_equals "unrelated existing files should not be customized" \
     'existing readme __PROJECT_NAME__' "$(cat "$python_target/EXISTING.md")"
+assert_missing "template caches should not be copied (.ruff_cache)" \
+    "$python_target/.ruff_cache"
+assert_missing "template caches should not be copied (__pycache__)" \
+    "$python_target/__pycache__"
+assert_missing "template caches should not be copied (.DS_Store)" \
+    "$python_target/.DS_Store"
 
 printf '# original __PROJECT_NAME__\n' > "$python_target/README.md"
 assert_pass "rerunning should skip existing files" \

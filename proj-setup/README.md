@@ -71,6 +71,7 @@ proj-setup myproject --lang=python
 
 - 如果目标目录不存在，会自动创建
 - 会递归复制模板目录中的文件；如果目标文件已存在，会跳过（不覆盖）
+- 复制模板时会自动跳过工具产物与缓存（`.git`、`.DS_Store`、`.ruff_cache`、`__pycache__`、`.venv`、`node_modules`、`*.pyc`），模板目录可在本地直接运行工具
 - 默认使用 `--vcs=git`，会复制 Git 配置并初始化 Git 仓库
 - 使用 `--vcs=none` 时，只复制基础配置和语言模板，不初始化版本控制
 - 如果 Git 仓库已存在，会跳过 `git init`

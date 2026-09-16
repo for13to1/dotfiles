@@ -84,7 +84,12 @@ copy_templates() {
     first="$(find "$src_dir" -mindepth 1 -print -quit 2>/dev/null || true)"
     [[ -n "$first" ]] || return 0
 
-    find "${src_dir}" -type f -print0 | while IFS= read -r -d '' src_file; do
+    # Template dirs are live working copies (tools may be run inside them), so
+    # never ship caches or tool artifacts into generated projects.
+    find "${src_dir}" \
+        \( -name .git -o -name .DS_Store -o -name .ruff_cache -o -name __pycache__ \
+           -o -name .venv -o -name node_modules -o -name '*.pyc' \) -prune -o \
+        -type f -print0 | while IFS= read -r -d '' src_file; do
         local rel_path
         rel_path="${src_file#"$src_dir"/}"
         local dst_file="${dst_dir}/${rel_path}"
