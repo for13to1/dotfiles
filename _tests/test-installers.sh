@@ -163,9 +163,10 @@ MOCK_GO="$TMP/mock-go"
 mkdir -p "$MOCK_GO"
 cat > "$MOCK_GO/go" <<'EOF'
 #!/usr/bin/env bash
-# `go install` records to the install log; `go env` answers the layout or stays
-# silent, matching real go, so the idempotent-run log stays empty. `go env -w`
-# records the persisted keys so the test can assert the full layout is written.
+# `go install` records to the install log; `go env KEY` feeds the pre-write
+# comparison (it answers the pinned layout or stays silent, like real go).
+# `go env -w` records the persisted keys so the test can assert the full layout
+# is written.
 if [[ "$1" == install ]]; then
     printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
 elif [[ "$1" == env && "$2" == -w ]]; then
@@ -180,8 +181,8 @@ export GO_LOG="$TMP/go.log" GO_WRITE_LOG="$TMP/go-write.log"
 : > "$GO_LOG"
 : > "$GO_WRITE_LOG"
 
-# A failed `go env -w` is best effort, not fatal: as long as the effective
-# GOBIN resolves, the tools must still install there.
+# A failed `go env -w` is best effort, not fatal: the tools must still install
+# into ~/.local/bin.
 BAD_GO="$TMP/bad-go"
 cat > "$BAD_GO" <<'EOF'
 #!/usr/bin/env bash
@@ -207,26 +208,34 @@ grep -q 'go env -w failed' "$TMP/go-bad.out" \
 [[ "$(grep -c 'tool=' "$GO_LOG")" == 2 ]] \
     || fail "tools must still install after a failed go env -w"
 
-# An empty GOBIN (the GOENV write failed silently) falls back to the
-# ~/.local/bin prefix, never to Go's implicit GOPATH/bin.
-EMPTY_GO_BIN="$TMP/empty-go-bin"
-mkdir -p "$EMPTY_GO_BIN"
-cat > "$EMPTY_GO_BIN/go" <<'EOF'
+# The dotfiles declare the layout, but an existing *different* value must be
+# reported before it is rewritten — the change is never silent.
+WARN_GO="$TMP/warn-go"
+mkdir -p "$WARN_GO"
+cat > "$WARN_GO/go" <<'EOF'
 #!/usr/bin/env bash
-if [[ "$1" == env && "$2" == GOBIN ]]; then
-    exit 0
-fi
 if [[ "$1" == install ]]; then
     printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
+elif [[ "$1" == env && "$2" == -w ]]; then
+    exit 0
+elif [[ "$1" == env && "$2" == GOBIN ]]; then
+    printf '%s\n' "$OLD_GOBIN"
+elif [[ "$1" == env && "$2" == GOPATH ]]; then
+    printf '%s\n' "$OLD_GOPATH"
 fi
 EOF
-chmod +x "$EMPTY_GO_BIN/go"
+chmod +x "$WARN_GO/go"
 : > "$GO_LOG"
-HOME="$GO_HOME" PATH="$EMPTY_GO_BIN:/usr/bin:/bin" GO_LOG="$GO_LOG" \
-    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-empty.out" 2>&1 \
-    || fail "an empty GOBIN must fall back to ~/.local/bin, not fail"
-grep -q 'GOBIN=.*\.local/bin tool=golang.org/x/tools/gopls@latest' "$GO_LOG" \
-    || fail "an empty GOBIN must fall back to the ~/.local/bin prefix"
+HOME="$GO_HOME" PATH="$WARN_GO:/usr/bin:/bin" GO_LOG="$GO_LOG" \
+    OLD_GOBIN="$TMP/old-bin" OLD_GOPATH="$TMP/old-go" \
+    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-warn.out" 2>&1 \
+    || fail "an existing differing Go value must not fail the channel"
+grep -q "GOBIN was $TMP/old-bin; rewriting to" "$TMP/go-warn.out" \
+    || fail "an existing GOBIN must be reported before being rewritten"
+grep -q "GOPATH was $TMP/old-go; rewriting to" "$TMP/go-warn.out" \
+    || fail "an existing GOPATH must be reported before being rewritten"
+[[ "$(grep -c 'tool=' "$GO_LOG")" == 2 ]] \
+    || fail "tools must still install after reporting the old layout"
 
 : > "$GO_WRITE_LOG"
 HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" \

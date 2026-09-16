@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # _install/install-by-go.sh — Go CLI installs via `go install`
 #
-# Toolchain comes from the package manager; this channel installs the Go editor
-# tools (gopls, gofumpt) into the shared ~/.local/bin CLI prefix, pinned
-# best-effort via ensure_go_layout.
+# Toolchain comes from the package manager; this channel declares the user-level
+# Go layout in GOENV and installs the Go editor tools (gopls, gofumpt) into the
+# shared ~/.local/bin CLI prefix.
 
 set -euo pipefail
 
@@ -14,35 +14,50 @@ source "$SCRIPT_DIR/../_scripts/common.sh"
 # The ~/.local/bin CLI prefix, shared with the npm/uv channels.
 CLI_DIR="$HOME/.local/bin"
 
+# User-level Go layout declared by this repo: GOBIN is the shared ~/.local/bin
+# prefix, GOPATH/GOMODCACHE live under ~/.cache instead of Go's default ~/go.
+GO_LAYOUT=(
+    "GOBIN=$CLI_DIR"
+    "GOMODCACHE=$HOME/.cache/go-mod"
+    "GOPATH=$HOME/.cache/go"
+)
+
 find_go_bin() {
     command -v go
 }
 
-# Pin the user-level Go layout in GOENV: GOBIN to the shared ~/.local/bin CLI
-# prefix, GOPATH/GOMODCACHE under ~/.cache instead of Go's default ~/go.
-# `go env -w` is idempotent for matching values, so this runs unconditionally;
-# a failure (e.g. an unwritable GOENV) only warns — the installs below target
-# the effective GOBIN explicitly, and main falls back to CLI_DIR when nothing
-# is pinned. Existing GOENV values are overwritten.
+# Declare the layout in the user-level GOENV (path: `go env GOENV`). The
+# dotfiles are the source of truth for this environment, so the values are
+# written unconditionally; a different value already in effect is reported
+# first, so the change is never silent. `go env -w` is idempotent, and a failed
+# write only warns — the installs below target CLI_DIR explicitly.
 ensure_go_layout() {
-    local go_bin
+    local go_bin pair key want cur
     go_bin="$(find_go_bin)" || return 1
-    "$go_bin" env -w GOBIN="$CLI_DIR" \
-        GOMODCACHE="$HOME/.cache/go-mod" \
-        GOPATH="$HOME/.cache/go" \
-        || warn "go env -w failed; installing into the effective GOBIN"
+
+    for pair in "${GO_LAYOUT[@]}"; do
+        key="${pair%%=*}"
+        want="${pair#*=}"
+        cur="$("$go_bin" env "$key" 2>/dev/null || true)"
+        if [[ -n "$cur" && "$cur" != "$want" ]]; then
+            warn "$key was $cur; rewriting to $want"
+        fi
+    done
+
+    "$go_bin" env -w "${GO_LAYOUT[@]}" \
+        || warn "go env -w failed; the Go layout may not be persisted"
 }
 
 install_gopls() {
     local go_bin
     go_bin="$(find_go_bin)" || return 1
-    GOBIN="$go_cli_dir" "$go_bin" install golang.org/x/tools/gopls@latest
+    GOBIN="$CLI_DIR" "$go_bin" install golang.org/x/tools/gopls@latest
 }
 
 install_gofumpt() {
     local go_bin
     go_bin="$(find_go_bin)" || return 1
-    GOBIN="$go_cli_dir" "$go_bin" install mvdan.cc/gofumpt@latest
+    GOBIN="$CLI_DIR" "$go_bin" install mvdan.cc/gofumpt@latest
 }
 
 main() {
@@ -53,23 +68,16 @@ main() {
 
     ensure_go_layout
 
-    # Resolve the install target from the established layout. An exported GOBIN
-    # wins over GOENV; fall back to CLI_DIR when nothing is pinned (e.g. the
-    # write above failed).
-    local go_bin
-    go_bin="$(find_go_bin)"
-    go_cli_dir="$("$go_bin" env GOBIN 2>/dev/null || true)"
-    [[ -n "$go_cli_dir" ]] || go_cli_dir="$CLI_DIR"
-
-    if ! is_installed gopls "$go_cli_dir/gopls"; then
-        clean_stale_installs "$go_cli_dir/gopls"
+    # The layout is declared, not inherited: gopls/gofumpt always go to CLI_DIR.
+    if ! is_installed gopls "$CLI_DIR/gopls"; then
+        clean_stale_installs "$CLI_DIR/gopls"
         info "gopls not found; installing it via go install..."
         install_gopls
         ok "gopls installed"
     fi
 
-    if ! is_installed gofumpt "$go_cli_dir/gofumpt"; then
-        clean_stale_installs "$go_cli_dir/gofumpt"
+    if ! is_installed gofumpt "$CLI_DIR/gofumpt"; then
+        clean_stale_installs "$CLI_DIR/gofumpt"
         info "gofumpt not found; installing it via go install..."
         install_gofumpt
         ok "gofumpt installed"
