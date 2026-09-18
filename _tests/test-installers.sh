@@ -83,6 +83,25 @@ chmod +x "$NPM_BIN/fnm"
 export FNM_LOG="$TMP/fnm.log"
 export FNM_PREFIX
 
+# A same-named CLI in fnm's PATH must not satisfy the npm installer's canonical
+# ~/.local check. This covers migration from the old per-Node global prefix.
+cat > "$NPM_BIN/codex" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$NPM_BIN/codex"
+ln -s "$TMP/missing-codex" "$NPM_HOME/.local/bin/codex"
+MIGRATION_OUTPUT="$TMP/npm-migration.out"
+HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" >"$MIGRATION_OUTPUT"
+grep -q 'codex not found; install it via npm?' "$MIGRATION_OUTPUT" \
+    || fail "an fnm CLI must not satisfy the ~/.local migration check"
+grep -q 'removed stale install entry' "$MIGRATION_OUTPUT" \
+    || fail "the npm migration must clean stale canonical entries"
+[[ ! -L "$NPM_HOME/.local/bin/codex" ]] \
+    || fail "the stale canonical codex entry must be removed"
+rm -f "$NPM_BIN/codex"
+
 HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
 grep -q '@earendil-works/pi-coding-agent\|@openai/codex\|opencode-ai\|wrangler\|@colbymchenry/codegraph' "$FNM_LOG" \

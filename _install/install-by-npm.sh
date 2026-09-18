@@ -125,8 +125,8 @@ install_stylua() {
 
 # Interactive optional CLIs, installed only after confirmation. Each entry must
 # have a matching install_<name> function above (carrying its npm flags) — add
-# a CLI here AND its function there. Detection checks $LOCAL_PREFIX/bin (plus
-# PATH), so a CLI already installed there never re-prompts. biome/stylua install
+# a CLI here AND its function there. Detection checks $LOCAL_PREFIX/bin, so a
+# CLI already migrated there never re-prompts. biome/stylua install
 # unconditionally when missing, so they intentionally stay out of this list.
 PROMPTED_CLIS=(pi codex opencode codegraph wrangler)
 
@@ -136,21 +136,21 @@ main() {
     fi
 
     # `npm prefix -g` prints nothing when npm is missing; use it as a presence gate.
-    local npm_prefix name
+    local npm_prefix name known_path
     npm_prefix="$(fnm_exec npm prefix -g 2>/dev/null || true)"
     if [[ -z "$npm_prefix" ]]; then
         warn "npm not found; skipping npm CLI installs"
         return 0
     fi
 
-    if ! is_installed biome "$LOCAL_PREFIX/bin/biome"; then
+    if [[ ! -x "$LOCAL_PREFIX/bin/biome" ]]; then
         clean_stale_installs "$LOCAL_PREFIX/bin/biome"
         info "biome not found; installing it to ~/.local via npm..."
         install_biome
         ok "biome installed"
     fi
 
-    if ! is_installed stylua "$LOCAL_PREFIX/bin/stylua"; then
+    if [[ ! -x "$LOCAL_PREFIX/bin/stylua" ]]; then
         clean_stale_installs "$LOCAL_PREFIX/bin/stylua"
         info "stylua not found; installing it to ~/.local via npm (prebuilt binary)..."
         install_stylua
@@ -158,12 +158,13 @@ main() {
     fi
 
     for name in "${PROMPTED_CLIS[@]}"; do
+        known_path="$LOCAL_PREFIX/bin/$name"
         install_with_prompt \
-            "$name" \
+            "$known_path" \
             "$name not found; install it via npm?" \
             "install_$name" \
             "$name installed" \
-            "$LOCAL_PREFIX/bin/$name"
+            "$known_path"
     done
 }
 
