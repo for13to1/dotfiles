@@ -31,7 +31,9 @@ ${EDITOR:-vi} ~/dotfiles/_install/brew/vcs.group
 - **平台无关层**：
   - `install-by-npm.sh` 安装 Node.js CLI 及预编译分发的工具（pi、codex、opencode、codegraph、wrangler、biome、stylua）；
   - `install-by-uv.sh` 通过 `uv tool` 安装 Python CLI（ruff、yt-dlp）；
-  - `install-by-go.sh` 通过 `go install` 安装 Go 编辑器工具（gopls、gofumpt），固定落入 `~/.local/bin`；布局（`GOBIN`/`GOPATH`/`GOMODCACHE`）经 `go env -w` 写入用户级 GOENV（路径由 `go env GOENV` 决定：macOS 为 `~/Library/Application Support/go/env`，Linux 为 `~/.config/go/env`）——同值重写为 no-op；当前生效值与目标值不同时先告警，再写入 GOENV（环境变量优先于 GOENV，故当值来自 shell 导出时，生效值不变）——写入失败只告警、不阻断安装；写入成功后 Go 默认的 `~/go` 不再使用；
+  - `install-by-go.sh` 通过 `go install` 安装 Go 编辑器工具（gopls、gofumpt）；`GOBIN`（产物）定到 `~/.local/bin`、`GOMODCACHE`（模块缓存）定到 `~/.cache/go-mod`，经 `go env -w` 写入 Go 用户配置，对所有 `go` 命令生效（`GOPATH` 不设）。
+    - 覆盖已有值前先提示，不静默改写。
+    - `go env -w` 写入失败不影响工具安装。
   - `install-by-cargo.sh` 保留为 Rust CLI 备用渠道（暂不启用）。
 
 各渠道按需通过 `is_installed` 幂等跳过已装工具，不重复安装；`DOTFILES_SKIP_ECOSYSTEM_TOOLS=1` 跳过全部生态安装（测试/无网络环境）。

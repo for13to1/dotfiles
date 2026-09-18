@@ -195,7 +195,7 @@ brew_mirror reset        # 重置为官方源
 
 - **Git**: 始终优先通过 Homebrew 安装 Git，以解决 macOS 自带版本在某些网络环境下的 SSL 报错问题。
 - **Rust (rustup)**: 安装时建议使用静默模式并禁止修改系统 PATH（因为本项目已接管）：`rustup-init -y --no-modify-path`。
-- **Go (golang)**: `go env -w` 把 `GOBIN` 指向 `~/.local/bin`、`GOPATH`/`GOMODCACHE` 指向 `~/.cache`（当前生效值与目标值不同时先告警，再写入 GOENV），写入成功后 Go 默认的 `~/go` 不再使用；写入失败只告警，工具固定落入 `~/.local/bin`。
+- **Go (golang)**: `GOBIN`（产物）：`~/go/bin` → `~/.local/bin`；`GOMODCACHE`（模块缓存）：`~/go/pkg/mod` → `~/.cache/go-mod`。经 `go env -w` 写进 Go 用户配置，对所有 `go` 命令生效；`GOPATH` 不设置（module 模式下它的作用已被这两者接管）。
 - **Conda (Miniforge)**: **不用**运行 `conda init`，直接依赖 `lazy loading` 实现加速启动。
 - **Formatter**: Vim 和 Neovim 从 `PATH` 或项目本地环境解析 formatter，不自行下载。
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # _install/install-by-go.sh — Go CLI installs via `go install`
 #
-# Toolchain comes from the package manager; this channel declares the user-level
-# Go layout in GOENV and installs the Go editor tools (gopls, gofumpt) into the
+# Toolchain comes from the package manager; this channel pins GOBIN and
+# GOMODCACHE in GOENV and installs the Go editor tools (gopls, gofumpt) into the
 # shared ~/.local/bin CLI prefix.
 
 set -euo pipefail
@@ -14,33 +14,46 @@ source "$SCRIPT_DIR/../_scripts/common.sh"
 # The ~/.local/bin CLI prefix, shared with the npm/uv channels.
 CLI_DIR="$HOME/.local/bin"
 
-# User-level Go layout declared by this repo: GOBIN is the shared ~/.local/bin
-# prefix, GOPATH/GOMODCACHE live under ~/.cache instead of Go's default ~/go.
+# Go layout declared by this repo: GOBIN is the shared ~/.local/bin prefix, and
+# GOMODCACHE lives under ~/.cache instead of Go's default ~/go/pkg/mod. GOPATH is
+# left alone — GOBIN and GOMODCACHE take over its only remaining roles in module
+# mode.
 GO_LAYOUT=(
     "GOBIN=$CLI_DIR"
     "GOMODCACHE=$HOME/.cache/go-mod"
-    "GOPATH=$HOME/.cache/go"
 )
 
 find_go_bin() {
     command -v go
 }
 
-# Declare the layout in the user-level GOENV (path: `go env GOENV`). The
-# dotfiles are the source of truth for this environment, so the values are
-# written unconditionally; a different value already in effect is reported
-# first, so the change is never silent. `go env -w` is idempotent, and a failed
-# write only warns — the installs below target CLI_DIR explicitly.
+# Declare the layout in the user-level GOENV (`go env GOENV`). The dotfiles
+# are the source of truth, so values are written unconditionally; a value the
+# user actually set (persisted in GOENV or exported) is reported when it
+# differs, while Go's built-in defaults are never reported. `go env -w` is
+# idempotent and a failed write only warns — installs target CLI_DIR anyway.
 ensure_go_layout() {
-    local go_bin pair key want cur
+    local go_bin env_file pair key want cur
     go_bin="$(find_go_bin)" || return 1
+    env_file="$("$go_bin" env GOENV 2>/dev/null || true)"
 
     for pair in "${GO_LAYOUT[@]}"; do
         key="${pair%%=*}"
         want="${pair#*=}"
-        cur="$("$go_bin" env "$key" 2>/dev/null || true)"
+
+        # A value already persisted in GOENV is real user config.
+        cur=""
+        if [[ -n "$env_file" && -f "$env_file" ]]; then
+            cur="$(sed -n "s/^$key=//p" "$env_file" | tail -n 1)"
+        fi
         if [[ -n "$cur" && "$cur" != "$want" ]]; then
-            warn "$key was $cur; rewriting to $want"
+            warn "$key=$cur in $env_file; replacing it with $want"
+        fi
+
+        # A value exported in this shell wins over GOENV, so the write below
+        # cannot change what this shell uses — report that instead.
+        if [[ -n "${!key:-}" && "${!key}" != "$want" ]]; then
+            warn "$key=${!key} is exported in this shell; go env -w will not override it"
         fi
     done
 

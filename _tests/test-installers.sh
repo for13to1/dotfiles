@@ -159,21 +159,24 @@ grep -q 'skipping Go CLI installs' "$TMP/go-missing.out" \
 
 # With a runtime present, gopls/gofumpt install into ~/.local/bin (GOBIN) —
 # the same CLI prefix as the npm/uv channels — via `go install tool@latest`.
+# Clear any Go layout the developer's shell exported, so the run starts clean.
+unset GOBIN GOMODCACHE
+
 MOCK_GO="$TMP/mock-go"
 mkdir -p "$MOCK_GO"
 cat > "$MOCK_GO/go" <<'EOF'
 #!/usr/bin/env bash
-# `go install` records to the install log; `go env KEY` feeds the pre-write
-# comparison (it answers the pinned layout or stays silent, like real go).
-# `go env -w` records the persisted keys so the test can assert the full layout
-# is written.
+# `go install` records to the install log. `go env GOENV` is the only `go env`
+# the script reads: it points at the file under test ($GO_ENV_FILE), so a clean
+# machine with no GOENV file is never mistaken for user config. `go env -w`
+# records the persisted keys so the test can assert what is written.
 if [[ "$1" == install ]]; then
     printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
 elif [[ "$1" == env && "$2" == -w ]]; then
     shift 2
     printf '%s\n' "$@" >> "$GO_WRITE_LOG"
-elif [[ "$1" == env && "$2" == GOBIN ]]; then
-    printf '%s\n' "$HOME/.local/bin"
+elif [[ "$1" == env && "$2" == GOENV ]]; then
+    printf '%s\n' "${GO_ENV_FILE:-}"
 fi
 EOF
 chmod +x "$MOCK_GO/go"
@@ -192,8 +195,6 @@ if [[ "$1" == env && "$2" == -w ]]; then
 fi
 if [[ "$1" == install ]]; then
     printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
-elif [[ "$1" == env && "$2" == GOBIN ]]; then
-    printf '%s\n' "$HOME/.local/bin"
 fi
 EOF
 chmod +x "$BAD_GO"
@@ -208,49 +209,47 @@ grep -q 'go env -w failed' "$TMP/go-bad.out" \
 [[ "$(grep -c 'tool=' "$GO_LOG")" == 2 ]] \
     || fail "tools must still install after a failed go env -w"
 
-# The dotfiles declare the layout, but an existing *different* value must be
-# reported before it is rewritten — the change is never silent.
-WARN_GO="$TMP/warn-go"
-mkdir -p "$WARN_GO"
-cat > "$WARN_GO/go" <<'EOF'
-#!/usr/bin/env bash
-if [[ "$1" == install ]]; then
-    printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
-elif [[ "$1" == env && "$2" == -w ]]; then
-    exit 0
-elif [[ "$1" == env && "$2" == GOBIN ]]; then
-    printf '%s\n' "$OLD_GOBIN"
-elif [[ "$1" == env && "$2" == GOPATH ]]; then
-    printf '%s\n' "$OLD_GOPATH"
-fi
-EOF
-chmod +x "$WARN_GO/go"
+# Only a value the user actually set is reported, from two sources: persisted
+# in GOENV, or exported in the shell. Go's built-in defaults (exercised by the
+# clean run below) must never trigger a warning.
+printf 'GOMODCACHE=%s\n' "$TMP/old-mod" > "$TMP/goenv"
 : > "$GO_LOG"
-HOME="$GO_HOME" PATH="$WARN_GO:/usr/bin:/bin" GO_LOG="$GO_LOG" \
-    OLD_GOBIN="$TMP/old-bin" OLD_GOPATH="$TMP/old-go" \
-    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-warn.out" 2>&1 \
-    || fail "an existing differing Go value must not fail the channel"
-grep -q "GOBIN was $TMP/old-bin; rewriting to" "$TMP/go-warn.out" \
-    || fail "an existing GOBIN must be reported before being rewritten"
-grep -q "GOPATH was $TMP/old-go; rewriting to" "$TMP/go-warn.out" \
-    || fail "an existing GOPATH must be reported before being rewritten"
+HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" GO_LOG="$GO_LOG" \
+    GO_ENV_FILE="$TMP/goenv" \
+    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-file.out" 2>&1 \
+    || fail "a value persisted in GOENV must not fail the channel"
+grep -q "GOMODCACHE=$TMP/old-mod in $TMP/goenv; replacing it with" "$TMP/go-file.out" \
+    || fail "a value persisted in GOENV must be reported before being replaced"
 [[ "$(grep -c 'tool=' "$GO_LOG")" == 2 ]] \
-    || fail "tools must still install after reporting the old layout"
+    || fail "tools must still install when GOENV has a differing value"
+
+: > "$GO_LOG"
+HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" GO_LOG="$GO_LOG" \
+    GOMODCACHE="$TMP/exported-mod" \
+    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-export.out" 2>&1 \
+    || fail "an exported Go value must not fail the channel"
+grep -q "GOMODCACHE=$TMP/exported-mod is exported in this shell" "$TMP/go-export.out" \
+    || fail "an exported Go value must be reported as winning over GOENV"
+[[ "$(grep -c 'tool=' "$GO_LOG")" == 2 ]] \
+    || fail "tools must still install when a Go value is exported"
 
 : > "$GO_WRITE_LOG"
 HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" \
-    bash "$ROOT/_install/install-by-go.sh" >/dev/null
+    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-install.out" 2>&1
+# A clean machine (only Go's built-in defaults) must not warn.
+! grep -qE 'replacing it with|is exported in this shell' "$TMP/go-install.out" \
+    || fail "Go's built-in defaults must not be reported as user config"
 grep -q 'GOBIN=.*\.local/bin tool=golang.org/x/tools/gopls@latest' "$GO_LOG" \
     || fail "gopls should install into ~/.local/bin via go install"
 grep -q 'GOBIN=.*\.local/bin tool=mvdan.cc/gofumpt@latest' "$GO_LOG" \
     || fail "gofumpt should install into ~/.local/bin via go install"
-# The full layout is persisted, not just GOBIN.
+# GOBIN and GOMODCACHE are persisted; GOPATH is intentionally left alone.
 grep -q '^GOBIN=.*\.local/bin$' "$GO_WRITE_LOG" \
     || fail "the layout write must persist GOBIN"
-grep -q '^GOPATH=.*\.cache/go$' "$GO_WRITE_LOG" \
-    || fail "the layout write must persist GOPATH"
 grep -q '^GOMODCACHE=.*\.cache/go-mod$' "$GO_WRITE_LOG" \
     || fail "the layout write must persist GOMODCACHE"
+! grep -q '^GOPATH=' "$GO_WRITE_LOG" \
+    || fail "GOPATH must be left untouched"
 
 # Idempotent: CLIs already seated in the ~/.local/bin prefix are skipped.
 mkdir -p "$GO_HOME/.local/bin"
