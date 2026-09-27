@@ -69,6 +69,6 @@ npm / `uv tool` / `go install` 调用。新增工具 = 加一行 `eco_cli`，通
 一包多 bin（如 cargo crate）、或经官方安装器安装的运行时（fnm/rustup/uv，
 走 `install-by-curl.sh`）不在本框架内，各走各的形态。
 
-非交互模式下 `prompt` 条目全部跳过；`DOTFILES_ACCEPT_INSTALLS="codex opencode"`
+非交互模式下 `prompt` 条目全部跳过；`DOTFILES_ACCEPT_INSTALLS="codex mimo"`
 （空格分隔的 bin 名）可按名预先批准——被批准的条目跳过确认直接安装，其余条目仍按
 交互/非交互规则处理（交互逐个询问、非交互全部跳过）。

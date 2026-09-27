@@ -111,6 +111,7 @@ eco_cli stylua    @johnnymorganz/stylua-bin        ""                          -
 eco_cli pi        @earendil-works/pi-coding-agent  --ignore-scripts            --prompt
 eco_cli codex     @openai/codex                    ""                          --prompt
 eco_cli opencode  opencode-ai                      --allow-scripts=opencode-ai --prompt
+eco_cli mimo      @mimo-ai/cli                     --allow-scripts=@mimo-ai/cli --prompt
 eco_cli codegraph @colbymchenry/codegraph          ""                          --prompt
 eco_cli wrangler  wrangler                         --allow-scripts=esbuild,workerd --prompt
 

@@ -165,12 +165,6 @@ fi
 [[ -d "$HOME/.opencode/bin" ]] && export PATH="$HOME/.opencode/bin:$PATH"
 # <<< opencode loading <<<
 
-# >>> mimocode loading >>>
-# Install with --no-modify-path so the script never rewrites .zshrc.
-# curl -fsSL https://mimo.xiaomi.com/install | bash -s -- --no-modify-path
-[[ -d "$HOME/.mimocode/bin" ]] && export PATH="$HOME/.mimocode/bin:$PATH"
-# <<< mimocode loading <<<
-
 # =============================================================================
 # 5. Aliases
 # =============================================================================

@@ -152,6 +152,12 @@ run_accepting wrangler
 grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=esbuild,workerd wrangler' "$FNM_LOG" \
     || fail "accepting wrangler should install to ~/.local with --allow-scripts"
 
+# @mimo-ai/cli's postinstall links the platform binary into bin/; accepting
+# mimo must carry --allow-scripts with the scoped package name.
+run_accepting mimo
+grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=@mimo-ai/cli @mimo-ai/cli' "$FNM_LOG" \
+    || fail "accepting mimo should install to ~/.local with --allow-scripts"
+
 # Seat every CLI the installer knows about, reading its registry directly so a
 # new tool never needs an edit on this side. The registry must also be
 # self-consistent (aligned arrays, valid policies, always-before-prompt) —
