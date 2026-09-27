@@ -11,15 +11,12 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/common.sh"
 
-# The ~/.local/bin CLI prefix, shared with the npm/uv channels.
-CLI_DIR="$HOME/.local/bin"
-
-# Go layout declared by this repo: GOBIN is the shared ~/.local/bin prefix, and
-# GOMODCACHE lives under ~/.cache instead of Go's default ~/go/pkg/mod. GOPATH is
-# left alone — GOBIN and GOMODCACHE take over its only remaining roles in module
-# mode.
+# Go layout declared by this repo: GOBIN is the shared ~/.local/bin prefix
+# (CLI_BIN_DIR from common.sh), and GOMODCACHE lives under ~/.cache instead of
+# Go's default ~/go/pkg/mod. GOPATH is left alone — GOBIN and GOMODCACHE take
+# over its only remaining roles in module mode.
 GO_LAYOUT=(
-    "GOBIN=$CLI_DIR"
+    "GOBIN=$CLI_BIN_DIR"
     "GOMODCACHE=$HOME/.cache/go-mod"
 )
 
@@ -31,7 +28,7 @@ find_go_bin() {
 # are the source of truth, so values are written unconditionally; a value the
 # user actually set (persisted in GOENV or exported) is reported when it
 # differs, while Go's built-in defaults are never reported. `go env -w` is
-# idempotent and a failed write only warns — installs target CLI_DIR anyway.
+# idempotent and a failed write only warns — installs target CLI_BIN_DIR anyway.
 ensure_go_layout() {
     local go_bin env_file pair key want cur
     go_bin="$(find_go_bin)" || return 1
@@ -61,40 +58,28 @@ ensure_go_layout() {
         || warn "go env -w failed; the Go layout may not be persisted"
 }
 
-install_gopls() {
+# The single go-channel installer. @latest is the channel default (no per-tool
+# version pinning yet), and $2 is reserved.
+go_install_one() {
     local go_bin
     go_bin="$(find_go_bin)" || return 1
-    GOBIN="$CLI_DIR" "$go_bin" install golang.org/x/tools/gopls@latest
+    GOBIN="$CLI_BIN_DIR" "$go_bin" install "$1@latest"
 }
 
-install_gofumpt() {
-    local go_bin
-    go_bin="$(find_go_bin)" || return 1
-    GOBIN="$CLI_DIR" "$go_bin" install mvdan.cc/gofumpt@latest
-}
+# ── go CLI registry ──────────────────────────────────────────────
+eco_cli gopls    golang.org/x/tools/gopls  ""  --always
+eco_cli gofumpt  mvdan.cc/gofumpt          ""  --always
 
 main() {
+    validate_cli_registry
+
     if [[ -z "$(find_go_bin || true)" ]]; then
         warn "go not found; skipping Go CLI installs"
         return 0
     fi
 
     ensure_go_layout
-
-    # The layout is declared, not inherited: gopls/gofumpt always go to CLI_DIR.
-    if ! is_installed gopls "$CLI_DIR/gopls"; then
-        clean_stale_installs "$CLI_DIR/gopls"
-        info "gopls not found; installing it via go install..."
-        install_gopls
-        ok "gopls installed"
-    fi
-
-    if ! is_installed gofumpt "$CLI_DIR/gofumpt"; then
-        clean_stale_installs "$CLI_DIR/gofumpt"
-        info "gofumpt not found; installing it via go install..."
-        install_gofumpt
-        ok "gofumpt installed"
-    fi
+    run_cli_registry go_install_one "go install" path
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

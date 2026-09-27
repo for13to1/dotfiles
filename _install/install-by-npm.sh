@@ -16,7 +16,9 @@ FNM_BIN=""
 # Global npm CLIs install into a Node-version-independent prefix. fnm's `default`
 # alias follows `lts-latest`, so an LTS patch bump re-points PATH at a fresh Node
 # with an empty global bin — which used to make every CLI look missing.
-LOCAL_PREFIX="$HOME/.local"
+# npm's --prefix is the install ROOT; bins land in common.sh's CLI_BIN_DIR, so
+# derive the root from it to keep the two paths from drifting apart.
+LOCAL_PREFIX="${CLI_BIN_DIR%/*}"
 
 find_fnm_bin() {
     if command -v fnm &>/dev/null; then
@@ -87,85 +89,47 @@ npm_install_global() {
     fi
 }
 
-install_pi() {
-    npm_install_global --ignore-scripts @earendil-works/pi-coding-agent
+# The single npm-channel installer: every registry entry is (pkg, flag), and
+# npm_install_global carries all the npm-version quirks (dropping
+# --allow-scripts on old npm, --min-release-age on npm >= 11.10). Flags are
+# documented per entry in the registry below; an empty flag is a plain install.
+npm_install_one() {
+    if [[ -z "$2" ]]; then
+        npm_install_global "$1"
+    else
+        npm_install_global "$2" "$1"
+    fi
 }
 
-# @openai/codex has no postinstall; platform binaries ship via optionalDependencies.
-install_codex() {
-    npm_install_global @openai/codex
-}
-
-# opencode's postinstall copies the platform binary into bin/ (required);
-# allow it (npm_install_global drops the flag on old npm).
-install_opencode() {
-    npm_install_global --allow-scripts=opencode-ai opencode-ai
-}
-
-# wrangler depends on workerd/esbuild, whose postinstall seeds the native
-# binaries; allow their scripts (npm_install_global drops the flag on old npm).
-install_wrangler() {
-    npm_install_global --allow-scripts=esbuild,workerd wrangler
-}
-
-# codegraph's npm distro is a launcher shim (npm-shim.js) with no lifecycle
-# scripts, so a plain global install suffices — no --allow-scripts needed.
-install_codegraph() {
-    npm_install_global @colbymchenry/codegraph
-}
-
-install_biome() {
-    npm_install_global @biomejs/biome
-}
-
-# Prebuilt binary from the official npm distribution (@johnnymorganz/stylua-bin).
-install_stylua() {
-    npm_install_global @johnnymorganz/stylua-bin
-}
-
-# Interactive optional CLIs, installed only after confirmation. Each entry must
-# have a matching install_<name> function above (carrying its npm flags) — add
-# a CLI here AND its function there. Detection checks $LOCAL_PREFIX/bin, so a
-# CLI already migrated there never re-prompts. biome/stylua install
-# unconditionally when missing, so they intentionally stay out of this list.
-PROMPTED_CLIS=(pi codex opencode codegraph wrangler)
+# ── npm CLI registry ─────────────────────────────────────────────
+# Channel data only — the frame (eco_cli/validate/run) lives in common.sh.
+#   flag ""                        → plain global install
+#   flag --allow-scripts=<list>    → postinstall seeds/links the native binary
+#   flag --ignore-scripts          → package has no useful lifecycle scripts
+eco_cli biome     @biomejs/biome                   ""                          --always
+eco_cli stylua    @johnnymorganz/stylua-bin        ""                          --always
+eco_cli pi        @earendil-works/pi-coding-agent  --ignore-scripts            --prompt
+eco_cli codex     @openai/codex                    ""                          --prompt
+eco_cli opencode  opencode-ai                      --allow-scripts=opencode-ai --prompt
+eco_cli codegraph @colbymchenry/codegraph          ""                          --prompt
+eco_cli wrangler  wrangler                         --allow-scripts=esbuild,workerd --prompt
 
 main() {
+    validate_cli_registry
+
     if ! ensure_fnm_node_env; then
         return 0
     fi
 
     # `npm prefix -g` prints nothing when npm is missing; use it as a presence gate.
-    local npm_prefix name known_path
+    local npm_prefix
     npm_prefix="$(fnm_exec npm prefix -g 2>/dev/null || true)"
     if [[ -z "$npm_prefix" ]]; then
         warn "npm not found; skipping npm CLI installs"
         return 0
     fi
 
-    if [[ ! -x "$LOCAL_PREFIX/bin/biome" ]]; then
-        clean_stale_installs "$LOCAL_PREFIX/bin/biome"
-        info "biome not found; installing it to ~/.local via npm..."
-        install_biome
-        ok "biome installed"
-    fi
-
-    if [[ ! -x "$LOCAL_PREFIX/bin/stylua" ]]; then
-        clean_stale_installs "$LOCAL_PREFIX/bin/stylua"
-        info "stylua not found; installing it to ~/.local via npm (prebuilt binary)..."
-        install_stylua
-        ok "stylua installed"
-    fi
-
-    for name in "${PROMPTED_CLIS[@]}"; do
-        known_path="$LOCAL_PREFIX/bin/$name"
-        install_with_prompt \
-            "$known_path" \
-            "$name not found; install it via npm?" \
-            "install_$name" \
-            "$name installed" \
-            "$known_path"
-    done
+    run_cli_registry npm_install_one npm
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -227,34 +227,145 @@ hint_optional_groups() {
     fi
 }
 
-# Usage: install_with_prompt <check_cmd> <prompt> <install_fn> <success_msg> [known_paths...]
-# Skips when already installed. Declining is a successful skip; accepting an
-# installer that then fails returns non-zero.
-install_with_prompt() {
-    local check_cmd="$1" prompt="$2" install_fn="$3" success_msg="$4"
-    shift 4
+# approve_install <bin_name> <confirm_prompt>
+# Returns 0 when an install is approved: either the bin is pre-approved via
+# DOTFILES_ACCEPT_INSTALLS (space-separated bin names) or the user confirms.
+# Non-interactive mode falls through to confirm's default.
+approve_install() {
+    local bin_name="$1" prompt="$2"
+    case " ${DOTFILES_ACCEPT_INSTALLS:-} " in
+        *" $bin_name "*) return 0 ;;
+    esac
+    confirm "$prompt" 0
+}
 
-    is_installed "$check_cmd" "$@" && return 0
-    clean_stale_installs "$@"
+# ── CLI registry ─────────────────────────────────────────────────
+# Declarative, channel-neutral tool table shared by the npm/uv/go channels:
+# what to install is one eco_cli row of data; how to install is each channel's
+# single *_install_one <pkg> <flag> function.
+#
+# Frame boundary: this registry models exactly "one package source → one bin →
+# $CLI_BIN_DIR". Channels that install runtimes via official installers (curl)
+# or crates that ship several bins (cargo) do NOT fit and stay outside it.
+CLI_BIN_DIR="$HOME/.local/bin"
 
-    warn "$prompt"
-    confirm "Install now? [y/N]: " 0 || return 0
+ECO_CLI_BINS=()
+ECO_CLI_PKGS=()
+ECO_CLI_FLAGS=()
+ECO_CLI_POLICIES=()
 
-    if ! "$install_fn"; then
-        warn "Installation incomplete; retry manually later"
-        return 1
-    fi
+# eco_cli <bin> <pkg> <flag|""> --always|--prompt
+#   bin    — detection ($CLI_BIN_DIR/<bin>), prompts, and
+#            DOTFILES_ACCEPT_INSTALLS all key on it, never the package name.
+#   pkg    — install target (npm package / pip package / go module path).
+#   flag   — one channel-specific flag passed before the package ("" if none);
+#            must not contain spaces.
+#   policy — always: install when missing; prompt: confirm first (pre-approved
+#            via DOTFILES_ACCEPT_INSTALLS or an interactive yes).
+# Declaration order is execution order; --always entries must precede --prompt
+# ones so baseline installs land before any question.
+eco_cli() {
+    (($# == 4)) || { warn "eco_cli: expected <bin> <pkg> <flag> --always|--prompt"; return 1; }
+    local bin="$1" pkg="$2" flag="$3" policy="$4"
+    [[ -n "$bin" && -n "$pkg" ]] || { warn "eco_cli: bin and pkg must be non-empty"; return 1; }
+    case "$policy" in
+        --always|--prompt) ;;
+        *) warn "eco_cli $bin: policy must be --always or --prompt"; return 1 ;;
+    esac
+    [[ "$flag" != *" "* ]] || { warn "eco_cli $bin: flag must not contain spaces"; return 1; }
+    case " ${ECO_CLI_BINS[*]:-} " in
+        *" $bin "*) warn "eco_cli: duplicate bin '$bin'"; return 1 ;;
+    esac
+    case " ${ECO_CLI_PKGS[*]:-} " in
+        *" $pkg "*) warn "eco_cli: duplicate pkg '$pkg'"; return 1 ;;
+    esac
+    ECO_CLI_BINS+=("$bin")
+    ECO_CLI_PKGS+=("$pkg")
+    ECO_CLI_FLAGS+=("$flag")
+    ECO_CLI_POLICIES+=("${policy#--}")
+}
 
-    ok "$success_msg"
+validate_cli_registry() {
+    ((${#ECO_CLI_BINS[@]})) || { warn "CLI registry is empty"; return 1; }
+    local n=${#ECO_CLI_BINS[@]}
+    (( ${#ECO_CLI_PKGS[@]} == n && ${#ECO_CLI_FLAGS[@]} == n && ${#ECO_CLI_POLICIES[@]} == n )) \
+        || { warn "CLI registry arrays are misaligned"; return 1; }
+    local i bin prompted=0
+    for i in "${!ECO_CLI_BINS[@]}"; do
+        bin="${ECO_CLI_BINS[i]}"
+        [[ "${ECO_CLI_FLAGS[i]}" != *" "* ]] \
+            || { warn "registry entry '$bin': flag must not contain spaces"; return 1; }
+        case "${ECO_CLI_POLICIES[i]}" in
+            prompt) prompted=1 ;;
+            always)
+                if (( prompted )); then
+                    warn "registry entry '$bin': --always must precede all --prompt entries"
+                    return 1
+                fi
+                ;;
+            *) warn "registry entry '$bin' has invalid policy '${ECO_CLI_POLICIES[i]}'"; return 1 ;;
+        esac
+    done
+}
+
+# run_cli_registry <install_fn> [channel] [detect]
+# Runs each registry entry via <install_fn> <pkg> <flag>; <channel> labels the
+# prompt (defaults to the function name).
+#   detect — "canonical" (default) keys only on $CLI_BIN_DIR/<bin>, so a CLI
+#            seated in a dead location (npm's old per-Node prefix) still gets
+#            migrated. "path" respects an existing install anywhere on PATH
+#            (uv/go — installs made outside the repo's groups) via is_installed.
+run_cli_registry() {
+    local installer="$1" channel="${2:-$1}" detect="${3:-canonical}"
+    case "$detect" in
+        canonical|path) ;;
+        *) warn "run_cli_registry: detect must be 'canonical' or 'path', got '$detect'"; return 1 ;;
+    esac
+    local i bin pkg flag path
+    for i in "${!ECO_CLI_BINS[@]}"; do
+        bin="${ECO_CLI_BINS[i]}"
+        pkg="${ECO_CLI_PKGS[i]}"
+        flag="${ECO_CLI_FLAGS[i]}"
+        path="$CLI_BIN_DIR/$bin"
+
+        if [[ "$detect" == "path" ]]; then
+            # is_installed already falls through to -x $path.
+            is_installed "$bin" "$path" && continue
+        else
+            [[ -x "$path" ]] && continue
+        fi
+
+        clean_stale_installs "$path"
+
+        case "${ECO_CLI_POLICIES[i]}" in
+            always)
+                info "$bin not found; installing it via $channel..."
+                if ! "$installer" "$pkg" "$flag"; then
+                    warn "Installation incomplete; retry manually later"
+                    return 1
+                fi
+                ok "$bin installed"
+                ;;
+            prompt)
+                warn "$bin not found; install it via $channel?"
+                approve_install "$bin" "Install now? [y/N]: " || continue
+                if ! "$installer" "$pkg" "$flag"; then
+                    warn "Installation incomplete; retry manually later"
+                    return 1
+                fi
+                ok "$bin installed"
+                ;;
+        esac
+    done
 }
 
 # ── Ecosystem installers ──────────────────────────────────────────
-# Platform-independent tool layer: npm (Node CLIs: pi/codex/opencode/codegraph/
-# biome/stylua/wrangler), uv (Python CLIs: ruff/yt-dlp) and go (gopls/gofumpt
-# via `go install` → ~/.local/bin). No system package manager provides them, so
-# they are identical on every platform and run once here as bootstrap step 3.
-# Each script is self-contained: idempotent via is_installed, and it skips
-# cleanly when a prerequisite (fnm/uv/go) is missing.
+# Platform-independent tool layer: the npm/uv/go channels, each owning its own
+# tool list and installing into the ~/.local prefix. No system package manager
+# provides these, so they are identical on every platform and run once here as
+# bootstrap step 3. Each script is self-contained: idempotent via
+# is_installed, and it skips cleanly when a prerequisite (fnm/uv/go) is
+# missing.
 # The curl channel (runtimes fnm/rustup/uv via official installers) is NOT
 # part of this layer: brew/pacman provide them via default groups, only apt
 # lacks them, so pkg-linux runs that single script directly.

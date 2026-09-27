@@ -10,17 +10,21 @@ ROOT="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/installers-test.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
 
-# Accepted installer failures must propagate to the caller.
+# run_cli_registry's prompt branch: declining is a successful skip; an accepted
+# installer that then fails returns non-zero.
 # shellcheck disable=SC1091
 source "$ROOT/_scripts/common.sh"
 failed_install() { return 7; }
 
-DOTFILES_NON_INTERACTIVE=1 install_with_prompt \
-    missing-optional "install missing-optional?" failed_install "installed" \
+# Point CLI_BIN_DIR at an empty temp prefix so "missing-optional" is absent.
+CLI_BIN_DIR="$TMP/prompt-bin"
+mkdir -p "$CLI_BIN_DIR"
+eco_cli missing-optional missing-pkg "" --prompt
+
+DOTFILES_NON_INTERACTIVE=1 run_cli_registry failed_install mock \
     >/dev/null || fail "declining an optional installer should return success"
 unset DOTFILES_NON_INTERACTIVE
-if printf 'y\n' | install_with_prompt \
-    missing-optional "install missing-optional?" failed_install "installed" >/dev/null; then
+if printf 'y\n' | run_cli_registry failed_install mock >/dev/null; then
     fail "an accepted optional installer failure must return non-zero"
 fi
 
@@ -50,17 +54,19 @@ fi
 grep -q 'install-by-npm.sh' "$TMP/ecosystem.out" \
     || fail "the failure summary must name the npm channel"
 
-# Optional npm CLIs (pi/codex/opencode/codegraph/wrangler) are interactive-only:
+# Optional npm CLIs are interactive-only:
 # non-interactive mode declines all of them, while an interactive run
 # installs only the explicitly accepted tool.
 NPM_HOME="$TMP/npm-home"
 NPM_BIN="$TMP/npm-bin"
 FNM_PREFIX="$TMP/fnm-prefix"
 mkdir -p "$NPM_HOME/.local/bin" "$NPM_BIN" "$FNM_PREFIX/bin"
+# Seat every --always entry now: run_accepting below asserts exactly one
+# `npm install -g` per run, which only holds if these never trigger. A new
+# --always entry must be seated here too; --prompt entries need no seat
+# (they decline in non-interactive mode).
 touch "$NPM_HOME/.local/bin/biome"
 chmod +x "$NPM_HOME/.local/bin/biome"
-# stylua installs unconditionally (no interactive prompt), so seat it now
-# to keep the prompt-flow tests below free of an extra install call.
 touch "$NPM_HOME/.local/bin/stylua"
 chmod +x "$NPM_HOME/.local/bin/stylua"
 cat > "$NPM_BIN/fnm" <<'EOF'
@@ -102,54 +108,81 @@ grep -q 'removed stale install entry' "$MIGRATION_OUTPUT" \
     || fail "the stale canonical codex entry must be removed"
 rm -f "$NPM_BIN/codex"
 
+# Non-interactive runs install nothing: every optional CLI declines by default.
+: > "$FNM_LOG"
 HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >/dev/null
-grep -q '@earendil-works/pi-coding-agent\|@openai/codex\|opencode-ai\|wrangler\|@colbymchenry/codegraph' "$FNM_LOG" \
-    && fail "non-interactive mode should decline optional CLI installs"
+[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 0 ]] \
+    || fail "non-interactive mode should decline optional CLI installs"
 
-: > "$FNM_LOG"
-printf 'n\ny\nn\nn\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ROOT/_install/install-by-npm.sh" >/dev/null
+# Run a full installer pass with exactly one CLI pre-approved
+# (DOTFILES_ACCEPT_INSTALLS), then assert it alone was installed. Selection is
+# by name, so these tests neither know nor care how many CLIs exist or in which
+# order they are prompted.
+run_accepting() {
+    : > "$FNM_LOG"
+    HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_INSTALLS="$1" \
+        PATH="$NPM_BIN:/usr/bin:/bin" \
+        bash "$ROOT/_install/install-by-npm.sh" >/dev/null
+    [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
+        || fail "accepting $1 should be the only npm install of the run"
+}
+
+run_accepting codex
 grep -q '@openai/codex' "$FNM_LOG" \
     || fail "accepting codex should invoke its npm install"
-grep -q '@earendil-works/pi-coding-agent\|opencode-ai\|wrangler\|@colbymchenry/codegraph' "$FNM_LOG" \
-    && fail "declining pi/opencode/wrangler/codegraph should not invoke their npm installs"
 
-: > "$FNM_LOG"
 # opencode's postinstall copies its platform binary into bin/; accepting
 # opencode must carry --allow-scripts (the mock npm understands it).
-printf 'n\nn\ny\nn\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ROOT/_install/install-by-npm.sh" >/dev/null
+run_accepting opencode
 grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=opencode-ai opencode-ai' "$FNM_LOG" \
     || fail "accepting opencode should install to ~/.local with --allow-scripts"
 
-: > "$FNM_LOG"
 # codegraph ships a launcher shim with no lifecycle scripts; accepting it must
 # run a plain global install, without --allow-scripts.
-printf 'n\nn\nn\ny\nn\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ROOT/_install/install-by-npm.sh" >/dev/null
+run_accepting codegraph
 grep -qE -- 'npm install -g --prefix [^ ]+ @colbymchenry/codegraph' "$FNM_LOG" \
     || fail "accepting codegraph should run a plain global npm install into ~/.local"
+! grep -q -- '--allow-scripts' "$FNM_LOG" \
+    || fail "codegraph has no lifecycle scripts and must not be granted --allow-scripts"
 
-: > "$FNM_LOG"
 # wrangler relies on workerd/esbuild whose postinstall seeds native binaries;
 # accepting wrangler must carry --allow-scripts (the mock npm understands it).
-printf 'n\nn\nn\nn\ny\n' | HOME="$NPM_HOME" PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ROOT/_install/install-by-npm.sh" >/dev/null
+run_accepting wrangler
 grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=esbuild,workerd wrangler' "$FNM_LOG" \
     || fail "accepting wrangler should install to ~/.local with --allow-scripts"
 
-for cli in pi codex opencode codegraph wrangler; do
-    touch "$NPM_HOME/.local/bin/$cli"
-    chmod +x "$NPM_HOME/.local/bin/$cli"
+# Seat every CLI the installer knows about, reading its registry directly so a
+# new tool never needs an edit on this side. The registry must also be
+# self-consistent (aligned arrays, valid policies, always-before-prompt) —
+# verified via the same guard the installer runs, independent of its main().
+# Sourcing also imports the installer's globals; this test only reads the
+# ECO_CLI_* registry below and invokes none of them.
+# shellcheck disable=SC1091
+source "$ROOT/_install/install-by-npm.sh"
+validate_cli_registry \
+    || fail "the npm CLI registry must be self-consistent"
+for bin in "${ECO_CLI_BINS[@]}"; do
+    touch "$NPM_HOME/.local/bin/$bin"
+    chmod +x "$NPM_HOME/.local/bin/$bin"
 done
+
+# Baseline installs must land before any question: an --always entry declared
+# after a --prompt one is a registry error and has to fail validation.
+if bash -c '
+    source "$1"
+    ECO_CLI_POLICIES[0]=prompt
+    validate_cli_registry >/dev/null 2>&1
+' _ "$ROOT/_install/install-by-npm.sh"; then
+    fail "an --always entry after a --prompt entry must fail validation"
+fi
 
 # Global CLIs install into ~/.local, which may not be on the parent shell's
 # PATH. They must still be detected and must not trigger duplicate-install prompts.
 FNM_OUTPUT="$TMP/fnm-detection.out"
 HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" >"$FNM_OUTPUT"
-! grep -q 'pi not found\|codex not found\|opencode not found\|wrangler not found\|codegraph not found\|stylua not found' "$FNM_OUTPUT" \
+! grep -q 'not found' "$FNM_OUTPUT" \
     || fail "CLIs in the ~/.local prefix must be detected outside the parent PATH"
 
 # A runtime without npm must degrade to a clean skip, not an error.
@@ -158,6 +191,55 @@ FNM_PREFIX="" HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bi
     || fail "missing npm must skip cleanly"
 grep -q 'skipping npm CLI installs' "$TMP/npm-missing.out" \
     || fail "missing npm must warn and skip"
+
+# The uv channel needs a `uv` runtime; a missing runtime must degrade to a
+# clean skip, not an error. Simulate a machine without uv by exposing a PATH
+# that holds only the few commands the script needs — never `uv`.
+NOUV_BIN="$TMP/nouv-bin"
+mkdir -p "$NOUV_BIN"
+for cmd in env dirname bash; do
+    ln -sf "$(command -v "$cmd")" "$NOUV_BIN/$cmd"
+done
+UV_HOME="$TMP/uv-home"
+mkdir -p "$UV_HOME"
+HOME="$UV_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NOUV_BIN:/nonexistent" \
+    bash "$ROOT/_install/install-by-uv.sh" >"$TMP/uv-missing.out" 2>&1 \
+    || fail "missing uv must skip cleanly"
+grep -q 'skipping Python CLI installs' "$TMP/uv-missing.out" \
+    || fail "missing uv must warn and skip"
+
+# With a runtime present, ruff/yt-dlp install via `uv tool install`.
+MOCK_UV="$TMP/mock-uv"
+mkdir -p "$MOCK_UV"
+cat > "$MOCK_UV/uv" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$UV_LOG"
+EOF
+chmod +x "$MOCK_UV/uv"
+export UV_LOG="$TMP/uv.log"
+: > "$UV_LOG"
+HOME="$UV_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$MOCK_UV:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-uv.sh" >"$TMP/uv-install.out" 2>&1 \
+    || fail "installing uv CLIs must not fail"
+grep -q 'tool install ruff' "$UV_LOG" \
+    || fail "ruff should install via uv tool"
+grep -q 'tool install yt-dlp' "$UV_LOG" \
+    || fail "yt-dlp should install via uv tool"
+[[ "$(grep -c 'tool install ' "$UV_LOG" || true)" == 2 ]] \
+    || fail "exactly ruff and yt-dlp should be installed"
+
+# The uv channel detects via PATH (not just ~/.local/bin): a ruff/yt-dlp
+# already seated elsewhere on PATH must not be reinstalled into the canonical
+# prefix.
+mkdir -p "$TMP/uv-elsewhere"
+touch "$TMP/uv-elsewhere/ruff" "$TMP/uv-elsewhere/yt-dlp"
+chmod +x "$TMP/uv-elsewhere/ruff" "$TMP/uv-elsewhere/yt-dlp"
+: > "$UV_LOG"
+HOME="$UV_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$TMP/uv-elsewhere:$MOCK_UV:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-uv.sh" >"$TMP/uv-path.out" 2>&1
+[[ ! -s "$UV_LOG" ]] \
+    || fail "a uv CLI already on PATH must not be reinstalled"
 
 # The Go channel needs a `go` runtime; a missing runtime must degrade to a
 # clean skip, not an error. Simulate a machine without Go by exposing a PATH
@@ -281,6 +363,19 @@ HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" \
     || fail "existing gopls/gofumpt must not be reinstalled"
 ! grep -q 'not found' "$TMP/go-idempotent.out" \
     || fail "installed Go CLIs must be detected and skipped"
+
+# The uv/go channels detect via PATH, not just ~/.local/bin: a tool already
+# seated elsewhere on PATH must not be reinstalled into the
+# canonical prefix.
+rm -f "$GO_HOME/.local/bin/gopls" "$GO_HOME/.local/bin/gofumpt"
+mkdir -p "$TMP/elsewhere"
+touch "$TMP/elsewhere/gopls" "$TMP/elsewhere/gofumpt"
+chmod +x "$TMP/elsewhere/gopls" "$TMP/elsewhere/gofumpt"
+: > "$GO_LOG"
+HOME="$GO_HOME" PATH="$TMP/elsewhere:$MOCK_GO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" >"$TMP/go-path.out" 2>&1
+[[ ! -s "$GO_LOG" ]] \
+    || fail "a CLI already on PATH must not be reinstalled into ~/.local/bin"
 
 # Default official downloads run without prompting and use hardened HTTPS flags.
 MOCK_BIN="$TMP/bin"

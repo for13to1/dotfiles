@@ -15,37 +15,27 @@ find_uv_bin() {
     fi
 }
 
-install_ruff() {
+# The single uv-channel installer. uv tool install needs no per-tool flags
+# today, so $2 is reserved for future use.
+uv_install_one() {
     local uv_bin
     uv_bin="$(find_uv_bin)" || return 1
-    "$uv_bin" tool install ruff
+    "$uv_bin" tool install "$1"
 }
 
-install_ytdlp() {
-    local uv_bin
-    uv_bin="$(find_uv_bin)" || return 1
-    "$uv_bin" tool install yt-dlp
-}
+# ── uv CLI registry ──────────────────────────────────────────────
+eco_cli ruff    ruff    ""  --always
+eco_cli yt-dlp  yt-dlp  ""  --always
 
 main() {
+    validate_cli_registry
+
     if [[ -z "$(find_uv_bin || true)" ]]; then
         warn "uv not found; skipping Python CLI installs"
         return 0
     fi
 
-    if ! is_installed ruff "$HOME/.local/bin/ruff"; then
-        clean_stale_installs "$HOME/.local/bin/ruff"
-        info "ruff not found; installing it via uv tool..."
-        install_ruff
-        ok "ruff installed"
-    fi
-
-    if ! is_installed yt-dlp "$HOME/.local/bin/yt-dlp"; then
-        clean_stale_installs "$HOME/.local/bin/yt-dlp"
-        info "yt-dlp not found; installing it via uv tool..."
-        install_ytdlp
-        ok "yt-dlp installed"
-    fi
+    run_cli_registry uv_install_one "uv tool" path
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
