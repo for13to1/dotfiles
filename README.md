@@ -34,7 +34,6 @@ dotfiles/
 ├── _tests/                     # 行为测试（make test 自动发现 test-*.sh）
 ├── Makefile                    # 多平台模块管理、外部技能插拔与同步
 ├── bootstrap.sh                # 一键部署脚本
-├── opencode.json               # OpenCode 权限配置（本仓库）
 ├── .github/                    # CI 流水线与 Dependabot
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
 ├── .gitattributes
