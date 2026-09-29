@@ -80,8 +80,14 @@ main() {
     # Install Homebrew if missing.
     if ! command -v brew &>/dev/null; then
         info "Installing Homebrew..."
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" >&2
-        if [[ "$(uname -m)" == "arm64" ]]; then
+        # Assign before exec: argument-position command substitution would swallow
+        # a curl failure and run an empty script "successfully".
+        local brew_install_script
+        brew_install_script="$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        /bin/bash -c "$brew_install_script" >&2
+        # Mirror zshrc's existence check: uname -m reports x86_64 in
+        # Rosetta-translated shells on Apple Silicon, silently skipping shellenv.
+        if [[ -f /opt/homebrew/bin/brew ]]; then
             eval "$(/opt/homebrew/bin/brew shellenv)"
         fi
     fi

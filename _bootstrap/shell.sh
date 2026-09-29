@@ -58,7 +58,11 @@ main() {
 
     if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
         info "Installing Oh My Zsh..."
-        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+        # Command substitution in argument position swallows a curl failure
+        # (empty script exits 0); assign first so set -e sees the real exit code.
+        local omz_install_script
+        omz_install_script="$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+        sh -c "$omz_install_script" "" --unattended
         ok "Oh My Zsh installed"
     else
         ok "Oh My Zsh already present; skipping"

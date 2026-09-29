@@ -10,8 +10,6 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../_scripts/common.sh"
 
 main() {
-    local f
-
     info "Checking the SSH environment..."
     mkdir -p "$HOME/.ssh"
     [[ -f "$HOME/.ssh/config" ]] || touch "$HOME/.ssh/config"
@@ -31,9 +29,7 @@ main() {
     info "Hardening SSH directory and file permissions..."
     chmod 700 "$HOME/.ssh"
     find "$HOME/.ssh" -type f \( -name "id_*" -o -name "*.pem" \) ! -name "*.pub" -exec chmod 600 {} +
-    for f in config authorized_keys known_hosts known_hosts.old; do
-        [[ -f "$HOME/.ssh/$f" ]] && chmod 600 "$HOME/.ssh/$f"
-    done
+    find "$HOME/.ssh" -type f \( -name "config" -o -name "authorized_keys" -o -name "known_hosts*" \) -exec chmod 600 {} +
     find "$HOME/.ssh" -type f -name "*.pub" -exec chmod 644 {} +
     ok "SSH environment configured"
 }

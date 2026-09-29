@@ -29,14 +29,15 @@ test: lint-shell test-shell test-skills
 lint-shell:
 	@set -e; if command -v shellcheck >/dev/null 2>&1; then \
 		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*' -exec shellcheck {} + ; \
-		shellcheck _scripts/hooks/pre-push; \
+		shellcheck _scripts/hooks/pre-push _install/install; \
 	else \
 		echo "❌ shellcheck not installed; cannot run the full test suite" >&2; \
 		exit 1; \
 	fi
 
 test-shell:
-	@find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*' -exec bash -n {} \;
+	@set -o pipefail; find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*' -print0 | xargs -0 -n1 bash -n
+	@printf '%s\0' _install/install _scripts/hooks/pre-push | xargs -0 -n1 bash -n
 	@set -e; for t in _tests/test-*.sh; do bash "$$t"; done
 
 test-skills:

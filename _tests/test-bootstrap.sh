@@ -51,10 +51,18 @@ done
 chmod +x "$MOCK_BIN"/*
 
 # SSH: non-interactive mode creates infrastructure without generating a key.
+# known_hosts2 is pre-created with loose perms to verify the chmod sweep covers it.
+mkdir -p "$TEST_HOME/.ssh"
+touch "$TEST_HOME/.ssh/known_hosts2"
+chmod 644 "$TEST_HOME/.ssh/known_hosts2"
 HOME="$TEST_HOME" DOTFILES_NON_INTERACTIVE=1 bash "$ROOT/_bootstrap/ssh.sh" >/dev/null
 HOME="$TEST_HOME" DOTFILES_NON_INTERACTIVE=1 bash "$ROOT/_bootstrap/ssh.sh" >/dev/null
 [[ -f "$TEST_HOME/.ssh/config" ]] || fail "SSH component must create ~/.ssh/config"
 [[ ! -e "$TEST_HOME/.ssh/id_ed25519" ]] || fail "SSH component must not generate a key non-interactively"
+for ssh_file in config known_hosts2; do
+    [[ -n "$(find "$TEST_HOME/.ssh/$ssh_file" -perm 600 2>/dev/null)" ]] \
+        || fail "$ssh_file must be hardened to 600"
+done
 
 # Shell: existing OMZ/plugin directories isolate the test from network access.
 mkdir -p \

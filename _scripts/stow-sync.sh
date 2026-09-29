@@ -45,7 +45,6 @@ bash "$SCRIPT_DIR/check-links.sh" preflight "$DOTFILES_DIR" "$TARGET_DIR" "$@" \
 SHARED_PARENT_DIRS=(".config")
 
 backup_explicit_conflicts() {
-    local mod="$1"
     local rel_path="$2"
     local full_target="$TARGET_DIR${rel_path:+/$rel_path}"
 
