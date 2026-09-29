@@ -45,8 +45,7 @@ bash "$SCRIPT_DIR/check-links.sh" preflight "$DOTFILES_DIR" "$TARGET_DIR" "$@" \
 SHARED_PARENT_DIRS=(".config")
 
 backup_explicit_conflicts() {
-    local mod="$1"
-    local rel_path="$2"
+    local rel_path="$1"
     local full_target="$TARGET_DIR${rel_path:+/$rel_path}"
 
     for shared in "${SHARED_PARENT_DIRS[@]}"; do
@@ -85,7 +84,7 @@ backup_module_conflicts() {
     while IFS= read -r -d '' path; do
         rel="${path#"$mod"/}"
         # Back up directory conflicts as whole directories.
-        backup_explicit_conflicts "$mod" "$rel"
+        backup_explicit_conflicts "$rel"
     done < <(stow_find "$mod" -mindepth 1 -type d)
 
     while IFS= read -r -d '' path; do
@@ -94,7 +93,7 @@ backup_module_conflicts() {
         local parent
         parent="$TARGET_DIR/$(dirname "$rel")"
         [[ -e "$parent" || -L "$parent" ]] || continue
-        backup_explicit_conflicts "$mod" "$rel"
+        backup_explicit_conflicts "$rel"
     done < <(stow_find "$mod" -mindepth 1 \( -type f -o -type l \))
 }
 
