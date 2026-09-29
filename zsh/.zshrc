@@ -272,7 +272,7 @@ fi
 
 alias fix-kb='printf "\033[>4;0m" && printf "\033[>4n" && printf "\033[<1u"'
 
-if [[ -z "$TMUX" ]]; then
+if [[ -z "$TMUX" && -t 1 ]]; then
     printf '\033[>4;0m'
     printf '\033[<1u'
 fi
