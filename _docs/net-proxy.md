@@ -8,6 +8,7 @@
 
 - 默认路径：`${XDG_STATE_HOME:-$HOME/.local/state}/net_proxy.conf`。
 - 自定义路径：可通过环境变量 `$NET_PROXY_CONF_FILE` 覆盖。
+- 兼容迁移：旧路径 `~/.net_proxy.conf` 在存在且新路径不存在时自动迁移。
 
 文件权限固定为 `600`。新建终端加载 `net_proxy.sh` 时，若文件中 `net_proxy_enabled=1`，则自动恢复环境变量。
 
