@@ -34,7 +34,6 @@ dotfiles/
 ├── _tests/                     # 行为测试（make test 自动发现 test-*.sh）
 ├── Makefile                    # 多平台模块管理、外部技能插拔与同步
 ├── bootstrap.sh                # 一键部署脚本
-├── opencode.json               # OpenCode 权限配置（本仓库）
 ├── .github/                    # CI 流水线与 Dependabot
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
 ├── .gitattributes
@@ -152,7 +151,7 @@ make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 `make test` 要求 `shellcheck`，并要求 `pytest` 或 `uv` 可用；缺少检查依赖时会失败，
 避免 pre-push 在跳过部分检查后继续放行。
 
-`bootstrap.sh` 会将本仓库的 `core.hooksPath` 指向 `_scripts/hooks`，
+`bootstrap.sh` 会将本仓库的 `core.hooksPath` 指向仓库内 `_scripts/hooks` 的绝对路径，
 使 `pre-push` 钩子在每次 `git push` 前自动运行 `make test` 拦截回归。
 
 #### 环境注入

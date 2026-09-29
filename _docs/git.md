@@ -15,5 +15,5 @@
 
 ## 自动化钩子 (pre-push)
 
-`_bootstrap/git.sh` 将当前仓库的 `core.hooksPath` 设置为 `_scripts/hooks`。
+`_bootstrap/git.sh` 将当前仓库的 `core.hooksPath` 设置为仓库内 `_scripts/hooks` 的绝对路径。
 每次执行 `git push` 时，[`_scripts/hooks/pre-push`](../_scripts/hooks/pre-push) 执行 `make test`；若检查失败，中断推送。
