@@ -138,6 +138,9 @@ check_required_command git
 check_required_command stow
 check_required_command zsh
 check_required_command make
+check_required_command uv
+check_required_command ruff
+check_required_command shellcheck
 
 echo ""
 info "Optional tools"
@@ -153,7 +156,6 @@ check_optional_command go
 echo ""
 info "Editor toolchain"
 check_optional_command biome
-check_optional_command ruff
 check_optional_command stylua
 check_optional_command tree-sitter
 check_optional_command shfmt

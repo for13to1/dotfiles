@@ -12,6 +12,8 @@ Usage:
     python polish.py finalize input.md
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re
@@ -471,7 +473,9 @@ def _count_unescaped_pipes(line: str) -> int:
 _PIPE_TABLE_ALIGN_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
 _HTML_TABLE_START_RE = re.compile(r"<\s*(table|tr|td|th)\b", re.IGNORECASE)
 _HTML_TABLE_END_RE = re.compile(r"</\s*table\s*>", re.IGNORECASE)
-_LATEX_BEGIN_RE = re.compile(r"^\s*\\begin\{(equation\*?|align\*?|aligned|gather\*?|multline\*?|split)\}")
+_LATEX_BEGIN_RE = re.compile(
+    r"^\s*\\begin\{(equation\*?|align\*?|aligned|gather\*?|multline\*?|split)\}"
+)
 _LATEX_END_TEMPLATE = r"\\end\{%s\}"
 _CAPTION_LABEL_RE = re.compile(
     r"^((?:Fig|Figs|Figure|Figures|Table|Tab|Eq|Equation)\.?\s*\d+(?:\.\d+)?[A-Za-z]?)\.(?=\s+\S)",
@@ -898,7 +902,9 @@ def _is_single_dollar(text: str, index: int) -> bool:
         return False
     if index > 0 and text[index - 1] == "$" and not _is_escaped_at(text, index - 1):
         return False
-    return not (index + 1 < len(text) and text[index + 1] == "$" and not _is_escaped_at(text, index + 1))
+    return not (
+        index + 1 < len(text) and text[index + 1] == "$" and not _is_escaped_at(text, index + 1)
+    )
 
 
 def _find_closing_dollar(text: str, start_idx: int) -> int | None:
@@ -1087,7 +1093,9 @@ def _list_item_groups(block: Block) -> list[tuple[int, list[str]]]:
     while idx < len(block.lines):
         start = idx
         idx += 1
-        while idx < len(block.lines) and not _is_top_level_list_marker(block.lines[idx], base_indent):
+        while idx < len(block.lines) and not _is_top_level_list_marker(
+            block.lines[idx], base_indent
+        ):
             idx += 1
         groups.append((start, block.lines[start:idx]))
     return groups
@@ -1181,7 +1189,7 @@ def process_block(block: Block) -> list[str]:
     # every block kind (not just paragraph/blockquote).
     try:
         return _process_block_inner(block)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         warn_block(block, f"{exc}; preserving block")
         return block.lines
 
@@ -1318,7 +1326,9 @@ def finalize_files(input_path: Path) -> tuple[Path, Path]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Deterministic markdown post-processing for PDF-converted documents.")
+    parser = argparse.ArgumentParser(
+        description="Deterministic markdown post-processing for PDF-converted documents."
+    )
     sub = parser.add_subparsers(dest="command")
 
     # Default: polish
@@ -1362,7 +1372,9 @@ def main():
         help="Output file (default: overwrite input)",
     )
 
-    fin = sub.add_parser("finalize", help="Back up the original and promote the polished working copy")
+    fin = sub.add_parser(
+        "finalize", help="Back up the original and promote the polished working copy"
+    )
     fin.add_argument("input", type=str, help="Original markdown file")
 
     argv = sys.argv[1:]
@@ -1379,7 +1391,11 @@ def main():
         if not input_path.exists():
             print(f"Error: {input_path} not found", file=sys.stderr)
             sys.exit(1)
-        output_path = Path(args.output) if args.output else input_path.with_name(f"{input_path.stem}-polished.md")
+        output_path = (
+            Path(args.output)
+            if args.output
+            else input_path.with_name(f"{input_path.stem}-polished.md")
+        )
         text = input_path.read_text(encoding="utf-8")
         result = process(text)
         output_path.write_text(result, encoding="utf-8")
@@ -1390,7 +1406,9 @@ def main():
         if not input_path.exists():
             print(f"Error: {input_path} not found", file=sys.stderr)
             sys.exit(1)
-        result = extract_headings(input_path.read_text(encoding="utf-8"), context_lines=args.context)
+        result = extract_headings(
+            input_path.read_text(encoding="utf-8"), context_lines=args.context
+        )
         if args.output:
             Path(args.output).write_text(result, encoding="utf-8")
             print(f"Done. Output: {args.output}")

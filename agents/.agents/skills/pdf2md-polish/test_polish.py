@@ -1,15 +1,13 @@
 """Tests for pdf2md-polish deterministic processing pipeline."""
 
-import importlib.util
+import sys
 from pathlib import Path
 
 import pytest
 
-# Load polish.py as a module (it has no __init__.py parent)
-_SPEC = importlib.util.spec_from_file_location("polish", Path(__file__).parent / "polish.py")
-polish = importlib.util.module_from_spec(_SPEC)
-_SPEC.loader.exec_module(polish)
+sys.path.insert(0, str(Path(__file__).parent))
 
+import polish
 
 # ── Abbreviation protection ─────────────────────────────────────────────────
 
@@ -53,7 +51,9 @@ class TestAbbreviationProtection:
         assert len(sentences) == 1
 
     def test_german_abbreviation_split(self):
-        text = "Es gibt viele Anwendungen, z. B. in der Informatik. Eine weitere ist in der Medizin."
+        text = (
+            "Es gibt viele Anwendungen, z. B. in der Informatik. Eine weitere ist in der Medizin."
+        )
         sentences = polish.split_sentences_in_text(text)
         assert len(sentences) == 2
         assert "z. B." in sentences[0]
@@ -825,7 +825,9 @@ class TestLatexDelimiterNormalization:
 
     def test_inline_paren_math_period_not_split(self):
         """A period inside \\(...\\) must not cause a false sentence break."""
-        sentences = polish.split_sentences_in_text(polish.normalize_inline_paren_math(r"Let \(a = 1.5\) hold. Next."))
+        sentences = polish.split_sentences_in_text(
+            polish.normalize_inline_paren_math(r"Let \(a = 1.5\) hold. Next.")
+        )
         assert len(sentences) == 2
 
     def test_escaped_backslash_paren_left_alone(self):
@@ -1053,7 +1055,9 @@ class TestDefensiveBlockProcessing:
         kinds = [b.kind for b in blocks]
         assert "pipe_table" in kinds
         para_blocks = [b for b in blocks if b.kind == "paragraph"]
-        assert any("Next paragraph has | a literal pipe." in "\n".join(b.lines) for b in para_blocks)
+        assert any(
+            "Next paragraph has | a literal pipe." in "\n".join(b.lines) for b in para_blocks
+        )
 
     def test_blank_then_paragraph_ends_list(self):
         """A blank line followed by a non-list, non-indented paragraph must
@@ -1094,7 +1098,9 @@ class TestIdempotency:
     assert process(out1) == out1
     """
 
-    _SAMPLE_INPUT = (Path(__file__).parent / "examples" / "sample_input.md").read_text(encoding="utf-8")
+    _SAMPLE_INPUT = (Path(__file__).parent / "examples" / "sample_input.md").read_text(
+        encoding="utf-8"
+    )
 
     def test_sample_input_idempotent(self):
         """Full realistic OCR fixture: covers soft-wrap, ligatures, German
@@ -1151,7 +1157,9 @@ class TestIdempotency:
     def test_parametrized_idempotent(self, description, raw):
         out1 = polish.process(raw)
         out2 = polish.process(out1)
-        assert out2 == out1, f"Not idempotent for: {description!r}\n--- pass1 ---\n{out1}\n--- pass2 ---\n{out2}"
+        assert out2 == out1, (
+            f"Not idempotent for: {description!r}\n--- pass1 ---\n{out1}\n--- pass2 ---\n{out2}"
+        )
 
 
 class TestFinalization:

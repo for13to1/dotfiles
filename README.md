@@ -36,9 +36,11 @@ dotfiles/
 ├── bootstrap.sh                # 一键部署脚本
 ├── .github/                    # CI 流水线与 Dependabot
 ├── .editorconfig               # 仓库代码风格配置（链接到 proj-setup 基础模板）
+├── ruff.toml                   # Python 静态检查配置（ruff）
 ├── .gitattributes
 ├── .gitignore
 ├── .gitmodules                 # _vendor 外部技能子模块
+├── .python-version             # uv 解释器版本（3.14）
 ├── LICENSE                     # MIT
 └── README.md
 ```
@@ -140,16 +142,17 @@ make sync
 #### 框架自检
 
 ```bash
-make test   # ShellCheck、bash 语法检查、Stow 行为测试、Skills 测试与 Zsh 性能基准
+make test   # ShellCheck、Python 静态检查、bash 语法检查、Stow 行为测试、Skills 测试与 Zsh 性能基准
 make lint-shell  # 仅运行 ShellCheck
+make lint-python # 仅运行 ruff check 与 ruff format --check
 make test-shell  # bash 语法检查与全部 shell 行为测试（含 Zsh 性能基准）
 make test-skills # 全部 Skill Python 测试
 make check  # 验证当前 HOME 下的 Stow 链接状态
 make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 ```
 
-`make test` 要求 `shellcheck`，并要求 `pytest` 或 `uv` 可用；缺少检查依赖时会失败，
-避免 pre-push 在跳过部分检查后继续放行。
+`make test` 要求 `shellcheck`、`ruff`、`uv`；Skill 测试经 `uv run` 执行，解释器与 pytest 由 uv 提供（`.python-version` 为 3.14）。
+缺少依赖会直接失败，pre-push 不会在跳过检查后放行。
 
 `bootstrap.sh` 会将本仓库的 `core.hooksPath` 指向仓库内 `_scripts/hooks` 的绝对路径，
 使 `pre-push` 钩子在每次 `git push` 前自动运行 `make test` 拦截回归。

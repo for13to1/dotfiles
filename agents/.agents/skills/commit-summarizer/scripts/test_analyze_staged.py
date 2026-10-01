@@ -32,18 +32,19 @@ BRANCH_CASES = [
     # 2. only_tests → test/high
     ("only_tests", [_f("M", "test_foo.py")], "+test", "test", "high"),
     # 3. has_rename, no feat/fix signal → refactor/medium
-    ("rename_no_signal", [_f("R", "new.py", "R100")],
-     "rename old to new", "refactor", "medium"),
+    ("rename_no_signal", [_f("R", "new.py", "R100")], "rename old to new", "refactor", "medium"),
     # 4. is_rename_heavy (A+D) + refactor signal > feat → refactor/medium
-    ("rename_heavy_refactor_signal",
-     [_f("A", "new_loc.py"), _f("D", "old_loc.py")],
-     "+# refactor: move module\n+# extract helper", "refactor", "medium"),
+    (
+        "rename_heavy_refactor_signal",
+        [_f("A", "new_loc.py"), _f("D", "old_loc.py")],
+        "+# refactor: move module\n+# extract helper",
+        "refactor",
+        "medium",
+    ),
     # 5. feat > fix and feat > refactor → feat/low
-    ("feat_signal_dominant", [_f("M", "main.py")],
-     "+add feature\n+implement x", "feat", "low"),
+    ("feat_signal_dominant", [_f("M", "main.py")], "+add feature\n+implement x", "feat", "low"),
     # 6. fix > feat → fix/low
-    ("fix_signal_dominant", [_f("M", "main.py")],
-     "+fix bug\n+resolve issue", "fix", "low"),
+    ("fix_signal_dominant", [_f("M", "main.py")], "+fix bug\n+resolve issue", "fix", "low"),
     # 7. has_new and not has_delete → feat/medium
     ("new_file_no_signal", [_f("A", "new.py")], "+x", "feat", "medium"),
     # 8. has_modify and not has_new, no signal → chore/low (conservative)
@@ -51,21 +52,40 @@ BRANCH_CASES = [
     # 9. else (only delete, no signal) → chore/low
     ("delete_only", [_f("D", "old.py")], "-x", "chore", "low"),
     # 10. modify-only but large net addition → feat/medium
-    ("modify_only_large_net_add",
-     [{"status": "M", "path": "config.py", "raw_status": "M",
-       "insertions": 84, "deletions": 10}],
-     "+x", "feat", "medium"),
+    (
+        "modify_only_large_net_add",
+        [
+            {
+                "status": "M",
+                "path": "config.py",
+                "raw_status": "M",
+                "insertions": 84,
+                "deletions": 10,
+            }
+        ],
+        "+x",
+        "feat",
+        "medium",
+    ),
 ]
 
 # Regression: rename + feat/fix signal must NOT short-circuit to refactor.
 # These cases motivated the fix that narrowed the has_rename condition.
 REGRESSION_CASES = [
     # rename + feat signal → feat (not refactor)
-    ("rename_with_feat_signal", [_f("R", "new.py", "R100")],
-     "+def new_feature():\n+# add oauth", "feat"),
+    (
+        "rename_with_feat_signal",
+        [_f("R", "new.py", "R100")],
+        "+def new_feature():\n+# add oauth",
+        "feat",
+    ),
     # rename + fix signal → fix (not refactor)
-    ("rename_with_fix_signal", [_f("R", "fixed.py", "R100")],
-     "+# fix: resolve null pointer", "fix"),
+    (
+        "rename_with_fix_signal",
+        [_f("R", "fixed.py", "R100")],
+        "+# fix: resolve null pointer",
+        "fix",
+    ),
 ]
 
 # (name, files, diff, expect_conf)
@@ -93,8 +113,7 @@ def test_rename_with_signals_not_refactor():
     for name, files, diff, expect_type in REGRESSION_CASES:
         r = infer_change_type(files, diff)
         assert r["primary_type"] == expect_type, (
-            f"{name}: rename + signal must not short-circuit to refactor; "
-            f"got {r['primary_type']}"
+            f"{name}: rename + signal must not short-circuit to refactor; got {r['primary_type']}"
         )
 
 
@@ -106,13 +125,9 @@ def test_note_only_present_when_low_confidence():
             f"{name}: expected confidence {expect_conf}, got {r['confidence']}"
         )
         if r["confidence"] == "low":
-            assert r["note"] is not None, (
-                f"{name}: low confidence must carry a note"
-            )
+            assert r["note"] is not None, f"{name}: low confidence must carry a note"
         else:
-            assert r["note"] is None, (
-                f"{name}: non-low confidence should not carry a note"
-            )
+            assert r["note"] is None, f"{name}: non-low confidence should not carry a note"
 
 
 def test_signal_counts():
@@ -121,12 +136,8 @@ def test_signal_counts():
     diff = "+add feature\n+fix bug\n+refactor module"
     r = infer_change_type(files, diff)
     sig = r["signals"]
-    assert sig["feat_signals"] == 1, (
-        f"feat_signals: expected 1, got {sig['feat_signals']}"
-    )
-    assert sig["fix_signals"] == 1, (
-        f"fix_signals: expected 1, got {sig['fix_signals']}"
-    )
+    assert sig["feat_signals"] == 1, f"feat_signals: expected 1, got {sig['feat_signals']}"
+    assert sig["fix_signals"] == 1, f"fix_signals: expected 1, got {sig['fix_signals']}"
     assert sig["refactor_signals"] == 1, (
         f"refactor_signals: expected 1, got {sig['refactor_signals']}"
     )
@@ -162,24 +173,17 @@ def test_word_boundary_filters_substring_matches():
     assert sig["feat_signals"] == 0, (
         f"'addition'/'newspaper' should not match feat; got {sig['feat_signals']}"
     )
-    assert sig["fix_signals"] == 0, (
-        f"'prefix' should not match fix; got {sig['fix_signals']}"
-    )
+    assert sig["fix_signals"] == 0, f"'prefix' should not match fix; got {sig['fix_signals']}"
     # "new" dropped — new_feature no longer counts as feat signal
     r2 = infer_change_type(files, "+def new_feature():")
     assert r2["signals"]["feat_signals"] == 0, (
-        f"'new_feature' should not match feat (new dropped); "
-        f"got {r2['signals']['feat_signals']}"
+        f"'new_feature' should not match feat (new dropped); got {r2['signals']['feat_signals']}"
     )
     # Real signals still match after tightening
     r3 = infer_change_type(files, "+add feature\n+fix bug")
     sig3 = r3["signals"]
-    assert sig3["feat_signals"] == 1, (
-        f"'add feature' should match feat; got {sig3['feat_signals']}"
-    )
-    assert sig3["fix_signals"] == 1, (
-        f"'fix bug' should match fix; got {sig3['fix_signals']}"
-    )
+    assert sig3["feat_signals"] == 1, f"'add feature' should match feat; got {sig3['feat_signals']}"
+    assert sig3["fix_signals"] == 1, f"'fix bug' should match fix; got {sig3['fix_signals']}"
 
 
 def _git(repo: Path, *args: str) -> None:

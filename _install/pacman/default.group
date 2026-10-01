@@ -13,7 +13,6 @@ shellcheck
 shfmt
 clang
 tree-sitter-cli
-python-pytest
 lazygit
 ripgrep
 fzf

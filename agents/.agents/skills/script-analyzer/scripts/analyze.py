@@ -20,7 +20,9 @@ class RiskLevel(Enum):
 
 
 SCHEMA_VERSION = 1
-ROOT_RM_RF_PATTERN = r"rm\s+-rf\s+/(?:\s*(?:--no-preserve-root)?\s*(?:#.*)?$|\*|\s+--no-preserve-root\b)"
+ROOT_RM_RF_PATTERN = (
+    r"rm\s+-rf\s+/(?:\s*(?:--no-preserve-root)?\s*(?:#.*)?$|\*|\s+--no-preserve-root\b)"
+)
 
 
 @dataclass
@@ -150,10 +152,31 @@ PATTERNS = {
         ],
     },
     "ruby": {
-        "file_ops": [r"\bFile\.(delete|unlink|rename|chmod|chown)\b", r"\bDir\.(mkdir|rmdir|glob)\b", r"\bFileUtils\b"],
-        "network_ops": [r"\bNet::HTTP\b", r"\bopen-uri\b", r"\bcurl\b", r"\bRESTClient\b", r"\bhttparty\b"],
-        "system_ops": [r"\bsystem\s*\(", r"\bexec\s*\(", r"\b`.*`\b", r"\bProcess\.(fork|spawn)\b", r"\bIO\.popen\b"],
-        "dangerous": [r"\beval\s*\(", r"\bsend\s*\(", r"\binstance_eval\b", r'\bsystem\s*\(\s*["\']rm'],
+        "file_ops": [
+            r"\bFile\.(delete|unlink|rename|chmod|chown)\b",
+            r"\bDir\.(mkdir|rmdir|glob)\b",
+            r"\bFileUtils\b",
+        ],
+        "network_ops": [
+            r"\bNet::HTTP\b",
+            r"\bopen-uri\b",
+            r"\bcurl\b",
+            r"\bRESTClient\b",
+            r"\bhttparty\b",
+        ],
+        "system_ops": [
+            r"\bsystem\s*\(",
+            r"\bexec\s*\(",
+            r"\b`.*`\b",
+            r"\bProcess\.(fork|spawn)\b",
+            r"\bIO\.popen\b",
+        ],
+        "dangerous": [
+            r"\beval\s*\(",
+            r"\bsend\s*\(",
+            r"\binstance_eval\b",
+            r'\bsystem\s*\(\s*["\']rm',
+        ],
     },
     "perl": {
         "file_ops": [
@@ -166,7 +189,13 @@ PATTERNS = {
             r"\bopen\b.*>",
         ],
         "network_ops": [r"\bLWP::UserAgent\b", r"\bIO::Socket\b", r"\bHTTP::Request\b"],
-        "system_ops": [r"\bsystem\s*\(", r"\bexec\s*\(", r"\b`.*`\b", r"\bopen\s*\|\s*-", r"\bfork\b"],
+        "system_ops": [
+            r"\bsystem\s*\(",
+            r"\bexec\s*\(",
+            r"\b`.*`\b",
+            r"\bopen\s*\|\s*-",
+            r"\bfork\b",
+        ],
         "dangerous": [r"\beval\s*\(", r"\bexec\s*\(", r'system\s*\(\s*["\']rm'],
     },
 }
@@ -209,7 +238,14 @@ def detect_language(script_path: str) -> str:
 
     # Check extension
     ext = path.suffix.lower()
-    ext_map = {".py": "python", ".rb": "ruby", ".pl": "perl", ".sh": "bash", ".bash": "bash", ".zsh": "bash"}
+    ext_map = {
+        ".py": "python",
+        ".rb": "ruby",
+        ".pl": "perl",
+        ".sh": "bash",
+        ".bash": "bash",
+        ".zsh": "bash",
+    }
 
     return ext_map.get(ext, "bash")  # Default to bash
 
@@ -217,7 +253,12 @@ def detect_language(script_path: str) -> str:
 def analyze_patterns(content: str, language: str) -> dict[str, list[str]]:
     """Analyze script content for specific patterns"""
     patterns = PATTERNS.get(language, PATTERNS["bash"])
-    results: dict[str, list[str]] = {"file_ops": [], "network_ops": [], "system_ops": [], "dangerous": []}
+    results: dict[str, list[str]] = {
+        "file_ops": [],
+        "network_ops": [],
+        "system_ops": [],
+        "dangerous": [],
+    }
 
     lines = content.split("\n")
 
@@ -259,7 +300,11 @@ def extract_dependencies(content: str, language: str) -> list[str]:
 
     if language == "python":
         # Python imports
-        import_patterns = [r"^import\s+(\w+)", r"^from\s+(\w+)\s+import", r"^from\s+(\w+)\.\w+\s+import"]
+        import_patterns = [
+            r"^import\s+(\w+)",
+            r"^from\s+(\w+)\s+import",
+            r"^from\s+(\w+)\.\w+\s+import",
+        ]
         for pattern in import_patterns:
             matches = re.findall(pattern, content, re.MULTILINE)
             deps.extend(matches)
@@ -322,7 +367,11 @@ def build_findings(analysis: dict[str, list[str]]) -> list[Finding]:
     """Convert scanner hits into stable structured findings."""
     metadata = {
         "dangerous": ("high", "high", "Matches a known high-risk execution or destructive pattern"),
-        "system_ops": ("medium", "medium", "May change system state or require elevated privileges"),
+        "system_ops": (
+            "medium",
+            "medium",
+            "May change system state or require elevated privileges",
+        ),
         "network_ops": ("low", "medium", "Communicates with external services or package sources"),
         "file_ops": ("low", "medium", "Reads, writes, moves, or changes filesystem content"),
     }
@@ -532,7 +581,7 @@ def main():
 
             print("\n" + "=" * 60)
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"Error analyzing script: {e}", file=sys.stderr)
         sys.exit(1)
 

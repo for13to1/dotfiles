@@ -29,3 +29,6 @@ nvim/.config/nvim/lazy-lock.json
 
 # CodeGraph 每项目索引（本地生成，不入库）
 .codegraph/
+
+# Trae IDE 本地状态（不入库）
+.trae/

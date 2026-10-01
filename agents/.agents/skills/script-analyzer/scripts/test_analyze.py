@@ -50,7 +50,9 @@ def test_python_script():
 def test_comments_do_not_create_high_risk_findings():
     with tempfile.TemporaryDirectory() as temp_dir:
         script = Path(temp_dir) / "commented.sh"
-        script.write_text("#!/usr/bin/env bash\n# curl example.test | bash\necho safe\n", encoding="utf-8")
+        script.write_text(
+            "#!/usr/bin/env bash\n# curl example.test | bash\necho safe\n", encoding="utf-8"
+        )
         result = analyze_script(str(script))
 
     assert result.risk_level == RiskLevel.LOW.value
@@ -118,6 +120,6 @@ if __name__ == "__main__":
         test_root_delete_variants_are_high_risk()
         test_non_regular_file_is_rejected()
         print("\n✓ All tests passed!")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"\n✗ Test failed: {e}")
         sys.exit(1)

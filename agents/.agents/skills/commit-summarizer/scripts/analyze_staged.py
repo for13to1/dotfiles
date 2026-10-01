@@ -15,6 +15,8 @@ Exit codes:
     1  — not a git repo, or no staged changes
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re
@@ -88,7 +90,9 @@ def get_diff_numstat(cwd: str | None = None) -> list[dict]:
     return stats
 
 
-def get_staged_diff_preview(cwd: str | None = None, max_lines: int = DIFF_PREVIEW_TRUNCATE_LINES) -> str:
+def get_staged_diff_preview(
+    cwd: str | None = None, max_lines: int = DIFF_PREVIEW_TRUNCATE_LINES
+) -> str:
     """Get a preview of the staged diff (truncated for large changes)."""
     raw = run(["git", "diff", "--cached", "--unified=2"], cwd=cwd)
     lines = raw.splitlines()
@@ -129,7 +133,9 @@ def detect_commitlint(cwd: str | None = None) -> dict:
         try:
             with pkg_path.open() as f:
                 pkg = json.load(f)
-            if "commitlint" in pkg.get("devDependencies", {}) or "commitlint" in pkg.get("dependencies", {}):
+            if "commitlint" in pkg.get("devDependencies", {}) or "commitlint" in pkg.get(
+                "dependencies", {}
+            ):
                 result["commitlint"] = True
         except (json.JSONDecodeError, OSError):
             pass
@@ -179,11 +185,21 @@ def classify_files(files: list[dict]) -> dict:
         "assets": [],
     }
 
-    test_patterns = re.compile(r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.|__tests__)", re.IGNORECASE)
-    config_patterns = re.compile(r"(\.env|config[._]|settings[._]|\.rc$|\.ya?ml$|\.toml$|\.json$|\.ini$)", re.IGNORECASE)
-    doc_patterns = re.compile(r"(\.md$|\.rst$|\.txt$|docs?/|README|CHANGELOG|LICENSE)", re.IGNORECASE)
-    ci_patterns = re.compile(r"(\.github/|\.gitlab|\.circleci|\.travis|Jenkinsfile|\.ci)", re.IGNORECASE)
-    asset_patterns = re.compile(r"(\.(png|jpg|jpeg|gif|svg|ico|woff|ttf|eot|mp[34]|wav)$)", re.IGNORECASE)
+    test_patterns = re.compile(
+        r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.|__tests__)", re.IGNORECASE
+    )
+    config_patterns = re.compile(
+        r"(\.env|config[._]|settings[._]|\.rc$|\.ya?ml$|\.toml$|\.json$|\.ini$)", re.IGNORECASE
+    )
+    doc_patterns = re.compile(
+        r"(\.md$|\.rst$|\.txt$|docs?/|README|CHANGELOG|LICENSE)", re.IGNORECASE
+    )
+    ci_patterns = re.compile(
+        r"(\.github/|\.gitlab|\.circleci|\.travis|Jenkinsfile|\.ci)", re.IGNORECASE
+    )
+    asset_patterns = re.compile(
+        r"(\.(png|jpg|jpeg|gif|svg|ico|woff|ttf|eot|mp[34]|wav)$)", re.IGNORECASE
+    )
 
     for f in files:
         p = f["path"]
@@ -223,12 +239,23 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
     has_new = any(f["status"] == "A" for f in files)
     has_delete = any(f["status"] == "D" for f in files)
     has_rename = any(f["status"] == "R" for f in files)
-    has_tests = bool(re.search(r"(test[_/]|_test\.|\.test\.)", "\n".join(f["path"] for f in files), re.IGNORECASE))
-    has_docs = bool(re.search(r"(\.md$|docs?/)", "\n".join(f["path"] for f in files), re.IGNORECASE))
-    only_tests = has_tests and all(
-        re.search(r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.)", f["path"], re.IGNORECASE) for f in files
+    has_tests = bool(
+        re.search(
+            r"(test[_/]|_test\.|\.test\.)", "\n".join(f["path"] for f in files), re.IGNORECASE
+        )
     )
-    only_docs = has_docs and all(re.search(r"(\.md$|\.rst$|\.txt$|docs?/)", f["path"], re.IGNORECASE) for f in files)
+    has_docs = bool(
+        re.search(r"(\.md$|docs?/)", "\n".join(f["path"] for f in files), re.IGNORECASE)
+    )
+    only_tests = has_tests and all(
+        re.search(
+            r"(test[_/]|_test\.|\.test\.|spec[/_]|_spec\.|\.spec\.)", f["path"], re.IGNORECASE
+        )
+        for f in files
+    )
+    only_docs = has_docs and all(
+        re.search(r"(\.md$|\.rst$|\.txt$|docs?/)", f["path"], re.IGNORECASE) for f in files
+    )
 
     # Check for refactoring signals: new + delete of similar files
     new_paths = {f["path"] for f in files if f["status"] == "A"}
@@ -238,8 +265,20 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
     # Check diff for feature/fix signals. Word boundaries avoid substring
     # false positives (e.g. "add" in "addition", "fix" in "prefix"). "new" is
     # intentionally dropped — too noisy (matches new_feature, renew, newest).
-    feat_signals = len(re.findall(r"^\+.*\b(?:feat|feature|add|implement|create)\b", diff_preview, re.IGNORECASE | re.MULTILINE))
-    fix_signals = len(re.findall(r"^\+.*\b(?:fix|bug|patch|resolve|correct|repair)\b", diff_preview, re.IGNORECASE | re.MULTILINE))
+    feat_signals = len(
+        re.findall(
+            r"^\+.*\b(?:feat|feature|add|implement|create)\b",
+            diff_preview,
+            re.IGNORECASE | re.MULTILINE,
+        )
+    )
+    fix_signals = len(
+        re.findall(
+            r"^\+.*\b(?:fix|bug|patch|resolve|correct|repair)\b",
+            diff_preview,
+            re.IGNORECASE | re.MULTILINE,
+        )
+    )
     refactor_signals = len(
         re.findall(
             r"^\+.*\b(?:refactor|rename|move|extract|reorganiz)\w*\b",
@@ -286,11 +325,13 @@ def infer_change_type(files: list[dict], diff_preview: str) -> dict:
                 # Structural evidence is trustworthy enough for medium;
                 # keyword-only evidence stays low.
                 structural = (
-                    (primary == "feat" and ((has_new and not has_delete) or net_additive))
-                    or (primary == "refactor" and (
+                    primary == "feat" and ((has_new and not has_delete) or net_additive)
+                ) or (
+                    primary == "refactor"
+                    and (
                         (has_rename and feat_signals == 0 and fix_signals == 0)
                         or (is_rename_heavy and refactor_signals > feat_signals)
-                    ))
+                    )
                 )
                 confidence = "medium" if structural else "low"
             else:
@@ -385,7 +426,9 @@ def main():
     cwd = args.workdir
 
     if not is_git_repo(cwd):
-        print(json.dumps({"schema_version": SCHEMA_VERSION, "error": "Not inside a git repository."}))
+        print(
+            json.dumps({"schema_version": SCHEMA_VERSION, "error": "Not inside a git repository."})
+        )
         sys.exit(1)
 
     output = build_output(cwd)

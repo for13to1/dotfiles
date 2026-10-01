@@ -13,7 +13,6 @@ brew "shfmt"
 # clangd 由 Xcode Command Line Tools 提供
 brew "clang-format"
 brew "tree-sitter-cli"
-brew "pytest"
 brew "lazygit"
 brew "ripgrep"
 brew "fzf"

@@ -27,18 +27,43 @@ ln -s ../dotfiles/git/.gitconfig "$TMP/home/.gitconfig"
 printf '# local zsh\n' > "$TMP/home/.zshrc.local"
 printf '[user]\n' > "$TMP/home/.gitconfig.local"
 
+# Stub every required tool: doctor's verdict must not depend on the host's toolchain.
+MOCK_BIN="$TMP/bin"
+mkdir -p "$MOCK_BIN"
+for cmd in git stow zsh make uv ruff shellcheck; do
+    cat > "$MOCK_BIN/$cmd" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$MOCK_BIN/$cmd"
+done
+
 # Clean environment: exit 0.
 assert_pass "synced dotfiles should exit 0" \
-    bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
+    env PATH="$MOCK_BIN:$PATH" bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
+
+# Missing required command: blocking issue, exit non-zero. PATH omits ruff to
+# simulate absence; hosts that ship ruff in /usr/bin cannot be simulated, so skip.
+MISSING_TOOL_BIN="$TMP/bin-missing-tool"
+mkdir -p "$MISSING_TOOL_BIN"
+for cmd in git stow zsh make uv shellcheck; do
+    ln -s "$MOCK_BIN/$cmd" "$MISSING_TOOL_BIN/$cmd"
+done
+if (PATH="$MISSING_TOOL_BIN:/usr/bin:/bin" command -v ruff >/dev/null 2>&1); then
+    echo "SKIP missing-required assertion: ruff resolvable in /usr/bin:/bin"
+else
+    assert_fail "missing required command should be a blocking failure" \
+        env PATH="$MISSING_TOOL_BIN:/usr/bin:/bin" bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
+fi
 
 # Missing optional local state: warn but still exit 0.
 rm -f "$TMP/home/.gitconfig" "$TMP/home/.zshrc.local" "$TMP/home/.gitconfig.local"
 assert_pass "missing optional local state should warn but exit 0" \
-    bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
+    env PATH="$MOCK_BIN:$PATH" bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
 
 # Missing module dir: blocking issue, exit non-zero.
 rm -rf "$TMP/dotfiles/git"
 assert_fail "missing stow module should be a blocking failure" \
-    bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
+    env PATH="$MOCK_BIN:$PATH" bash "$DOCTOR" "$TMP/dotfiles" "$TMP/home"
 
 echo "PASS doctor tests"
