@@ -11,6 +11,10 @@ SHELL := /bin/bash
 # Parsing rules live in _scripts/list-modules.sh; Makefile and bootstrap.sh share this impl.
 MODULES := $(shell bash _scripts/list-modules.sh _scripts/modules.conf)
 
+# Shell script scope: exclude vendored/submodule directories and include non-.sh executables
+SHELL_EXCLUDES := -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*'
+EXTRA_SHELL_SCRIPTS := _scripts/hooks/pre-push _install/install
+
 .PHONY: sync check doctor test lint-shell lint-python test-shell test-skills skills-attach skills-detach skills-update skills-list help
 
 # Default one-shot sync: restow all modules.
@@ -28,8 +32,8 @@ test: lint-shell lint-python test-shell test-skills
 
 lint-shell:
 	@set -e; if command -v shellcheck >/dev/null 2>&1; then \
-		find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*' -exec shellcheck {} + ; \
-		shellcheck _scripts/hooks/pre-push _install/install; \
+		find . -type f -name '*.sh' $(SHELL_EXCLUDES) -exec shellcheck {} + ; \
+		shellcheck $(EXTRA_SHELL_SCRIPTS); \
 	else \
 		echo "❌ shellcheck not installed; cannot run the full test suite" >&2; \
 		exit 1; \
@@ -45,8 +49,8 @@ lint-python:
 	fi
 
 test-shell:
-	@set -o pipefail; find . -type f -name '*.sh' -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*' -print0 | xargs -0 -n1 bash -n
-	@printf '%s\0' _install/install _scripts/hooks/pre-push | xargs -0 -n1 bash -n
+	@set -o pipefail; find . -type f -name '*.sh' $(SHELL_EXCLUDES) -print0 | xargs -0 -n1 bash -n
+	@printf '%s\0' $(EXTRA_SHELL_SCRIPTS) | xargs -0 -n1 bash -n
 	@set -e; for t in _tests/test-*.sh; do bash "$$t"; done
 
 test-skills:

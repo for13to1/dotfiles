@@ -32,7 +32,6 @@ ZSH_THEME="robbyrussell"
 plugins=(
     git
     sudo
-    z
     fzf
     brew
     conda
@@ -158,12 +157,6 @@ if command -v rg &>/dev/null; then
     export RIPGREP_CONFIG_PATH="$HOME/.ripgreprc"
 fi
 # <<< ripgrep loading <<<
-
-# >>> opencode loading >>>
-# Install with --no-modify-path so the script never rewrites .zshrc.
-# curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path
-[[ -d "$HOME/.opencode/bin" ]] && export PATH="$HOME/.opencode/bin:$PATH"
-# <<< opencode loading <<<
 
 # =============================================================================
 # 5. Aliases
