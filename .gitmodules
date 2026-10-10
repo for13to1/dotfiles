@@ -1,3 +1,6 @@
 [submodule "_vendor/mattpocock"]
 	path = _vendor/mattpocock
 	url = https://github.com/mattpocock/skills.git
+[submodule "_vendor/diagram-design"]
+	path = _vendor/diagram-design
+	url = https://github.com/cathrynlavery/diagram-design.git
