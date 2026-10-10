@@ -114,6 +114,8 @@ eco_cli opencode  opencode-ai                      --allow-scripts=opencode-ai -
 eco_cli mimo      @mimo-ai/cli                     --allow-scripts=@mimo-ai/cli --prompt
 eco_cli codegraph @colbymchenry/codegraph          ""                          --prompt
 eco_cli wrangler  wrangler                         --allow-scripts=esbuild,workerd --prompt
+eco_cli rea       rea-agents                       ""                          --prompt
+eco_cli ocr       @alibaba-group/open-code-review  --allow-scripts=@alibaba-group/open-code-review --prompt
 
 main() {
     validate_cli_registry
