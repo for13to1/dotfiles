@@ -29,7 +29,7 @@ ${EDITOR:-vi} ~/dotfiles/_install/brew/vcs.group
 - `.group` 文件只包含各平台包管理器可安装的软件（`_install/install` 为统一安装入口）；
 - **平台差异层**（`pkg-*`）：仅 apt 缺 fnm/rustup/uv，由 `install-by-curl.sh` 官方安装器补齐（brew/pacman 经 default 组提供，无需此渠道）；
 - **平台无关层**：
-  - `install-by-npm.sh` / `install-by-uv.sh` / `install-by-go.sh` 三个渠道共用同一套 CLI 注册表（`eco_cli` 声明，见下方「CLI 注册表」）；清单以各渠道源码中的 `eco_cli` 声明为准，不在文档里重复罗列；
+  - `install-by-npm.sh` / `install-by-uv.sh` / `install-by-go.sh` 三个渠道共用同一套 CLI 注册表（`eco_cli` 声明，见下方「CLI 注册表」）；清单以集中式注册表 `_scripts/cli-registry.sh` 中的 `eco_cli` 声明为准，不在文档里重复罗列；
   - `install-by-go.sh` 额外把 `GOBIN`（产物）定到 `~/.local/bin`、`GOMODCACHE`（模块缓存）定到 `~/.cache/go-mod`，经 `go env -w` 写入 Go 用户配置，对所有 `go` 命令生效（`GOPATH` 不设）。
     - 覆盖已有值前先提示，不静默改写。
     - `go env -w` 写入失败不影响工具安装。
@@ -39,8 +39,9 @@ ${EDITOR:-vi} ~/dotfiles/_install/brew/vcs.group
 
 ## CLI 注册表
 
-npm / uv / go 三个渠道共用一套声明式注册表：框架（表结构、校验、生命周期驱动）在
-`_scripts/common.sh`，**声明**（一行一工具）集中在 `_scripts/cli-registry.sh`。每个工具
+npm / uv / go 三个渠道共用一套声明式注册表：**声明**（一行一工具）集中在
+`_scripts/cli-registry.sh`，**引擎**（表结构、校验、生命周期驱动）在
+`_scripts/cli-lifecycle.sh`（下层只依赖通用基础设施 `_scripts/common.sh`）。每个工具
 是一行 `eco_cli` 数据，声明顺序即执行顺序（`--always` 排在 `--prompt` 之前，基线安装
 先于任何询问）：
 
@@ -59,6 +60,10 @@ eco_cli <channel> <bin> <pkg> <flag|""> --always|--prompt
 
 检测策略：npm 只查 `~/.local/bin/<bin>`（canonical，避免旧 fnm 前缀里的同名 CLI 被
 误判为已装）；uv/go 先查 PATH 再查该路径（尊重组文件之外的既有安装，不重复安装）。
+
+**只读动词不产生副作用**：`--status` / `--outdated` 不会准备运行时（不跑 `fnm install`、
+不写 `go env -w`），只做探测；运行时缺失时它们报告 `state unknown` 并非零退出，绝不
+把未知当成「已是最新」。
 
 每个渠道把数据变成具体调用的函数统一吃整行 `<bin> <pkg> <flag>`，每个动作一个函数：
 `*_install_one`（安装）、`*_update_one`（升级，go 直接复用安装函数）、`*_uninstall_one`
@@ -92,7 +97,7 @@ make update-tools BIN=wrangler           # BIN 由统一入口按归属路由，
 统一入口 `_install/manage-tools.sh` 按注册表把每个 bin 路由到归属渠道，其余渠道不感知；
 未知 bin 在入口一次报错。
 
-- **status**：只读，列出全部注册行（已装 / 缺失 / 过期 / 别处同名）+ 全局汇总。
+- **status**：只读，列出全部注册行（已装 / 缺失 / 过期 / 别处同名 / 状态未知）+ 全局汇总；某渠道不可查询（运行时缺失/离线）时该渠道行标为 `state unknown` 且退出码非零。
 - **update / uninstall**：合并三个渠道的候选为一张清单、一次确认，再分派执行。
 
 三渠道共用 `run_cli_channel` 驱动与同一套授权规则；失败渠道不阻塞其余、退出码聚合：
@@ -106,9 +111,9 @@ make update-tools BIN=wrangler           # BIN 由统一入口按归属路由，
 共同规则：
 
 - **只动已装**：升级/卸载只作用于 `~/.local/bin` 的已装条目；不补装缺失、不碰外来安装、忽略注册表外的包。
-- **同一授权**：`DOTFILES_ACCEPT_TOOLS` 预批准的直接执行，其余合并成一次确认（默认 N）。
+- **同一授权**：`DOTFILES_ACCEPT_TOOLS` 预批准的直接执行，其余合并成一次确认（默认 N）；旧名 `DOTFILES_ACCEPT_INSTALLS` 仍兼容但会警告一次。
 - **可指定 bin**：缺省为全部；指定时只在归属渠道生效，未知 bin 由统一入口报错。`--always` 行被卸载后下次 install 自愈。
-- **失败不撒谎**：查询失败报错退出，不伪装「全部最新」；单工具失败只警告、退出码非零。
+- **失败隔离 + 不撒谎**：任一行（含基线 `--always`）失败只警告并继续其余，退出码非零聚合；查询失败报错退出，不伪装「全部最新」，也不把查询失败的行显示为「up to date」。
 
 brew 与官方安装器管理的运行时（fnm/rustup/uv）不在本框架内：系统包管理器与各
 工具自己管升级（如 `brew upgrade`）。

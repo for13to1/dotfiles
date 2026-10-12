@@ -13,7 +13,7 @@ trap 'rm -rf "$TMP"' EXIT
 # install_cli_registry's prompt branch: declining is a successful skip; an accepted
 # installer that then fails returns non-zero.
 # shellcheck disable=SC1091
-source "$ROOT/_scripts/common.sh"
+source "$ROOT/_scripts/cli-lifecycle.sh"
 failed_install() { return 7; }
 
 # Point CLI_BIN_DIR at an empty temp prefix so "missing-optional" is absent.
@@ -27,6 +27,26 @@ unset DOTFILES_NON_INTERACTIVE
 if printf 'y\n' | install_cli_registry failed_install mock >/dev/null; then
     fail "an accepted optional installer failure must return non-zero"
 fi
+
+# Failure isolation in the install path: a failed row must not stop the rows
+# after it (they are independent tools), and the run must still fail. The
+# count of installer invocations proves the loop kept going.
+isolation_bin="$TMP/isolation-bin"
+mkdir -p "$isolation_bin"
+isolated_calls=0
+# The installer fails the first row and succeeds the second; the frame must
+# call it for both (aggregate rc), not abort on the first failure.
+install_iso() { isolated_calls=$((isolated_calls + 1)); [[ "$1" == iso-bad ]] && return 1; return 0; }
+CLI_BIN_DIR="$isolation_bin"
+eco_cli npm iso-bad bad-pkg "" --always
+eco_cli npm iso-ok ok-pkg "" --always
+if install_cli_registry install_iso mock canonical iso-bad iso-ok >/dev/null 2>&1; then
+    fail "an --always install failure must return non-zero"
+fi
+[[ "$isolated_calls" == 2 ]] \
+    || fail "a failed install must not skip later rows (isolation)"
+# Point CLI_BIN_DIR back at the prompt prefix for the existing assertions.
+CLI_BIN_DIR="$TMP/prompt-bin"
 
 # install_ecosystem_tools (bootstrap step #3) must run its platform-
 # independent npm/uv/go channels: a failing channel must not skip the other,
@@ -72,6 +92,9 @@ chmod +x "$NPM_HOME/.local/bin/stylua"
 cat > "$NPM_BIN/fnm" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FNM_LOG"
+# Record the authorization channel env so tests can assert the manager→
+# channel IPC var carries the approved set without touching the user's var.
+printf 'ACCEPT=[%s] APPROVED=[%s]\n' "${DOTFILES_ACCEPT_TOOLS:-}" "${DOTFILES_APPROVED_TOOLS:-}" >> "$FNM_LOG"
 if [[ "$*" == *'node --version'* ]]; then
     printf '%s\n' 'v24.0.0'
 elif [[ "$*" == *'npm --version'* ]]; then
@@ -79,8 +102,11 @@ elif [[ "$*" == *'npm --version'* ]]; then
 elif [[ "$*" == *'npm install --help'* ]]; then
     # Unlike the fake 11.9.0 version above, this npm claims to understand
     # --allow-scripts: the installer probes capabilities at runtime, so the
-    # flag must be honored regardless of the reported version.
-    printf '%s\n' '    [--allow-scripts <package-list>]'
+    # flag must be honored regardless of the reported version. Tests can flip
+    # MOCK_ALLOW_SCRIPTS=0 to simulate an older npm that rejects the flag.
+    if [[ "${MOCK_ALLOW_SCRIPTS:-1}" == "1" ]]; then
+        printf '%s\n' '    [--allow-scripts <package-list>]'
+    fi
 elif [[ "$*" == *'npm prefix -g'* ]]; then
     printf '%s\n' "$FNM_PREFIX"
 elif [[ "$*" == *'npm outdated'* ]]; then
@@ -374,6 +400,20 @@ HOME="$NPM_UPDATE_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_INSTALLS=wran
     || fail "the legacy accept var must not fail"
 [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
     || fail "the legacy accept var must pre-approve the update"
+# The legacy spelling still works but must warn once so it can be retired.
+grep -q 'DOTFILES_ACCEPT_INSTALLS is deprecated' "$NPM_OUT" \
+    || fail "the legacy accept var must warn about deprecation"
+# The current spelling must never emit the deprecation warning.
+: > "$FNM_LOG"
+HOME="$NPM_UPDATE_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=wrangler \
+    MOCK_OUTDATED_LINES='wrangler 3.0.0 4.0.0' \
+    MOCK_OUTDATED_JSON='{"wrangler":{"current":"3.0.0","latest":"4.0.0"}}' \
+    MOCK_OUTDATED_EXIT=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" --update wrangler >"$NPM_OUT" 2>&1 \
+    || fail "the current accept var must not fail"
+! grep -q 'is deprecated' "$NPM_OUT" \
+    || fail "the current accept var must not emit a deprecation warning"
 
 # Uninstall (--uninstall): same registry and authorization; the argument
 # narrows the candidates to named bins, without arguments every installed row
@@ -576,6 +616,52 @@ grep -q 'query via uv tool failed' "$UV_OUT" \
     || fail "a failed uv query must never be reported as up to date"
 [[ "$(grep -c 'tool upgrade' "$UV_LOG" || true)" == 0 ]] \
     || fail "a failed uv query must not trigger any upgrade"
+
+# Text-format drift: uv marks a row outdated ("[latest: …]") in a shape our
+# parser does not understand. That must be a loud failure, never a silent
+# "all up to date" (the parser once just yielded nothing).
+if run_uv_updating "" 'ruff v0.16.5 [latest: 0.17.0' 0; then
+    fail "an unparseable uv outdated format must propagate as failure"
+fi
+grep -q 'format not understood' "$UV_OUT" \
+    || fail "an unparseable uv format must be reported"
+! grep -q 'up to date' "$UV_OUT" \
+    || fail "an unparseable uv format must never be reported as up to date"
+[[ "$(grep -c 'tool upgrade' "$UV_LOG" || true)" == 0 ]] \
+    || fail "an unparseable uv format must not trigger any upgrade"
+
+# Field-shifted drift: the marker is present and the parser emits rows, but the
+# fields no longer line up (cur is not a version). Shape validation must catch
+# it instead of "upgrading" to a garbage version.
+if run_uv_updating "" 'ruff python [latest: 0.17.0] v0.16.5' 0; then
+    fail "a field-shifted uv format must propagate as failure"
+fi
+grep -q 'format not understood' "$UV_OUT" \
+    || fail "a field-shifted uv format must be reported"
+! grep -q 'tool upgrade' "$UV_LOG" \
+    || fail "a field-shifted uv format must not trigger any upgrade"
+
+# Marker-gone drift: uv stops printing "[latest: …]" entirely. Any non-empty
+# unparseable output must fail — never collapse into a false "up to date"
+# (uv prints nothing only when nothing is outdated).
+if run_uv_updating "" 'ruff v0.16.5 -> 0.17.0
+- ruff' 0; then
+    fail "a marker-less uv format must propagate as failure"
+fi
+grep -q 'format not understood' "$UV_OUT" \
+    || fail "a marker-less uv format must be reported"
+! grep -q 'up to date' "$UV_OUT" \
+    || fail "a marker-less uv format must never be reported as up to date"
+! grep -q 'tool upgrade' "$UV_LOG" \
+    || fail "a marker-less uv format must not trigger any upgrade"
+
+# And the clean case stays clean: an empty outdated listing is a genuine
+# all-current tree, not a parse failure.
+run_uv_updating "" '' 0 || fail "an empty uv outdated listing must not fail"
+grep -q 'up to date' "$UV_OUT" \
+    || fail "an empty uv outdated listing must report up to date"
+[[ "$(grep -c 'tool upgrade' "$UV_LOG" || true)" == 0 ]] \
+    || fail "an empty uv outdated listing must not trigger any upgrade"
 
 # A named scope narrows the uv upgrade to the named bin.
 run_uv_updating yt-dlp \
@@ -1050,6 +1136,115 @@ grep -q 'summary:' "$MANAGE_OUT" \
     || fail "unified status must print a summary"
 [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 0 ]] \
     || fail "unified status must never install"
+
+# Regression: the unified status must actually decode the channel's "bin pkg
+# cur latest" rows (a wrong field separator once made every outdated row read
+# as "up to date"). The channel separator is a space; the channel prefix is
+# carried before a '|'.
+: > "$FNM_LOG"
+HOME="$NPM_UPDATE_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_OUTDATED_JSON='{"wrangler":{"current":"3.0.0","latest":"4.0.0"}}' \
+    MOCK_OUTDATED_EXIT=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/manage-tools.sh" status biome wrangler >"$MANAGE_OUT" 2>&1 \
+    || fail "a unified status with an outdated row must not fail"
+grep -q 'wrangler (wrangler) 3.0.0 → 4.0.0' "$MANAGE_OUT" \
+    || fail "unified status must decode and report the outdated row"
+grep -q 'summary: 2 installed, 1 outdated' "$MANAGE_OUT" \
+    || fail "unified status must count the outdated row"
+! grep -q 'wrangler (wrangler) up to date' "$MANAGE_OUT" \
+    || fail "an outdated row must never be reported as up to date"
+[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 0 ]] \
+    || fail "unified status must stay read-only with outdated rows"
+
+# Read-only verbs must not prepare the runtime: --status/--outdated must not
+# run `fnm install` (a network mutation) just to print a listing.
+: > "$FNM_LOG"
+HOME="$NPM_UPDATE_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_OUTDATED_JSON='{}' MOCK_OUTDATED_EXIT=0 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" --status >/dev/null 2>&1 \
+    || fail "npm --status must not fail"
+! grep -q 'install --lts' "$FNM_LOG" \
+    || fail "--status must not prepare the runtime"
+
+# go --status must not persist a layout (`go env -w`) either: a read-only verb
+# must be side-effect free. The mock records every `go env -w`.
+: > "$GO_WRITE_LOG"
+HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" --status >/dev/null 2>&1 \
+    || fail "go --status must not fail"
+[[ ! -s "$GO_WRITE_LOG" ]] \
+    || fail "--status must not write the Go layout"
+
+# A missing runtime makes a channel's state unknowable: it must not be rendered
+# as "up to date", and the run must report failure rather than a false all-clear.
+UNKNOWN_HOME="$TMP/unknown-home"
+mkdir -p "$UNKNOWN_HOME/.local/bin"
+touch "$UNKNOWN_HOME/.local/bin/biome"
+chmod +x "$UNKNOWN_HOME/.local/bin/biome"
+if HOME="$UNKNOWN_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NOUV_BIN:/nonexistent" \
+    bash "$ROOT/_install/manage-tools.sh" update >"$TMP/unknown-update.out" 2>&1; then
+    fail "an unqueryable channel must not report success"
+fi
+! grep -q 'all installed CLIs are up to date' "$TMP/unknown-update.out" \
+    || fail "a missing runtime must never be reported as all up to date"
+grep -q 'state unknown' "$TMP/unknown-update.out" \
+    || fail "a missing runtime must be named as unknown"
+
+# The channel-level --status must match the unified view when its runtime is
+# unavailable: still list every row (installed ones as `state unknown`), print
+# the summary, and fail — never render silence as a healthy tree.
+UNKNOWN_NPM_HOME="$TMP/unknown-npm-home"
+mkdir -p "$UNKNOWN_NPM_HOME/.local/bin"
+touch "$UNKNOWN_NPM_HOME/.local/bin/biome"
+chmod +x "$UNKNOWN_NPM_HOME/.local/bin/biome"
+if HOME="$UNKNOWN_NPM_HOME" PATH="$NOUV_BIN:/nonexistent" \
+    bash "$ROOT/_install/install-by-npm.sh" --status >"$TMP/unknown-channel-status.out" 2>&1; then
+    fail "a channel --status with a missing runtime must not report success"
+fi
+grep -q 'biome (@biomejs/biome) state unknown' "$TMP/unknown-channel-status.out" \
+    || fail "channel --status must mark installed rows unknown when the runtime is gone"
+grep -q 'summary: 1 installed' "$TMP/unknown-channel-status.out" \
+    || fail "channel --status must still print its summary"
+! grep -q 'up to date' "$TMP/unknown-channel-status.out" \
+    || fail "channel --status must never report up to date without a runtime"
+
+# The manager must not overwrite the user's DOTFILES_ACCEPT_TOOLS when talking
+# to a channel: the merged-confirm result travels on the dedicated
+# DOTFILES_APPROVED_TOOLS var, so the user's setting survives the round trip.
+: > "$FNM_LOG"
+printf 'y\n' | HOME="$NPM_UPDATE_HOME" DOTFILES_ACCEPT_TOOLS=some-user-tool \
+    MOCK_OUTDATED_LINES='wrangler 3.0.0 4.0.0' \
+    MOCK_OUTDATED_JSON='{"wrangler":{"current":"3.0.0","latest":"4.0.0"}}' \
+    MOCK_OUTDATED_EXIT=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/manage-tools.sh" update wrangler >"$MANAGE_OUT" 2>&1 \
+    || fail "a merged-confirm update must not fail"
+[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
+    || fail "the merged-confirm update must still update the approved bin"
+# The approved set travels on the dedicated IPC var; the user's accept var is
+# never overwritten (proven by the env the mock recorded).
+grep -q '^ACCEPT=\[some-user-tool\] APPROVED=\[wrangler\]$' "$FNM_LOG" \
+    || fail "the user's accept var must survive the manager round trip"
+! grep -q '^ACCEPT=\[wrangler\]' "$FNM_LOG" \
+    || fail "the manager must not overwrite DOTFILES_ACCEPT_TOOLS"
+
+# npm dropping --allow-scripts on an old npm must be loud: a skipped
+# allow-list silently breaks the package's postinstall. The package must
+# still install, just without the flag.
+: > "$FNM_LOG"
+HOME="$NPM_UPDATE_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=opencode \
+    MOCK_ALLOW_SCRIPTS=0 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" --install opencode >"$NPM_OUT" 2>&1 \
+    || fail "installing with an npm that lacks --allow-scripts must not fail"
+grep -q 'does not support --allow-scripts' "$NPM_OUT" \
+    || fail "a dropped --allow-scripts must be reported"
+grep -qE -- 'npm install -g --prefix [^ ]+ opencode-ai$' "$FNM_LOG" \
+    || fail "the package must still install without the flag"
+! grep -q -- '--allow-scripts' "$FNM_LOG" \
+    || fail "the unsupported flag must actually be dropped"
 
 # Default official downloads run without prompting and use hardened HTTPS flags.
 MOCK_BIN="$TMP/bin"

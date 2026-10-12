@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/../_scripts/common.sh"
+source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-registry.sh"
 cli_registry_filter_channel go
@@ -61,12 +61,14 @@ ensure_go_layout() {
 }
 
 # Channel runtime gate: Go must be present; the layout write belongs to the
-# channel contract, so it runs for every verb (idempotent, warn-only on write).
+# channel contract, so it runs for every mutation verb (idempotent, warn-only
+# on write). Read-only verbs must not persist anything.
 go_ensure() {
     if [[ -z "$(find_go_bin || true)" ]]; then
         warn "go not found; skipping Go CLI lifecycle"
         return 1
     fi
+    [[ -n "${CLI_READ_ONLY:-}" ]] && return 0
     ensure_go_layout
 }
 
