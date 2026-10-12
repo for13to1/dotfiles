@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/../_scripts/common.sh"
+source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-registry.sh"
 cli_registry_filter_channel npm
@@ -42,6 +42,18 @@ ensure_fnm_node_env() {
         return 1
     fi
 
+    # Read-only verbs (--status/--outdated) must not prepare anything: probing
+    # is enough, and `fnm install --lts` would download a runtime just to list
+    # versions. If no LTS is ready, the query cannot run and the caller reports
+    # an unknown state rather than blocking on a network install.
+    if [[ -n "${CLI_READ_ONLY:-}" ]]; then
+        if fnm_exec node --version &>/dev/null; then
+            return 0
+        fi
+        warn "Node LTS not ready; cannot read npm CLI state (run 'fnm install --lts' first)"
+        return 1
+    fi
+
     info "fnm found; preparing the Node LTS environment..."
     "$FNM_BIN" install --lts &>/dev/null || true
     "$FNM_BIN" default lts-latest &>/dev/null || true
@@ -55,14 +67,6 @@ ensure_fnm_node_env() {
     return 1
 }
 
-# npm >= 11.10 added a release-age gate; the official installer bypasses it with
-# --min-release-age=0.
-release_age_flag() {
-    local npm_version
-    npm_version="$(fnm_exec npm --version)"
-    awk -F. '{ exit !($1 > 11 || ($1 == 11 && $2 >= 10)) }' <<<"$npm_version"
-}
-
 # npm 11.x introduced the install-scripts policy (12.x hard-blocks lifecycle
 # scripts by default); packages not on the allowlist get their postinstall
 # skipped. Older npm does not understand the --allow-scripts flag.
@@ -72,24 +76,32 @@ npm_supports_allow_scripts() {
 
 # Install npm globals into $LOCAL_PREFIX. Drop --allow-scripts when this npm
 # rejects it and disable the release-age gate when this npm enforces one;
-# forward all other args untouched.
+# forward all other args untouched. Dropping is loud: a skipped allow-list
+# silently breaks the package's postinstall, so it must be visible.
 npm_install_global() {
     local resolved=()
-    local arg
+    local arg warned=0
     for arg in "$@"; do
         case "$arg" in
             --allow-scripts=*)
-                npm_supports_allow_scripts || continue
+                if ! npm_supports_allow_scripts; then
+                    (( warned )) || {
+                        warn "this npm does not support --allow-scripts; $arg dropped (postinstall may be skipped)"
+                        warned=1
+                    }
+                    continue
+                fi
                 ;;
         esac
         resolved+=("$arg")
     done
 
-    if release_age_flag; then
-        fnm_exec npm install -g --prefix "$LOCAL_PREFIX" --min-release-age=0 "${resolved[@]}"
-    else
-        fnm_exec npm install -g --prefix "$LOCAL_PREFIX" "${resolved[@]}"
-    fi
+    # No --min-release-age override: npm's release-age gate is opt-in
+    # (Default: null, verified against npm 11.19.0 docs), so the default is a
+    # no-op — and any gate the user configures in .npmrc must survive us, not
+    # be silently relaxed by a CLI flag (CLI source outranks user source).
+    # If npm ever ships the gate on by default, we follow it for free.
+    fnm_exec npm install -g --prefix "$LOCAL_PREFIX" "${resolved[@]}"
 }
 
 # Channel runtime gate: fnm-managed Node LTS plus a working npm in front of it.
@@ -106,8 +118,8 @@ npm_ensure() {
 }
 
 # The single npm-channel installer: every registry entry is (bin, pkg, flag),
-# and npm_install_global carries all the npm-version quirks (dropping
-# --allow-scripts on old npm, --min-release-age on npm >= 11.10). Flags are
+# and npm_install_global carries the npm-version quirk (dropping
+# --allow-scripts on old npm). Flags are
 # documented per entry in the registry below; an empty flag is a plain install.
 npm_install_one() {
     if [[ -z "$3" ]]; then
@@ -118,7 +130,7 @@ npm_install_one() {
 }
 
 # The upgrade path reuses the single npm installer with <pkg>@latest: same
-# prefix, same --allow-scripts/--min-release-age quirks, one code path.
+# prefix, same --allow-scripts quirk, one code path.
 npm_update_one() {
     npm_install_one "$1" "$2@latest" "$3"
 }

@@ -9,7 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/../_scripts/common.sh"
+source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-registry.sh"
 
@@ -18,6 +18,9 @@ ROUTED_NPM=""; ROUTED_UV=""; ROUTED_GO=""; ROUTED_NAMED=0
 
 # Mutation state shared between the collect phase and authorize_and_execute.
 MUT_TOTAL=0; MUT_PEND=0; MUT_NPM=""; MUT_UV=""; MUT_GO=""; MUT_PEND_BINS=""
+# Channels whose outdated query failed during collection: their state is
+# unknown, so an all-clear message would be a lie.
+MUT_UNKNOWN=""
 
 usage() {
     echo "usage: $0 <status|install|update|uninstall> [bin…]"
@@ -92,16 +95,28 @@ collect_outdated() {
 do_status() {
     local ch i bin pkg line
     local -a outdated=()
-    local out=""
+    local out="" rc=0 failed=" "
     for ch in npm uv go; do
-        out="$(collect_outdated "$ch")" || { warn "outdated query via $ch failed; cannot report status"; return 1; }
+        # A named scope only cares about the channels that hold its bins;
+        # don't query (or judge) unrelated channels.
+        if (( ROUTED_NAMED )) && [[ -z "$(channel_bins "$ch")" ]]; then
+            continue
+        fi
+        if ! out="$(collect_outdated "$ch")"; then
+            # A channel we cannot query (missing runtime, offline) leaves its
+            # rows in an unknown state: never render them as "up to date".
+            warn "[$ch] state unknown: outdated query failed (runtime missing or offline)"
+            failed+="$ch "
+            rc=1
+            continue
+        fi
         while IFS= read -r line; do
             [[ -n "$line" ]] && outdated+=("$ch|$line")
         done <<<"$out"
     done
 
-    local installed=0 outdated_n=0 missing=0 foreign=0
-    local cur latest _ch _b _p _c _l
+    local installed=0 outdated_n=0 missing=0 foreign=0 unknown=0
+    local cur latest _ch _rest _b _p _c _l
     for i in "${!ECO_CLI_BINS[@]}"; do
         bin="${ECO_CLI_BINS[i]}"
         ch="${ECO_CLI_CHANNELS[i]}"
@@ -114,15 +129,25 @@ do_status() {
         fi
         if [[ -x "$CLI_BIN_DIR/$bin" ]]; then
             installed=$(( installed + 1 ))
+            if [[ "$failed" == *" $ch "* ]]; then
+                unknown=$(( unknown + 1 ))
+                info "[$ch] $bin ($pkg) state unknown"
+                continue
+            fi
             cur=""; latest=""
+            # collect_outdated rows are "bin pkg cur latest"; the channel is
+            # carried as the prefix before the first '|'. The count guard is
+            # required: bash < 4.4 treats an empty-array expansion under
+            # `set -u` as an unbound variable (macOS system bash is 3.2).
             if (( ${#outdated[@]} > 0 )); then
                 for line in "${outdated[@]}"; do
-                    IFS='|' read -r _ch _b _p _c _l <<<"$line"
-                    if [[ "$_ch" == "$ch" && "$_p" == "$pkg" ]]; then
-                        cur="$_c"; latest="$_l"
-                        break
-                    fi
-                done
+                _ch="${line%%|*}"; _rest="${line#*|}"
+                read -r _b _p _c _l <<<"$_rest"
+                if [[ "$_ch" == "$ch" && "$_p" == "$pkg" ]]; then
+                    cur="$_c"; latest="$_l"
+                    break
+                fi
+            done
             fi
             if [[ -n "$latest" ]]; then
                 outdated_n=$(( outdated_n + 1 ))
@@ -139,7 +164,10 @@ do_status() {
         fi
     done
 
-    info "summary: $installed installed, $outdated_n outdated, $missing missing, $foreign on PATH"
+    local summary="summary: $installed installed, $outdated_n outdated, $missing missing, $foreign on PATH"
+    (( unknown > 0 )) && summary+=", $unknown unknown"
+    info "$summary"
+    return "$rc"
 }
 
 # authorize_and_execute <verb> <prompt-verb>: one batch confirm, then
@@ -152,6 +180,12 @@ authorize_and_execute() {
     fi
 
     if (( MUT_TOTAL == 0 )); then
+        if [[ -n "$MUT_UNKNOWN" ]]; then
+            # Some channel could not be queried; never claim everything is
+            # current when part of the picture is missing.
+            warn "cannot confirm every CLI is up to date: state unknown for${MUT_UNKNOWN}"
+            return 1
+        fi
         if [[ "$verb" == "update" ]]; then
             # Under a named scope "all installed … up to date" could be a
             # lie: an unnamed outdated row exists but was filtered out.
@@ -189,8 +223,11 @@ authorize_and_execute() {
             npm) bins="$MUT_NPM" ;; uv) bins="$MUT_UV" ;; go) bins="$MUT_GO" ;;
         esac
         [[ -n "$bins" ]] || continue
+        # The merged confirm already ran here, so the channel is told which
+        # bins are approved through the dedicated IPC var — the user's
+        # DOTFILES_ACCEPT_TOOLS is never overwritten.
         # shellcheck disable=SC2086
-        DOTFILES_ACCEPT_TOOLS="$bins" bash "$(channel_script "$ch")" --"$channel_verb" $bins \
+        DOTFILES_APPROVED_TOOLS="$bins" bash "$(channel_script "$ch")" --"$channel_verb" $bins \
             || { warn "$ch $verb had failures"; exec_rc=1; }
     done
     return "$exec_rc"
@@ -199,9 +236,14 @@ authorize_and_execute() {
 do_update() {
     local ch line bin pkg cur latest out collect_rc=0
     MUT_TOTAL=0; MUT_PEND=0; MUT_NPM=""; MUT_UV=""; MUT_GO=""; MUT_PEND_BINS=""
+    MUT_UNKNOWN=""
 
     for ch in npm uv go; do
-        out="$(collect_outdated "$ch")" || { warn "outdated query via $ch failed; skipping $ch"; collect_rc=1; continue; }
+        # Named scope: only the channels that own the named bins are relevant.
+        if (( ROUTED_NAMED )) && [[ -z "$(channel_bins "$ch")" ]]; then
+            continue
+        fi
+        out="$(collect_outdated "$ch")" || { warn "outdated query via $ch failed; skipping $ch"; MUT_UNKNOWN+=" $ch"; collect_rc=1; continue; }
         while IFS= read -r line; do
             [[ -n "$line" ]] || continue
             read -r bin pkg cur latest <<<"$line"
@@ -221,10 +263,10 @@ do_update() {
     authorize_and_execute update "Update" || collect_rc=1
     return "$collect_rc"
 }
-
 do_uninstall() {
     local ch i bin pkg
     MUT_TOTAL=0; MUT_PEND=0; MUT_NPM=""; MUT_UV=""; MUT_GO=""; MUT_PEND_BINS=""
+    MUT_UNKNOWN=""
 
     for ch in npm uv go; do
         for i in "${!ECO_CLI_BINS[@]}"; do

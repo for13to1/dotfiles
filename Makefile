@@ -66,17 +66,19 @@ test-skills:
 
 # Manage the registry-declared ecosystem CLIs through the unified entrypoint,
 # which routes named bins to their owning channel. BIN="a b" narrows the scope.
+# `set -f` disables globbing so a name like `*` reaches the entrypoint intact;
+# word-splitting (intended) still passes multiple names as separate args.
 status-tools:
-	@bash _install/manage-tools.sh status $(BIN)
+	@set -f; bash _install/manage-tools.sh status $(BIN)
 
 install-tools:
-	@bash _install/manage-tools.sh install $(BIN)
+	@set -f; bash _install/manage-tools.sh install $(BIN)
 
 update-tools:
-	@bash _install/manage-tools.sh update $(BIN)
+	@set -f; bash _install/manage-tools.sh update $(BIN)
 
 uninstall-tools:
-	@bash _install/manage-tools.sh uninstall $(BIN)
+	@set -f; bash _install/manage-tools.sh uninstall $(BIN)
 
 # Manage pluggable external skills (e.g. make skills-attach, make skills-detach, make skills-list)
 skills-attach:

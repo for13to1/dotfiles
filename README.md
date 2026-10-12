@@ -75,7 +75,7 @@ cd ~/dotfiles && bash bootstrap.sh
 cd ~/dotfiles && DOTFILES_NON_INTERACTIVE=1 bash bootstrap.sh
 ```
 
-该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；交互式询问的 CLI 全部跳过，生态工具仅自动安装无需确认的条目（清单见各渠道源码的 `eco_cli` 声明）；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
+该模式使用默认选项：镜像源默认 TUNA，不自动生成 SSH 密钥或 Git 本地配置，跳过编辑器插件同步与默认 Shell 切换；交互式询问的 CLI 全部跳过，生态工具仅自动安装无需确认的条目（清单见集中式注册表 `_scripts/cli-registry.sh` 的 `eco_cli` 声明）；各平台仍按其既定安装路径完成默认软件包、系统设置和开发工具链部署。
 
 ## 🖥️ 本地配置
 

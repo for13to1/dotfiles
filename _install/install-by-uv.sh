@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
-source "$SCRIPT_DIR/../_scripts/common.sh"
+source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-registry.sh"
 cli_registry_filter_channel uv
@@ -50,23 +50,46 @@ uv_uninstall_one() {
 }
 
 # One batch query via `uv tool list --outdated` (text form, no --json). The
-# parse depends on that form; if uv changes it, awk yields nothing and the
-# frame reports "up to date". A failed query is captured explicitly. stdout
-# is the result channel, so warn goes to stderr.
+# parse depends on that form; if uv changes it, we detect the drift instead of
+# reporting "up to date". A failed query is captured explicitly. stdout is the
+# result channel, so warn goes to stderr.
 uv_query_outdated() {
-    local uv_bin listed rc=0
+    local uv_bin listed rc=0 parsed
     uv_bin="$(find_uv_bin)" || return 1
     listed="$("$uv_bin" tool list --outdated 2>/dev/null)" || rc=$?
     if (( rc != 0 )); then
         warn "uv tool list --outdated failed (exit $rc); skipping uv tool updates" >&2
         return 1
     fi
-    awk '$1 !~ /^-/ && match($0, /\[latest: [^]]+\]/) {
+    parsed="$(awk '$1 !~ /^-/ && match($0, /\[latest: [^]]+\]/) {
               latest = substr($0, RSTART + 9, RLENGTH - 10)
               cur = $2
               sub(/^v/, "", cur)
               print $1, cur, latest
-          }' <<<"$listed"
+          }' <<<"$listed")"
+    # Shape check: a row's current/latest must both look like versions
+    # (digits separated by dots, optional leading v). A field-shifted format
+    # change would otherwise feed garbage in as a version and "update" to it.
+    local row bad=0
+    while IFS= read -r row; do
+        [[ -n "$row" ]] || continue
+        if [[ ! "$row" =~ ^[^[:space:]]+\ v?[0-9]+([.][0-9]+)+\ v?[0-9]+([.][0-9]+)+$ ]]; then
+            bad=1
+        fi
+    done <<<"$parsed"
+    if (( bad )); then
+        warn "uv tool list --outdated format not understood; skipping uv tool updates" >&2
+        return 1
+    fi
+    # Drift guard: uv prints nothing only when nothing is outdated. Any
+    # non-empty output we cannot parse (marker gone, fields shifted) must fail
+    # loudly — never collapse into a false "up to date".
+    if [[ -n "$listed" && -z "$parsed" ]]; then
+        warn "uv tool list --outdated format not understood; skipping uv tool updates" >&2
+        return 1
+    fi
+    [[ -n "$parsed" ]] && printf '%s\n' "$parsed"
+    return 0
 }
 
 # ── uv CLI registry ──────────────────────────────────────────────
