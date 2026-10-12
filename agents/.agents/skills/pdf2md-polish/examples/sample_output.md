@@ -41,3 +41,27 @@ A transfer characteristic should be described analogously to conventional electr
 ![image](https://example.com/fig2.jpg)
 
 Fig. 8 Cross-sectional view of the device.
+
+## 4. Tables and Code
+
+| 参数名 | 类型 | 描述 |
+| --- | --- | --- |
+| outFrame | frame | 输出图像,即 |
+| exposureTime | uint32_t | 曝光时间[0x0, 0x3ff] |
+
+| 引擎 | 说明 |
+| --- | --- |
+| AE 引擎 | 自动曝光,基于 Statistics |
+
+```c
+typedef struct {
+    uint32_t enable;
+} XcamAeManual;
+
+XcamReturn rkAiqExpParamComb(const XcamParamComb_t *combp);
+
+```
+
+#### 4.1.1 XcamAeStats_t
+
+The AE engine computes exposure from statistics.

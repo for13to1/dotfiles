@@ -56,3 +56,18 @@ The `polish.py` script automatically performs the following deterministic cleanu
 - **Math delimiter normalization**: Converts `\(...\)` inline math to `$...$` and `\[...\]` display math to `$$...$$`. LaTeX environments like `\begin{align}...\end{align}` are treated as math block boundaries and are not rewritten to `$$...$$`; internal whitespace normalization may still apply.
 - **Block-local math handling (normalizing)**: Isolates math formulas and rewrites internal whitespace (e.g. `x_{ i }`→`x_{i}`, `a + b` -> `a+b`).
 - **One sentence per line**: Sentences end at `.`, `!`, `?`, `。`, `！`, `？` and are placed on their own line. Same-paragraph sentences are adjacent; paragraphs are separated by one blank line.
+- **HTML table conversion**: `<table>/<tr>/<td>` blocks become GFM pipe tables (first row = header, ragged rows padded, `|` escaped, entities unescaped). `rowspan`/`colspan` blocks, blocks with text outside the table markup (`<table>…</table>` or bare `<tr>` rows), and `<table>` openers without `</table>` are preserved as HTML with a warning.
+- **Table cell spacing**: CJK↔ASCII spacing is applied inside pipe-table cells and converted HTML cells; inline code and inline math spans are protected. Half-width `,;:` in table cells is preserved (range notation `[0x0, 0x3ff]`).
+- **Code fence repair**: compatible-language fences split only by blank lines are merged; `` ```m4 ``/`` ```rust ``/`` ```txt ``/untagged fences containing C code are relabeled `` ```c ``; `` ```txt ``/`` ```text `` fences containing Chinese prose are unwrapped back to paragraphs.
+- **C-family re-indent**: `c`/`h`/`cpp`/`hpp` fences are re-indented by brace depth; unbalanced blocks are left unchanged.
+
+## 4. Heading Restore via `apply`
+
+The `headings` subcommand lists `?` entries for numbered titles that lost heading status (plain text or inside `` ```txt `` fences), with a suggested level derived from the existing heading tree. The `apply` subcommand accepts:
+
+| Mapping value | Meaning |
+| --- | --- |
+| `"##"`…`"######"` | Set the heading level; also promotes a plain numbered-title line to a heading (removes the enclosing `` ```txt ``/`` ```text ``/no-language fence when the line is its only content) |
+| `"-"` | Demote the heading to a plain paragraph |
+
+Promotion is refused inside C-family fences (warning on stderr). Run `check` afterwards to confirm no lost headings remain.

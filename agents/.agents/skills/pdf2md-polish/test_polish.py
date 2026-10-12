@@ -1152,6 +1152,33 @@ class TestIdempotency:
                 "pipe table passthrough",
                 "| A | B |\n|---|---|\n| 1 | 2 |",
             ),
+            (
+                "HTML table conversion",
+                (
+                    "<table><tr><td>输出图像,即</td><td><code>outFrame</code></td></tr>"
+                    "<tr><td>参数范围[0x0, 0x3ff]</td><td>ok&amp;ok</td></tr></table>"
+                ),
+            ),
+            (
+                "pipe table CJK spacing",
+                "| 参数名 | 描述 |\n| --- | --- |\n| 输出图像 | 采样Sample图 |",
+            ),
+            (
+                "false-split fence merge (c + m4)",
+                "```c\ntypedef struct {\n    int a;\n} Foo;\n```\n\n```m4\nvoid bar(void)\n{\n    int b;\n}\n```\n",
+            ),
+            (
+                "txt fence with CJK prose unwrap",
+                "```txt\n这里是一段被困住的说明。它有句号。\n```\n",
+            ),
+            (
+                "C-code reindent",
+                "```c\nvoid f(void)\n{\nint x;\nif (x) {\nx++;\n}\n}\n```\n",
+            ),
+            (
+                "txt fence with C signature preserved",
+                "```txt\nXcamReturn rkAiqExpParamComb(const XcamParamComb_t *combp);\n```\n",
+            ),
         ],
     )
     def test_parametrized_idempotent(self, description, raw):
@@ -1188,3 +1215,421 @@ class TestFinalization:
 
         assert source.read_text(encoding="utf-8") == "raw"
         assert polished.read_text(encoding="utf-8") == "clean"
+
+
+# ── HTML table conversion ───────────────────────────────────────────────────
+
+
+class TestHtmlTableConversion:
+    def test_multi_column_conversion(self):
+        html = (
+            "<table><tr><td>参数名</td><td>类型</td><td>描述</td></tr>"
+            "<tr><td>outFrame</td><td>frame</td><td>输出图像,即</td></tr></table>"
+        )
+        out = polish.process(html)
+        lines = out.split("\n")
+        assert lines[0] == "| 参数名 | 类型 | 描述 |"
+        assert lines[1] == "| --- | --- | --- |"
+        assert lines[2] == "| outFrame | frame | 输出图像,即 |"
+
+    def test_entity_unescape(self):
+        html = "<table><tr><td>a&amp;b</td><td>&lt;x&gt;</td></tr></table>"
+        out = polish.process(html)
+        assert "| a&b | <x> |" in out
+
+    def test_ragged_rows_padded(self):
+        html = "<table><tr><td>a</td><td>b</td><td>c</td></tr><tr><td>only</td></tr></table>"
+        out = polish.process(html)
+        lines = out.split("\n")
+        assert lines[2] == "| only |  |  |"
+
+    def test_pipe_in_cell_escaped(self):
+        html = "<table><tr><td>a|b</td><td>c</td></tr></table>"
+        out = polish.process(html)
+        assert "| a\\|b | c |" in out
+
+    def test_cjk_spacing_in_cells(self):
+        html = "<table><tr><td>使用Python编程</td><td>x</td></tr></table>"
+        out = polish.process(html)
+        assert "| 使用 Python 编程 | x |" in out
+
+    def test_rowspan_aborts_conversion(self):
+        html = '<table><tr><td rowspan="2">a</td><td>b</td></tr><tr><td>c</td></tr></table>'
+        out = polish.process(html)
+        assert "<table>" in out
+
+    def test_empty_table_preserved(self):
+        html = "<table></table>"
+        out = polish.process(html)
+        assert "<table>" in out
+
+    def test_surrounding_text_preserved(self):
+        html = "before <table><tr><td>a</td></tr></table> after"
+        out = polish.process(html)
+        assert "before" in out and "after" in out
+
+    def test_bare_tr_with_surrounding_text_preserved(self):
+        cases = (
+            ("before <tr><td>a</td><td>b</td></tr> after", ("before", "after")),
+            ("<tr><td>a</td><td>b</td></tr> after", ("after",)),
+            ("before <tr><td>a</td><td>b</td></tr>", ("before",)),
+        )
+        for html, present in cases:
+            out = polish.process(html)
+            for word in present:
+                assert word in out, html
+
+    def test_blank_line_inside_table_not_split(self):
+        html = "<table>\n<tr><td>a</td></tr>\n\n<tr><td>b</td></tr>\n</table>"
+        out = polish.process(html)
+        assert out.count("| --- |") == 1
+
+    def test_unclosed_table_does_not_absorb_tail(self):
+        # An unclosed <table> must stop at the blank line: swallowing the
+        # tail would leave it unpolished and invisible to check/headings.
+        doc = "<table>\n<tr><td>a</td></tr>\n\nTail paragraph.\n"
+        blocks = polish.parse_blocks(doc)
+        kinds = [(b.kind, b.end_line) for b in blocks]
+        assert ("html_table", 2) in kinds
+        assert any(b.kind == "paragraph" and "Tail" in b.lines[0] for b in blocks)
+
+    def test_unclosed_table_before_prose_and_later_table(self):
+        # A later unrelated </table> must not pull prose into this block.
+        # First table is unclosed -> preserved per degrade rule; second
+        # converts; prose survives between them.
+        doc = "<table>\n<tr><td>a</td></tr>\n\nIMPORTANT prose.\n\n<table><tr><td>b</td></tr></table>\n"
+        out = polish.process(doc)
+        assert "IMPORTANT prose." in out
+        assert "<table>" in out
+        assert "| b |" in out
+        assert out.count("| --- |") == 1
+
+    def test_unclosed_table_before_prose_and_stray_close(self):
+        doc = "<table>\n<tr><td>a</td></tr>\n\nIMPORTANT prose.\n\n</table>\n"
+        out = polish.process(doc)
+        assert "IMPORTANT prose." in out
+
+    def test_out_of_range_entity_kept(self):
+        html = "<table><tr><td>&#x110000;</td></tr></table>"
+        out = polish.process(html)
+        assert "&#x110000;" in out
+
+    def test_surrogate_entity_kept(self):
+        # A lone surrogate would survive chr() but crash UTF-8 encoding later.
+        html = "<table><tr><td>&#xD800;</td></tr></table>"
+        out = polish.process(html)
+        assert "&#xD800;" in out
+        out.encode("utf-8")  # must not raise
+
+    def test_control_entity_kept_idempotent(self):
+        # &#0; would inject a NUL, colliding with the inline-span sentinel.
+        html = "<table><tr><td>A&#0;B</td><td>x</td></tr></table>"
+        out = polish.process(html)
+        assert "&#0;" in out
+        assert polish.process(out) == out
+
+
+# ── Pipe table CJK spacing ──────────────────────────────────────────────────
+
+
+class TestTableCjkSpacing:
+    def test_cell_spacing_inserted(self):
+        table = "| 参数名 | 描述 |\n| --- | --- |\n| 使用Python | 采样Sample图 |"
+        out = polish.process(table)
+        assert "| 使用 Python | 采样 Sample 图 |" in out
+
+    def test_align_row_untouched(self):
+        table = "| a | b |\n| --- | --- |\n| 1 | 2 |"
+        assert polish.process(table) == table + "\n"
+
+    def test_inline_code_protected(self):
+        table = "| 代码 | 说明 |\n| --- | --- |\n| `使用Python` | 正常 |"
+        out = polish.process(table)
+        assert "| `使用Python` |" in out
+
+    def test_halfwidth_comma_kept_in_cells(self):
+        table = "| 范围 | 说明 |\n| --- | --- |\n| [0x0, 0x3ff] | 地址范围 |"
+        out = polish.process(table)
+        assert "[0x0, 0x3ff]" in out
+
+
+# ── Code fence repair ───────────────────────────────────────────────────────
+
+
+class TestFenceRepair:
+    def test_merge_same_lang_split(self):
+        raw = "```c\nint a;\n```\n\n```c\nint b;\n```\n"
+        out = polish.process(raw)
+        assert out.count("```") == 2
+        assert "int a;" in out and "int b;" in out
+
+    def test_merge_c_and_m4(self):
+        raw = "```c\nint a;\n```\n\n```m4\nint b;\n```\n"
+        out = polish.process(raw)
+        assert out.count("```") == 2
+        assert out.startswith("```c")
+
+    def test_incompatible_langs_not_merged(self):
+        raw = "```c\nint a;\n```\n\n```python\nx = 1\n```\n"
+        out = polish.process(raw)
+        assert out.count("```") == 4
+        assert "```python" in out
+
+    def test_fence_with_prose_between_not_merged(self):
+        raw = "```c\nint a;\n```\n\nSome text.\n\n```c\nint b;\n```\n"
+        out = polish.process(raw)
+        assert out.count("```") == 4
+
+    def test_m4_with_c_content_sniffed(self):
+        raw = "```m4\ntypedef struct {\n    int a;\n} Foo;\n```\n"
+        out = polish.process(raw)
+        assert out.startswith("```c\n")
+
+    def test_rust_with_c_content_sniffed(self):
+        raw = "```rust\n#include <stdio.h>\n```\n"
+        out = polish.process(raw)
+        assert out.startswith("```c\n")
+
+    def test_txt_fence_with_cjk_prose_unwrapped(self):
+        raw = "```txt\n这里是一段被困住的说明文字。它包含句号。\n```\n"
+        out = polish.process(raw)
+        assert "```" not in out
+        assert "这里是一段被困住的说明文字。" in out
+
+    def test_txt_fence_with_c_signature_kept(self):
+        raw = "```txt\nXcamReturn rkAiqExpParamComb(const XcamParamComb_t *combp);\n```\n"
+        out = polish.process(raw)
+        assert out.startswith("```txt\n")
+
+    def test_c_fence_never_unwrapped(self):
+        raw = "```c\n// 中文注释。带句号\nint a;\n```\n"
+        out = polish.process(raw)
+        assert out.startswith("```c\n")
+
+
+# ── Code reindent ───────────────────────────────────────────────────────────
+
+
+class TestReindent:
+    def test_balanced_struct_reindented(self):
+        raw = "```c\ntypedef struct {\nint a;\nint b;\n} Foo;\n```\n"
+        out = polish.process(raw)
+        assert "    int a;" in out
+        assert "    int b;" in out
+
+    def test_nested_braces(self):
+        raw = "```c\nvoid f(void)\n{\nint x;\nif (x) {\nx++;\n}\n}\n```\n"
+        out = polish.process(raw)
+        assert "    int x;" in out
+        assert "        x++;" in out
+
+    def test_unbalanced_preserved(self):
+        raw = "```c\nvoid f(void)\n{\nint x;\n```\n"
+        out = polish.process(raw)
+        assert "int x;" in out.split("\n")[3]
+
+    def test_preprocessor_directive_at_col0(self):
+        raw = "```c\n#include <stdio.h>\ntypedef struct {\nint a;\n} Foo;\n```\n"
+        out = polish.process(raw)
+        assert "#include <stdio.h>" in out
+        assert "    int a;" in out
+
+    def test_non_c_lang_untouched(self):
+        raw = "```python\ndef f():\n    return 1\n```\n"
+        out = polish.process(raw)
+        assert "    return 1;" not in out  # no semicolon added; content passthrough
+        assert "    return 1" in out
+
+
+# ── Lost-heading restore ────────────────────────────────────────────────────
+
+
+class TestHeadingRestore:
+    def test_plain_numbered_title_detected(self):
+        text = "# 11.5 Structs\n\nintro\n\n11.5.2.1.2 RkAiqExpParamComb_t\n"
+        out = polish.extract_headings(text)
+        assert "RkAiqExpParamComb_t (plain)" in out
+
+    def test_txt_fence_numbered_title_detected(self):
+        text = "# 11.5 Structs\n\n```txt\n11.5.2.1.2 RkAiqExpParamComb_t\n```\n"
+        out = polish.extract_headings(text)
+        assert "RkAiqExpParamComb_t (txt-fence)" in out
+
+    def test_decimal_not_flagged(self):
+        text = "The value is 3.14 is pi constant.\n"
+        out = polish.extract_headings(text)
+        assert "pi" not in out
+
+    def test_lost_headings_in_line_order(self):
+        text = "# 11.5 Structs\n\n11.5.1 Intro\n\n## Real Section\n\n11.5.2.1.2 Lost_t\n"
+        out = polish.extract_headings(text)
+        lines = out.split("\n")
+        assert [ln.split()[2] for ln in lines] == ["#", "?", "##", "?"]
+        assert "Lost_t" in lines[3] and "(plain)" in lines[3]
+
+    def test_promote_plain_line(self):
+        text = "# T\n\n11.5.2.1.2 RkAiqExpParamComb_t\n\nbody\n"
+        out = polish.apply_headings(text, {3: "######"})
+        assert "###### 11.5.2.1.2 RkAiqExpParamComb_t" in out
+
+    def test_promote_inside_txt_fence_unwraps(self):
+        text = "# T\n\n```txt\n11.5.2.1.2 Foo\n```\n\nbody\n"
+        out = polish.apply_headings(text, {4: "######"})
+        assert "```" not in out
+        assert "###### 11.5.2.1.2 Foo" in out
+
+    def test_promote_inside_c_fence_refused(self, capsys):
+        text = "# T\n\n```c\n11.5.2.1.2 Foo\n```\n"
+        out = polish.apply_headings(text, {4: "######"})
+        assert "```c" in out
+        assert "######" not in out
+        assert "refusing" in capsys.readouterr().err
+
+    def test_demote_heading_to_plain(self):
+        text = "## 【成员】\n\ncontent\n"
+        out = polish.apply_headings(text, {1: "-"})
+        assert out.startswith("【成员】")
+
+    def test_demote_keeps_blockquote_prefix(self):
+        text = "> ## Title\n> body\n"
+        out = polish.apply_headings(text, {1: "-"})
+        assert out.startswith("> Title")
+
+    def test_multiple_ops_with_fence_removal(self):
+        text = "# T\n\n```txt\n11.5.2.1.2 Foo\n```\n\n## 【成员】\n\nbody\n"
+        out = polish.apply_headings(text, {4: "######", 7: "-"})
+        assert "###### 11.5.2.1.2 Foo" in out
+        assert "【成员】" in out
+        assert "## 【成员】" not in out
+        assert "```" not in out
+
+
+# ── check subcommand ────────────────────────────────────────────────────────
+
+
+class TestCheckRules:
+    def test_cjk_adjacency_flagged(self):
+        issues = polish.check_file("使用Python编程。\n")
+        assert any("[cjk]" in i for i in issues)
+
+    def test_cjk_spacing_clean(self):
+        issues = polish.check_file("使用 Python 编程。\n")
+        assert not any("[cjk]" in i for i in issues)
+
+    def test_halfwidth_punct_flagged_in_prose(self):
+        issues = polish.check_file("输出图像,即采样图。\n")
+        assert any("[punct]" in i for i in issues)
+
+    def test_halfwidth_punct_ok_in_table_cells(self):
+        table = "| 范围 | 说明 |\n| --- | --- |\n| [0x0, 0x3ff] | 地址范围 |"
+        assert not any("[punct]" in i for i in polish.check_file(table))
+
+    def test_unbalanced_fences(self):
+        issues = polish.check_file("```c\nint a;\n")
+        assert any("[fence]" in i and "unclosed" in i for i in issues)
+
+    def test_c_code_in_txt_fence(self):
+        issues = polish.check_file("```txt\ntypedef struct {\n    int a;\n} Foo;\n```\n")
+        assert any("[fence]" in i for i in issues)
+
+    def test_fence_split_flagged(self):
+        raw = "```c\nint a;\n```\n\n```c\nint b;\n```\n"
+        issues = polish.check_file(raw)
+        assert any("[fence-split]" in i for i in issues)
+
+    def test_ragged_pipe_table(self):
+        raw = "| a | b |\n| --- | --- |\n| 1 | 2 | 3 |"
+        issues = polish.check_file(raw)
+        assert any("[table]" in i and "escaped" in i for i in issues)
+
+    def test_residual_html_table(self):
+        issues = polish.check_file("<table><tr><td>a</td></tr></table>\n")
+        assert any("[table]" in i and "residual" in i for i in issues)
+
+    def test_lost_heading_flagged(self):
+        text = "# 11.5 Structs\n\n11.5.2.1.2 Foo_t\n"
+        issues = polish.check_file(text)
+        assert any("[heading]" in i for i in issues)
+
+    def test_unbalanced_math(self):
+        issues = polish.check_file("$$\nx + y\n")
+        assert any("[math]" in i for i in issues)
+
+    def test_detached_caption(self):
+        issues = polish.check_file("![img](x.jpg)\n\n图 AWB 分块示意图\n")
+        assert any("[caption]" in i for i in issues)
+
+    def test_trailing_whitespace(self):
+        issues = polish.check_file("text with space   \n")
+        assert any("[space]" in i for i in issues)
+
+    def test_ligature_residual(self):
+        issues = polish.check_file("E\ufb00cient method\n")
+        assert any("[ocr]" in i for i in issues)
+
+    def test_clean_polished_doc_no_cjk_punct_issues(self):
+        polished_text = polish.process("# T\n\n使用 Python 编程，很好。\n")
+        assert not any("[cjk]" in i for i in polish.check_file(polished_text))
+
+    def test_check_is_report_only(self):
+        text = "使用Python。\n"
+        polish.check_file(text)
+        assert text == "使用Python。\n"
+
+    def test_duplicated_punct_flagged(self):
+        issues = polish.check_file("这句话很好。。下一句\n")
+        assert any("[punct]" in i and "duplicated" in i for i in issues)
+
+    def test_duplicated_ascii_punct_flagged(self):
+        for text in ("Wow!!\n", "a;;b\n", "x??\n"):
+            issues = polish.check_file(text)
+            assert any("[punct]" in i and "duplicated" in i for i in issues), text
+
+    def test_double_dot_not_flagged(self):
+        # "." is deliberately outside the ASCII dup-punct class (decimal numbers).
+        assert not any("duplicated" in i for i in polish.check_file("End..\n"))
+
+    def test_unbalanced_quotes_flagged(self):
+        issues = polish.check_file("他说“hello world。\n")
+        assert any("[punct]" in i and "quotes" in i for i in issues)
+
+    def test_inline_code_not_flagged_as_double_space(self):
+        issues = polish.check_file("使用 `inline code` 编程，正常。\n")
+        assert not any("[space]" in i for i in issues)
+
+    def test_inline_code_cjk_adjacency_not_flagged(self):
+        issues = polish.check_file("使用 `code`正常结束。\n")
+        assert not any("[cjk]" in i for i in issues)
+
+    def test_nested_list_indent_not_flagged(self):
+        issues = polish.check_file("- outer\n  - inner\n")
+        assert not any("[space]" in i for i in issues)
+
+    def test_indented_paragraph_not_flagged(self):
+        issues = polish.check_file("    indented paragraph\n")
+        assert not any("[space]" in i for i in issues)
+
+    def test_mid_line_double_space_flagged(self):
+        issues = polish.check_file("word  word\n")
+        assert any("[space]" in i and "consecutive" in i for i in issues)
+
+    def test_sample_output_passes_space_check(self):
+        sample = Path(__file__).parent / "examples" / "sample_output.md"
+        issues = polish.check_file(sample.read_text())
+        assert not any("[space]" in i and "consecutive" in i for i in issues)
+
+    def test_inline_code_punct_not_flagged(self):
+        issues = polish.check_file("run `cmd!!` now\n")
+        assert not any("duplicated" in i for i in issues)
+
+    def test_inline_code_unbalanced_quotes_not_flagged(self):
+        issues = polish.check_file("see `“x` ok\n")
+        assert not any("quotes" in i for i in issues)
+
+    def test_borderless_multi_column_not_single(self):
+        raw = "a | b | c\n--- | --- | ---\n1 | 2 | 3\n"
+        assert not any("single-column" in i for i in polish.check_file(raw))
+
+    def test_single_column_bordered_flagged(self):
+        raw = "| a |\n| --- |\n| b |\n"
+        assert any("[table]" in i and "single-column" in i for i in polish.check_file(raw))

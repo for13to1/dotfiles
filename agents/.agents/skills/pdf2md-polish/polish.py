@@ -9,6 +9,7 @@ Usage:
     python polish.py polish input.md [-o output.md]
     python polish.py headings input.md [-c CONTEXT] [-o output.md]
     python polish.py apply input.md -m MAPPING [-o output.md]
+    python polish.py check input.md [-o report.md] [--json]
     python polish.py finalize input.md
 """
 
@@ -310,6 +311,26 @@ _INLINE_CODE_RE = re.compile(r"`+[^`\n]*`+")
 _INLINE_MATH_WS_RE = re.compile(r"\$[^$\n]*\$")
 
 
+def _protect_spans(text: str, transform, *patterns: re.Pattern) -> str:
+    """Replace matches of `patterns` with sentinels, apply `transform` to the
+    remainder, then restore. Shared by whitespace collapse and table spacing."""
+    mapping: dict[str, str] = {}
+    counter = [0]
+
+    def _replacer(m: re.Match) -> str:
+        key = f"{_SENTINEL_WS}{counter[0]}{_SENTINEL_WS}"
+        counter[0] += 1
+        mapping[key] = m.group(0)
+        return key
+
+    for pattern in patterns:
+        text = pattern.sub(_replacer, text)
+    text = transform(text)
+    for key, val in mapping.items():
+        text = text.replace(key, val)
+    return text
+
+
 def collapse_inline_whitespace(text: str) -> str:
     """Collapse runs of spaces/tabs to a single space within a single line of
     text, protecting inline code spans, inline math (`$...$`), and markdown
@@ -318,28 +339,13 @@ def collapse_inline_whitespace(text: str) -> str:
     Self-contained: protects and restores on its own, so it is safe to call on
     both prose (where math/links may already be sentinel-protected — a no-op
     for those) and raw heading lines (which carry no prior protection)."""
-    mapping: dict[str, str] = {}
-    counter = [0]
-
-    def _protect(pattern: re.Pattern) -> None:
-        def _replacer(m):
-            key = f"{_SENTINEL_WS}{counter[0]}{_SENTINEL_WS}"
-            counter[0] += 1
-            mapping[key] = m.group()
-            return key
-
-        nonlocal text
-        text = pattern.sub(_replacer, text)
-
-    _protect(_INLINE_CODE_RE)
-    _protect(_INLINE_MATH_WS_RE)
-    _protect(_LINK_RE)
-
-    text = re.sub(r"[ \t]+", " ", text)
-
-    for key, val in mapping.items():
-        text = text.replace(key, val)
-    return text
+    return _protect_spans(
+        text,
+        lambda t: re.sub(r"[ \t]+", " ", t),
+        _INLINE_CODE_RE,
+        _INLINE_MATH_WS_RE,
+        _LINK_RE,
+    )
 
 
 # ── Sentence splitting ──────────────────────────────────────────────────────
@@ -470,7 +476,25 @@ def _count_unescaped_pipes(line: str) -> int:
     return len(_UNESCAPED_PIPE_RE.findall(line))
 
 
-_PIPE_TABLE_ALIGN_RE = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
+def _column_count(row: str) -> int:
+    """Column count of a pipe-table row: unescaped pipes minus one for each
+    border pipe (present only when the row starts/ends with an unescaped |)."""
+    n = _count_unescaped_pipes(row)
+    stripped = row.strip()
+    if stripped.startswith("|"):
+        n -= 1
+    if stripped.endswith("|") and not stripped.endswith("\\|"):
+        n -= 1
+    return n + 1
+
+
+# Bare --- must not match, or a thematic break becomes a table.
+_PIPE_TABLE_ALIGN_RE = re.compile(
+    r"^\s*(?:"
+    r"\|\s*:?-{3,}:?\s*\|"
+    r"|\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*"
+    r")$"
+)
 _HTML_TABLE_START_RE = re.compile(r"<\s*(table|tr|td|th)\b", re.IGNORECASE)
 _HTML_TABLE_END_RE = re.compile(r"</\s*table\s*>", re.IGNORECASE)
 _LATEX_BEGIN_RE = re.compile(
@@ -617,11 +641,26 @@ def _find_display_math_end(lines: list[str], start: int) -> int:
 
 
 def _find_html_table_end(lines: list[str], start: int) -> int:
+    # A blank line ends the block unless a <table> is open and the next
+    # non-blank line is still table content: splitting a live table yields
+    # fragments convert() cannot use, but an unclosed table must not absorb
+    # prose — nor a later, unrelated table's </table>.
+    open_depth = 0
     for idx in range(start, len(lines)):
-        if _HTML_TABLE_END_RE.search(lines[idx]):
+        line = lines[idx]
+        if _HTML_TABLE_END_RE.search(line):
             return idx + 1
-        if idx > start and not lines[idx].strip():
-            return idx
+        open_depth += len(re.findall(r"<\s*table\b", line, re.IGNORECASE))
+        if idx > start and not line.strip():
+            if open_depth <= 0:
+                return idx
+            nxt = idx + 1
+            while nxt < len(lines) and not lines[nxt].strip():
+                nxt += 1
+            if nxt == len(lines) or not (
+                _HTML_ROW_START_RE.match(lines[nxt]) or _HTML_TABLE_END_RE.search(lines[nxt])
+            ):
+                return idx
     return len(lines)
 
 
@@ -1165,12 +1204,306 @@ def process_display_math_block(block: Block) -> list[str]:
     return cleanup_math_body(text).split("\n")
 
 
+# ── Table processing ────────────────────────────────────────────────────────
+_HTML_ENTITY_RE = re.compile(r"&#x([0-9a-fA-F]+);|&#(\d+);|&(amp|lt|gt|quot|apos|nbsp);")
+_HTML_BR_RE = re.compile(r"<\s*br\s*/?\s*>", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_HTML_ROWSPAN_RE = re.compile(r"(rowspan|colspan)\s*=", re.IGNORECASE)
+_HTML_TR_RE = re.compile(r"<\s*tr\b[^>]*>(.*?)</\s*tr\s*>", re.IGNORECASE | re.DOTALL)
+_HTML_CELL_RE = re.compile(r"<\s*(t[dh])\b[^>]*>(.*?)</\s*\1\s*>", re.IGNORECASE | re.DOTALL)
+_HTML_TABLE_SPAN_RE = re.compile(r"<\s*table\b[^>]*>.*?</\s*table\s*>", re.IGNORECASE | re.DOTALL)
+_HTML_ROW_START_RE = re.compile(r"^\s*<\s*(?:tr|t[dh])\b", re.IGNORECASE)
+
+
+def _unescape_html_entities(text: str) -> str:
+    def _repl(m: re.Match) -> str:
+        try:
+            if m.group(1):
+                cp = int(m.group(1), 16)
+            elif m.group(2):
+                cp = int(m.group(2))
+            else:
+                return {
+                    "amp": "&",
+                    "lt": "<",
+                    "gt": ">",
+                    "quot": '"',
+                    "apos": "'",
+                    "nbsp": " ",
+                }.get(m.group(3), m.group(0))
+        except ValueError:
+            # Out-of-range code point (e.g. &#x110000;): keep the raw entity.
+            return m.group(0)
+        if cp < 0x20 or 0x7F <= cp <= 0x9F or 0xD800 <= cp <= 0xDFFF:
+            # Controls corrupt the NUL sentinel / line structure; surrogates
+            # break UTF-8 output. Keep the raw entity.
+            return m.group(0)
+        return chr(cp)
+
+    return _HTML_ENTITY_RE.sub(_repl, text)
+
+
+def _apply_table_spacing(text: str) -> str:
+    """CJK/ASCII spacing + ligatures for a table line, protecting inline code
+    and inline math spans. Used for pipe-table rows and converted HTML cells."""
+    text = cleanup_ligatures(text)
+    return _protect_spans(text, insert_cjk_ascii_spacing, _INLINE_CODE_RE, _INLINE_MATH_WS_RE)
+
+
+def convert_html_table(block: Block) -> list[str] | None:
+    """Convert an HTML table block to a GFM pipe table.
+
+    Returns None when not safe (rowspan/colspan present, no rows parsed, or
+    text/unbalanced tags outside the table markup); the caller then preserves
+    the original block."""
+    if any(_HTML_ROWSPAN_RE.search(line) for line in block.lines):
+        return None
+
+    html = " ".join(line.strip() for line in block.lines)
+    # Prose outside the table markup, or a <table> opener without </table>,
+    # means extraction cut the table short; converting would drop that text.
+    # Scrub table spans and bare <tr> rows alike so fragments can't bypass.
+    scrubbed = _HTML_TABLE_SPAN_RE.sub("", html)
+    scrubbed = _HTML_TR_RE.sub("", scrubbed)
+    if scrubbed.strip():
+        return None
+    rows: list[list[str]] = []
+    for row_match in _HTML_TR_RE.finditer(html):
+        cells = []
+        for cell_match in _HTML_CELL_RE.finditer(row_match.group(1)):
+            cell = cell_match.group(2)
+            cell = _HTML_BR_RE.sub(" ", cell)
+            cell = _HTML_TAG_RE.sub("", cell)
+            cell = _unescape_html_entities(cell)
+            cell = collapse_inline_whitespace(cell).strip()
+            cells.append(_apply_table_spacing(cell))
+        if cells:
+            rows.append(cells)
+    if not rows:
+        return None
+
+    ncols = max(len(row) for row in rows)
+
+    def _row(cells: list[str]) -> str:
+        padded = list(cells) + [""] * (ncols - len(cells))
+        escaped = [c.replace("|", "\\|") for c in padded]
+        return "| " + " | ".join(escaped) + " |"
+
+    output = [_row(rows[0]), "|" + "|".join([" --- "] * ncols) + "|"]
+    for row in rows[1:]:
+        output.append(_row(row))
+    return output
+
+
+def _process_pipe_table(block: Block) -> list[str]:
+    return [_apply_table_spacing(line) for line in block.lines]
+
+
+# ── Code fence repair ───────────────────────────────────────────────────────
+_CLOSER_LINE_RE = re.compile(r"^\s*(`{3,}|~{3,})\s*$")
+_C_FAMILY = {"c", "h", "cpp", "c++", "hpp", "m4"}
+_REINDENT_LANGS = {"c", "h", "cpp", "c++", "hpp"}
+_C_SIGNATURE_RE = re.compile(
+    r"^\s*(?:typedef\s+struct|#\s*include|#\s*define|struct\s+\w+\s*\{|class\s+\w+\s*\{)",
+    re.MULTILINE,
+)
+_C_LINE_HINT_RE = re.compile(
+    r"(?:uint\d+_t|int\d*_t|void\s+\w+\s*\(|\bint\s+\w+\s*\(|Xcam\w*\s+\w+\s*\()"
+)
+_C_FUNC_SIG_RE = re.compile(r"^\w[\w\s\*]*\([^;]*\)\s*;\s*$")
+
+
+def _fence_lang(block: Block) -> str:
+    opener = block.lines[0] if block.lines else ""
+    m = is_code_fence_start(opener)
+    if not m:
+        return ""
+    return opener[m.end() :].strip().lower()
+
+
+def _fence_has_closer(block: Block) -> bool:
+    return len(block.lines) >= 2 and bool(_CLOSER_LINE_RE.match(block.lines[-1]))
+
+
+def _fence_content(block: Block) -> list[str]:
+    if _fence_has_closer(block):
+        return block.lines[1:-1]
+    return block.lines[1:]
+
+
+def _replace_fence_lang(block: Block, lang: str) -> Block:
+    opener = block.lines[0]
+    m = is_code_fence_start(opener)
+    if not m:
+        return block
+    new_opener = m.group(1) + lang
+    return Block("code_fence", [new_opener, *block.lines[1:]], block.start_line, block.end_line)
+
+
+def _looks_like_c_code(content: list[str]) -> bool:
+    text = "\n".join(content)
+    if _C_SIGNATURE_RE.search(text):
+        return True
+    if any(_C_FUNC_SIG_RE.match(line.strip()) for line in content):
+        return True
+    semicolon_ending = sum(1 for line in content if line.strip().endswith(";"))
+    return semicolon_ending >= 2 and bool(_C_LINE_HINT_RE.search(text))
+
+
+def _is_heading_like_signature(content: list[str]) -> bool:
+    """A single function-signature line — the shape of a lost heading that
+    the LLM should promote, not code to relabel."""
+    body = [line.strip() for line in content if line.strip()]
+    return len(body) == 1 and bool(_C_FUNC_SIG_RE.match(body[0]))
+
+
+def _looks_like_cjk_prose(content: list[str]) -> bool:
+    body = [line.strip() for line in content if line.strip()]
+    if not body:
+        return False
+    for line in body:
+        if line.endswith((";", "{", "}", ")")):
+            return False
+        if _C_SIGNATURE_RE.search(line) or _C_LINE_HINT_RE.search(line):
+            return False
+    text = "\n".join(body)
+    if not re.search(rf"[{_CJK_HAN}]", text):
+        return False
+    return bool(re.search(r"[。；！？：]", text))
+
+
+def _sniff_fence_lang(block: Block) -> Block:
+    """Relabel suspicious language tags when the content clearly contradicts
+    them (e.g. ```rust/```m4 wrapping C declarations). Heading-like single
+    signatures are exempt (see _is_heading_like_signature)."""
+    lang = _fence_lang(block)
+    content = _fence_content(block)
+    if not content or not _looks_like_c_code(content):
+        return block
+    if lang in {"", "m4", "rust"}:
+        return _replace_fence_lang(block, "c")
+    if lang in {"txt", "text"} and not _is_heading_like_signature(content):
+        return _replace_fence_lang(block, "c")
+    return block
+
+
+def _fences_compatible(a: Block, b: Block) -> bool:
+    la, lb = _fence_lang(a), _fence_lang(b)
+    if la == lb:
+        return True
+    return la in _C_FAMILY and lb in _C_FAMILY
+
+
+def _merge_fences(a: Block, b: Block) -> Block:
+    lang = _fence_lang(a)
+    if lang in {"", "txt", "text", "m4"} and _fence_lang(b) in _REINDENT_LANGS:
+        lang = _fence_lang(b)
+        a = _replace_fence_lang(a, lang)
+    closer = a.lines[-1] if _fence_has_closer(a) else None
+    content = _fence_content(a) + _fence_content(b)
+    lines = [a.lines[0], *content]
+    if closer is not None:
+        lines.append(closer)
+    return Block("code_fence", lines, a.start_line, b.end_line)
+
+
+def _merge_adjacent_fences(blocks: list[Block]) -> list[Block]:
+    output: list[Block] = []
+    idx = 0
+    while idx < len(blocks):
+        block = blocks[idx]
+        if block.kind != "code_fence":
+            output.append(block)
+            idx += 1
+            continue
+        end = idx + 1
+        merged = True
+        while merged:
+            merged = False
+            look = end
+            while look < len(blocks) and blocks[look].kind == "blank":
+                look += 1
+            if (
+                look < len(blocks)
+                and blocks[look].kind == "code_fence"
+                and _fences_compatible(block, blocks[look])
+            ):
+                block = _merge_fences(block, blocks[look])
+                end = look + 1
+                merged = True
+        output.append(block)
+        idx = end
+    return output
+
+
+def _unwrap_prose_fences(blocks: list[Block]) -> list[Block]:
+    output: list[Block] = []
+    for block in blocks:
+        if block.kind == "code_fence":
+            lang = _fence_lang(block)
+            if (
+                lang in {"txt", "text"}
+                and _fence_has_closer(block)
+                and _looks_like_cjk_prose(_fence_content(block))
+            ):
+                output.extend(parse_blocks("\n".join(_fence_content(block))))
+                continue
+        output.append(block)
+    return output
+
+
+def repair_code_fences(blocks: list[Block]) -> list[Block]:
+    """Deterministic fence repair: sniff wrong language tags, merge fences
+    that PDF extraction split at blank lines, and unwrap txt fences that
+    actually contain prose. Uncertain cases are left untouched (reported by
+    the `check` subcommand instead)."""
+    blocks = [_sniff_fence_lang(b) for b in blocks]
+    blocks = _merge_adjacent_fences(blocks)
+    return _unwrap_prose_fences(blocks)
+
+
+def reindent_code(block: Block) -> list[str]:
+    """Re-indent a C-family code block by brace depth.
+
+    Brace counting is textual (braces in strings/comments count too); if the
+    block looks unbalanced, it is returned unchanged rather than mangled."""
+    if _fence_lang(block) not in _REINDENT_LANGS:
+        return block.lines
+    opener = block.lines[0]
+    closer = block.lines[-1] if _fence_has_closer(block) else None
+    content = _fence_content(block)
+
+    new_content: list[str] = []
+    depth = 0
+    for line in content:
+        stripped = line.strip()
+        if not stripped:
+            new_content.append("")
+            continue
+        close_delta = stripped.count("}")
+        open_delta = stripped.count("{")
+        indent_level = depth - close_delta if close_delta else depth
+        if indent_level < 0:
+            return block.lines
+        new_content.append("    " * indent_level + stripped)
+        depth += open_delta - close_delta
+    if depth != 0:
+        return block.lines
+
+    lines = [opener, *new_content]
+    if closer is not None:
+        lines.append(closer)
+    return lines
+
+
 def _process_block_inner(block: Block) -> list[str]:
     if block.kind == "blank":
         return [""]
     if block.kind == "heading":
         return [collapse_inline_whitespace(cleanup_ocr(line)) for line in block.lines]
     if block.kind == "code_fence":
+        if _fence_lang(block) in _REINDENT_LANGS:
+            return reindent_code(block)
         return block.lines
     if block.kind == "paragraph":
         return process_paragraph_block(block)
@@ -1180,6 +1513,14 @@ def _process_block_inner(block: Block) -> list[str]:
         return process_list_block(block)
     if block.kind == "display_math":
         return process_display_math_block(block)
+    if block.kind == "html_table":
+        converted = convert_html_table(block)
+        if converted is not None:
+            return converted
+        warn_block(block, "HTML table conversion not safe; preserving block")
+        return block.lines
+    if block.kind == "pipe_table":
+        return _process_pipe_table(block)
     return [cleanup_ligatures(line) for line in block.lines]
 
 
@@ -1234,6 +1575,7 @@ def process(text: str) -> str:
         )
 
         blocks = parse_blocks(text)
+        blocks = repair_code_fences(blocks)
         lines = process_blocks(blocks)
         return format_processed_blocks(lines)
     finally:
@@ -1242,6 +1584,72 @@ def process(text: str) -> str:
 
 # ── Heading tools for LLM ──────────────────────────────────────────────────
 _HEADING_RE = re.compile(r"^([ >\t]*)(#{1,6})\s+(.*)$")
+_NUMBERED_TITLE_RE = re.compile(r"^(\d+(?:\.\d+)+)\s+(\S.*)$")
+
+
+def _build_ignored_lines(blocks: list[Block]) -> set[int]:
+    ignored: set[int] = set()
+    for block in blocks:
+        if block.kind in {"code_fence", "display_math", "html_table", "pipe_table"}:
+            for line_num in range(block.start_line, block.end_line + 1):
+                ignored.add(line_num)
+    return ignored
+
+
+def _suggest_heading_level(number: str, level_map: dict[str, int]) -> int:
+    parts = number.split(".")
+    base = level_map.get(parts[0], 2)
+    return min(6, base + len(parts) - 1)
+
+
+def _iter_lost_headings(lines: list[str], blocks: list[Block]) -> list[tuple[int, str, str, int]]:
+    """Find numbered titles that lost their heading status.
+
+    Returns (line_num, title, source, suggested_level) tuples for titles that
+    look like section numbers (e.g. "11.5.2.1.2 RkAiqExpParamComb_t") but are
+    now plain text or trapped inside txt/text/no-language code fences.
+    """
+    level_map: dict[str, int] = {}
+    for line in lines:
+        m = _HEADING_RE.match(line)
+        if m:
+            title = m.group(3).strip()
+            tm = re.match(r"^(\d+)[.\s]", title)
+            if tm:
+                level_map.setdefault(tm.group(1), len(m.group(2)))
+
+    ignored = _build_ignored_lines(blocks)
+    txt_fence_lines: set[int] = set()
+    for block in blocks:
+        if (
+            block.kind == "code_fence"
+            and _fence_lang(block) in {"", "txt", "text"}
+            and _fence_has_closer(block)
+        ):
+            for offset, _line in enumerate(_fence_content(block)):
+                txt_fence_lines.add(block.start_line + 1 + offset)
+
+    results = []
+    for i, line in enumerate(lines):
+        line_num = i + 1
+        if line_num in ignored and line_num not in txt_fence_lines:
+            continue
+        m = _NUMBERED_TITLE_RE.match(line.strip())
+        if not m:
+            continue
+        title = m.group(2).strip()
+        # Reject decimal-shaped prose ("3.14 is pi"): only 2-component numbers
+        # with a lowercase start; deeper numbers are section-shaped regardless.
+        if len(m.group(1).split(".")) == 2 and title[0].islower():
+            continue
+        if title.endswith(("。", ".", "！", "？", "；", ";", ",", "，")):
+            continue
+        if len(title) > 60:
+            continue
+        source = "txt-fence" if line_num in txt_fence_lines else "plain"
+        level = _suggest_heading_level(m.group(1), level_map)
+        results.append((line_num, title, source, level))
+    return results
 
 
 def extract_headings(text: str, context_lines: int = 1) -> str:
@@ -1249,19 +1657,16 @@ def extract_headings(text: str, context_lines: int = 1) -> str:
 
     Returns a compact text showing line numbers, heading levels, and a few
     lines of context after each heading so the LLM can determine the correct
-    hierarchy.
+    hierarchy. Numbered titles that lost heading status (plain text or trapped
+    in txt fences) are listed with a `?` marker and a suggested level.
     """
     blocks = parse_blocks(text)
     lines = text.split("\n")
-    entries = []
+    entries: list[tuple[int, str]] = []
 
     # Identify lines that belong to code fences, display math, or tables, where
     # hash characters (#) are not headings.
-    ignored_lines = set()
-    for block in blocks:
-        if block.kind in {"code_fence", "display_math", "html_table", "pipe_table"}:
-            for line_num in range(block.start_line, block.end_line + 1):
-                ignored_lines.add(line_num)
+    ignored_lines = _build_ignored_lines(blocks)
 
     for i, line in enumerate(lines):
         line_num = i + 1
@@ -1281,27 +1686,275 @@ def extract_headings(text: str, context_lines: int = 1) -> str:
                 if cl:
                     context.append(cl)
             ctx_str = f"  ctx: {' '.join(context)}" if context else ""
-            entries.append(f"L{line_num:4d} {'#' * level} {title}{ctx_str}")
+            entries.append((line_num, f"L{line_num:4d} {'#' * level} {title}{ctx_str}"))
 
-    return "\n".join(entries)
+    for line_num, title, source, level in _iter_lost_headings(lines, blocks):
+        entries.append((line_num, f"L{line_num:4d} ? {'#' * level} {title} ({source})"))
+
+    entries.sort(key=lambda entry: entry[0])
+    return "\n".join(entry_text for _, entry_text in entries)
+
+
+def _find_enclosing_fence(blocks: list[Block], line_num: int) -> Block | None:
+    for block in blocks:
+        if block.kind == "code_fence" and block.start_line <= line_num <= block.end_line:
+            return block
+    return None
 
 
 def apply_headings(text: str, mapping: dict[int, str]) -> str:
     """Apply heading level mapping to the text.
 
     mapping: {line_number: new_prefix} e.g. {16: "##", 50: "###", ...}
-    The line numbers are 1-indexed.
+    The line numbers are 1-indexed. Prefix values:
+      "##"…"######"  — set the heading level; also promotes a plain numbered
+                       title line into a heading (unwrap the enclosing
+                       txt/text/no-language fence when the line is its only
+                       content; refused inside C-family fences).
+      "-"            — demote the heading to a plain paragraph.
     """
     lines = text.split("\n")
-    for line_num, new_prefix in mapping.items():
+    blocks = parse_blocks(text)
+    removals: set[int] = set()
+
+    for line_num in sorted(mapping):
+        new_prefix = mapping[line_num]
         idx = line_num - 1
-        if 0 <= idx < len(lines):
-            m = _HEADING_RE.match(lines[idx])
+        if not (0 <= idx < len(lines)):
+            continue
+
+        m = _HEADING_RE.match(lines[idx])
+        if new_prefix == "-":
             if m:
-                prefix = m.group(1)
-                title = m.group(3).strip()
-                lines[idx] = f"{prefix}{new_prefix} {title}"
+                lines[idx] = f"{m.group(1)}{m.group(3).strip()}"
+            continue
+        if m:
+            lines[idx] = f"{m.group(1)}{new_prefix} {m.group(3).strip()}"
+            continue
+
+        # Promotion of a plain line into a heading.
+        prefix = new_prefix.strip()
+        if not re.fullmatch(r"#{1,6}", prefix) or not lines[idx].strip():
+            print(
+                f"[WARNING] line {line_num}: not a heading and {new_prefix!r} is not a "
+                "heading level; skipping",
+                file=sys.stderr,
+            )
+            continue
+
+        fence = _find_enclosing_fence(blocks, line_num)
+        if fence is not None:
+            lang = _fence_lang(fence)
+            if lang in _C_FAMILY or lang == "rust":
+                print(
+                    f"[WARNING] line {line_num}: refusing to promote inside a "
+                    f"{lang!r} code fence; skipping",
+                    file=sys.stderr,
+                )
+                continue
+            content = _fence_content(fence)
+            content_starts = fence.start_line + 1
+            is_sole_content = (
+                _fence_has_closer(fence) and len(content) == 1 and content_starts == line_num
+            )
+            if not is_sole_content:
+                print(
+                    f"[WARNING] line {line_num}: target is not the only content line "
+                    "of its fence; unwrap manually first; skipping",
+                    file=sys.stderr,
+                )
+                continue
+            removals.add(fence.start_line - 1)
+            removals.add(fence.end_line - 1)
+
+        pm = re.match(r"^([ \t>]*)(\S.*)$", lines[idx])
+        if pm:
+            lines[idx] = f"{pm.group(1)}{prefix} {pm.group(2).strip()}"
+
+    if removals:
+        lines = [line for i, line in enumerate(lines) if i not in removals]
     return "\n".join(lines)
+
+
+# ── Validation checks ───────────────────────────────────────────────────────
+_HAN_ASCII_ADJ_RE = re.compile(rf"[{_CJK_HAN}][A-Za-z0-9]|[A-Za-z0-9][{_CJK_HAN}]")
+_HAN_HALFWIDTH_PUNCT_RE = re.compile(rf"[{_CJK_HAN}][,;:]|[,;:][{_CJK_HAN}]")
+_DUP_PUNCT_RE = re.compile(r"([。！？，；：]){2,}|([,;:!?])\2")
+
+
+def _strip_inline_spans(line: str) -> str:
+    """Blank out inline code/math/links for probing. NUL, not a space, so the
+    surrounding real spaces are not misread as consecutive-space artifacts."""
+    line = _INLINE_CODE_RE.sub("\x00", line)
+    line = _INLINE_MATH_WS_RE.sub("\x00", line)
+    return _LINK_RE.sub("\x00", line)
+
+
+def _is_pure_label_caption(line: str) -> bool:
+    """A caption that is a pure label (safe to attach to its image), as
+    opposed to a sentence that merely starts with 图/Fig."""
+    if not re.match(r"^(图|表|Figs?\.?|Figures?|Tables?|Tab\.?)\s*\S", line):
+        return False
+    if re.search(r"显示|表明|说明|给出|描述|如下|中所|所示", line):
+        return False
+    if line.endswith(("。", ".", "！", "？", "，", ",")):
+        return False
+    return len(line) < 60
+
+
+def check_file(text: str) -> list[str]:
+    """Run deterministic validation checks. Returns issue lines
+    ("L<line> [category] message"), sorted by line number. Report-only:
+    nothing is modified."""
+    issues: list[tuple[int, str]] = []
+    blocks = parse_blocks(text)
+    lines = text.split("\n")
+    ignored = _build_ignored_lines(blocks)
+    # Pipe tables are ignored for heading detection but NOT for spacing
+    # checks (their cells get CJK spacing during polish).
+    pipe_table_lines: set[int] = set()
+    for block in blocks:
+        if block.kind == "pipe_table":
+            for line_num in range(block.start_line, block.end_line + 1):
+                pipe_table_lines.add(line_num)
+    spacing_ignored = ignored - pipe_table_lines
+
+    def add(line_num: int, category: str, message: str) -> None:
+        issues.append((line_num, f"L{line_num} [{category}] {message}"))
+
+    # Fence integrity, language tags, prose-in-fence
+    for block in blocks:
+        if block.kind != "code_fence":
+            continue
+        lang = _fence_lang(block)
+        content = _fence_content(block)
+        if not _fence_has_closer(block):
+            add(block.start_line, "fence", f"unclosed code fence (lang={lang or '<none>'})")
+        if not content:
+            continue
+        if lang in {"", "txt", "text", "m4", "rust"} and _looks_like_c_code(content):
+            if lang in {"txt", "text"} and _is_heading_like_signature(content):
+                pass  # lost-heading rule below handles this shape
+            else:
+                add(
+                    block.start_line,
+                    "fence",
+                    f"fence tagged {lang or '<none>'!r} contains C-family code (should be ```c)",
+                )
+        if lang in {"txt", "text"} and _fence_has_closer(block) and _looks_like_cjk_prose(content):
+            add(
+                block.start_line,
+                "fence",
+                f"CJK prose trapped in ```{lang} fence (unwrap candidate)",
+            )
+
+    # Adjacent fences split by blank lines
+    for i, block in enumerate(blocks):
+        if block.kind != "code_fence":
+            continue
+        look = i + 1
+        while look < len(blocks) and blocks[look].kind == "blank":
+            look += 1
+        if (
+            look < len(blocks)
+            and blocks[look].kind == "code_fence"
+            and _fences_compatible(block, blocks[look])
+        ):
+            add(
+                block.end_line,
+                "fence-split",
+                "adjacent code fences separated only by blank line(s) "
+                "(likely one block split by extraction)",
+            )
+
+    # Tables
+    for i, block in enumerate(blocks):
+        if block.kind == "html_table":
+            add(block.start_line, "table", "residual HTML table (not converted)")
+        elif block.kind == "pipe_table" and len(block.lines) >= 2:
+            expected = _count_unescaped_pipes(block.lines[1])
+            for offset, line in enumerate(block.lines):
+                if line.strip() and _count_unescaped_pipes(line) != expected:
+                    add(
+                        block.start_line + offset,
+                        "table",
+                        f"ragged pipe table row ({_count_unescaped_pipes(line)} pipes, "
+                        f"expected {expected})",
+                    )
+            if _column_count(block.lines[1]) == 1:
+                add(
+                    block.start_line,
+                    "table",
+                    "single-column table; verify it is not a mis-parsed code block or list",
+                )
+            # A following line starting with | that doesn't match the column
+            # count escaped the table block during parsing.
+            if i + 1 < len(blocks) and blocks[i + 1].kind == "paragraph":
+                for offset, line in enumerate(blocks[i + 1].lines):
+                    if line.startswith("|") and _count_unescaped_pipes(line) != expected:
+                        add(
+                            blocks[i + 1].start_line + offset,
+                            "table",
+                            "pipe-table-like row with mismatched column count (escaped its table)",
+                        )
+
+    # Lost headings
+    for line_num, title, source, level in _iter_lost_headings(lines, blocks):
+        add(
+            line_num,
+            "heading",
+            f'lost numbered heading "{title}" ({source}; suggest {"#" * level})',
+        )
+
+    # Display math balance
+    for block in blocks:
+        if block.kind == "display_math" and not _display_math_is_balanced("\n".join(block.lines)):
+            add(block.start_line, "math", "unbalanced display math delimiters")
+
+    # Detached pure-label caption after an image
+    for i, block in enumerate(blocks):
+        if block.kind != "image":
+            continue
+        if (
+            i + 2 < len(blocks)
+            and blocks[i + 1].kind == "blank"
+            and blocks[i + 2].kind == "paragraph"
+            and _is_pure_label_caption(blocks[i + 2].lines[0].strip())
+        ):
+            add(
+                blocks[i + 2].start_line,
+                "caption",
+                f"pure-label caption separated from image at L{block.start_line} by a blank line",
+            )
+
+    # Per-line spacing / punctuation / OCR residue
+    for i, line in enumerate(lines):
+        line_num = i + 1
+        if line != line.rstrip():
+            add(line_num, "space", "trailing whitespace")
+        if line_num in spacing_ignored:
+            # polish leaves fence/math/html interiors untouched: no checks.
+            continue
+        probe = _strip_inline_spans(line)
+        if _HAN_ASCII_ADJ_RE.search(probe):
+            add(line_num, "cjk", "Han adjacent to ASCII alnum without space")
+        if line_num not in pipe_table_lines:
+            # Leading indentation (nested lists, wrapped prose) is legal Markdown.
+            if re.search(r"\S  +\S", probe):
+                add(line_num, "space", "consecutive spaces outside code span")
+            # Half-width punctuation next to Han is flagged in prose only:
+            # table cells deliberately keep half-width , ; : (range notation).
+            if _HAN_HALFWIDTH_PUNCT_RE.search(probe):
+                add(line_num, "punct", "half-width punctuation adjacent to Han")
+            if _DUP_PUNCT_RE.search(probe):
+                add(line_num, "punct", "duplicated punctuation")
+            if probe.count("“") != probe.count("”"):
+                add(line_num, "punct", "unbalanced double quotes")
+        if any(ch in line for ch in _LIGATURES):
+            add(line_num, "ocr", "residual ligature character")
+
+    issues.sort(key=lambda item: item[0])
+    return [message for _, message in issues]
 
 
 def finalize_files(input_path: Path) -> tuple[Path, Path]:
@@ -1377,8 +2030,17 @@ def main():
     )
     fin.add_argument("input", type=str, help="Original markdown file")
 
+    chk = sub.add_parser("check", help="Run validation checks; report issues (exit 1 if any)")
+    chk.add_argument("input", type=str, help="Input markdown file")
+    chk.add_argument(
+        "-o", "--output", type=str, default=None, help="Write report to file (default: stdout)"
+    )
+    chk.add_argument(
+        "--json", action="store_true", dest="as_json", help="Emit JSON instead of text lines"
+    )
+
     argv = sys.argv[1:]
-    if argv and argv[0] not in {"polish", "headings", "apply", "finalize", "-h", "--help"}:
+    if argv and argv[0] not in {"polish", "headings", "apply", "finalize", "check", "-h", "--help"}:
         argv = ["polish", *argv]
 
     args = parser.parse_args(argv)
@@ -1443,6 +2105,25 @@ def main():
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
         print(f"Done. Final: {final_path}; backup: {origin_path}")
+
+    elif args.command == "check":
+        input_path = Path(args.input)
+        if not input_path.exists():
+            print(f"Error: {input_path} not found", file=sys.stderr)
+            sys.exit(1)
+        issues = check_file(input_path.read_text(encoding="utf-8"))
+        if args.as_json:
+            report = json.dumps(
+                {"issues": issues, "count": len(issues)}, ensure_ascii=False, indent=2
+            )
+        else:
+            report = "\n".join(issues) if issues else "OK: no issues found"
+        if args.output:
+            Path(args.output).write_text(report + "\n", encoding="utf-8")
+            print(f"Done. Report: {args.output} ({len(issues)} issue(s))")
+        else:
+            print(report)
+        sys.exit(1 if issues else 0)
 
 
 if __name__ == "__main__":

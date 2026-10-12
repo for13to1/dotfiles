@@ -55,3 +55,29 @@ A transfer characteristic should be described analogously to conventional electr
 Fig. 8 Cross-sectional view of the device.
 
 modulators (EOMs), e.g., Pockels cells.
+
+## 4. Tables and Code
+
+<table><tr><td>参数名</td><td>类型</td><td>描述</td></tr><tr><td>outFrame</td><td>frame</td><td>输出图像,即</td></tr><tr><td>exposureTime</td><td>uint32_t</td><td>曝光时间[0x0, 0x3ff]</td></tr></table>
+
+| 引擎 | 说明 |
+| --- | --- |
+| AE引擎 | 自动曝光,基于Statistics |
+
+```c
+typedef struct {
+    uint32_t enable;
+} XcamAeManual;
+
+```
+
+```m4
+XcamReturn rkAiqExpParamComb(const XcamParamComb_t *combp);
+
+```
+
+```txt
+4.1.1 XcamAeStats_t
+```
+
+The AE engine computes exposure from statistics.

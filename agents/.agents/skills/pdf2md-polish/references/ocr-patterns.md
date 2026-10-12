@@ -63,6 +63,30 @@ The first objective is to design a high-performance classifier, which runs in re
 
 **Note**: The script attempts to merge these, but complex cases may be missed. Check output.
 
+### HTML Tables
+
+`<table>/<tr>/<td>` blocks are converted to GFM pipe tables: first row becomes the header, ragged rows are padded, `|` in cells is escaped, entities (`&amp;` etc.) are unescaped, and cells receive CJK↔ASCII spacing.
+
+**Degrade rule**: if any `rowspan`/`colspan` attribute is present (or no rows parse, or text sits outside the table markup — `<table>…</table>` or bare `<tr>` rows — or a `<table>` opener has no `</table>`), the block is preserved as HTML with a stderr warning. The `check` subcommand flags residual HTML tables.
+
+### Code Fence Repair
+
+| Artifact | Fix |
+| --- | --- |
+| Two fences of compatible language separated only by blank lines | Merged into one fence (compatible = same language, or both in the C family `{c,h,cpp,m4}`) |
+| `` ```m4 `` / `` ```rust `` / `` ```txt `` / untagged fence whose content is C code (`typedef struct`, `#include`, function signatures) | Relabeled `` ```c `` |
+| `` ```txt `` / `` ```text `` fence containing Chinese prose (Han + sentence punctuation, no code signatures) | Fence removed; content restored as a paragraph |
+
+**Not touched**: a `` ```txt `` fence holding a single function signature (e.g. `XcamReturn rkAiqExpParamComb(...);`) — that shape is a lost heading; the `headings`/`apply` tools handle it. Incompatible languages are never merged.
+
+### C-Family Re-indent
+
+`` ```c ``/`` ```h ``/`` ```cpp ``/`` ```hpp `` blocks are re-indented by brace depth. If braces are unbalanced (a line dips negative or the block doesn't end at depth 0), the block is left unchanged.
+
+### Table Cell Spacing
+
+CJK↔ASCII spacing is applied inside pipe-table cells and converted HTML cells, with inline code spans and inline math (`$...$`) spans protected. Half-width `,;:` inside table cells is preserved by convention (range notation). Cell-internal runs of spaces are left as-is (they render as one space) and are not a `check` finding.
+
 ---
 
 ## Requires LLM Judgment (Semantic Review)
@@ -135,7 +159,19 @@ OCR/PDF extraction frequently converts en-dashes (`–`, U+2013) to hyphens (`-`
 
 ### Unbalanced `$$` Delimiters
 
-If `$$` don't pair up, the script preserves the block unchanged and prints `[WARNING]` to stderr. The LLM should check stderr and decide whether to fix or leave it.
+If `$$` don't pair up, the script preserves the block unchanged and prints `[WARNING]` to stderr. The `check` subcommand also reports it; decide whether to fix or leave it.
+
+### Single-Column Tables
+
+A converted table with one column is often a mis-parsed code block or key-value list (e.g. a signature block that HTML parsing collapsed). `check` flags these — decide whether to keep the table, convert to a fenced code block, or restore a list.
+
+### Lost Numbered Headings
+
+Extraction sometimes demotes numbered titles (`11.5.2.1.2 RkAiqExpParamComb_t`) into plain paragraphs or `` ```txt `` fences. The script *detects* them (`headings` shows `?` entries with a suggested level; `check` flags them) but the LLM assigns the final hierarchy and calls `apply` to promote/restore.
+
+### Detached Pure-Label Captions
+
+`check` reports an image separated from a pure-label caption (`图 AWB 分块示意图`, no referential verbs) by a blank line. Whether to attach it (and whether the line really is a caption vs. a sentence starting with 图) is LLM judgment.
 
 ---
 
