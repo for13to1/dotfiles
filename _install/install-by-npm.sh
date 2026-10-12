@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# _install/install-by-npm.sh — Node.js CLI installs via npm
+# _install/install-by-npm.sh — Node.js CLI lifecycle (install/upgrade/uninstall) via npm
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/common.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../_scripts/cli-registry.sh"
+cli_registry_filter_channel npm
 
 # ── Node environment activation ──────────────────────────────────
 # Reuse the locally fnm-managed Node instead of installing a runtime. All Node/npm
@@ -35,7 +38,7 @@ fnm_exec() {
 ensure_fnm_node_env() {
     FNM_BIN="$(find_fnm_bin || true)"
     if [[ -z "$FNM_BIN" ]]; then
-        warn "fnm not found; skipping npm CLI installs"
+        warn "fnm not found; skipping npm CLI lifecycle"
         return 1
     fi
 
@@ -89,50 +92,81 @@ npm_install_global() {
     fi
 }
 
-# The single npm-channel installer: every registry entry is (pkg, flag), and
-# npm_install_global carries all the npm-version quirks (dropping
-# --allow-scripts on old npm, --min-release-age on npm >= 11.10). Flags are
-# documented per entry in the registry below; an empty flag is a plain install.
-npm_install_one() {
-    if [[ -z "$2" ]]; then
-        npm_install_global "$1"
-    else
-        npm_install_global "$2" "$1"
-    fi
-}
+# Channel runtime gate: fnm-managed Node LTS plus a working npm in front of it.
+npm_ensure() {
+    ensure_fnm_node_env || return 1
 
-# ── npm CLI registry ─────────────────────────────────────────────
-# Channel data only — the frame (eco_cli/validate/run) lives in common.sh.
-#   flag ""                        → plain global install
-#   flag --allow-scripts=<list>    → postinstall seeds/links the native binary
-#   flag --ignore-scripts          → package has no useful lifecycle scripts
-eco_cli biome     @biomejs/biome                   ""                          --always
-eco_cli stylua    @johnnymorganz/stylua-bin        ""                          --always
-eco_cli pi        @earendil-works/pi-coding-agent  --ignore-scripts            --prompt
-eco_cli codex     @openai/codex                    ""                          --prompt
-eco_cli opencode  opencode-ai                      --allow-scripts=opencode-ai --prompt
-eco_cli mimo      @mimo-ai/cli                     --allow-scripts=@mimo-ai/cli --prompt
-eco_cli codegraph @colbymchenry/codegraph          ""                          --prompt
-eco_cli wrangler  wrangler                         --allow-scripts=esbuild,workerd --prompt
-eco_cli rea       rea-agents                       ""                          --prompt
-eco_cli ocr       @alibaba-group/open-code-review  --allow-scripts=@alibaba-group/open-code-review --prompt
-
-main() {
-    validate_cli_registry
-
-    if ! ensure_fnm_node_env; then
-        return 0
-    fi
-
-    # `npm prefix -g` prints nothing when npm is missing; use it as a presence gate.
+    # `npm prefix -g` prints nothing when npm is missing.
     local npm_prefix
     npm_prefix="$(fnm_exec npm prefix -g 2>/dev/null || true)"
     if [[ -z "$npm_prefix" ]]; then
-        warn "npm not found; skipping npm CLI installs"
-        return 0
+        warn "npm not found; skipping npm CLI lifecycle"
+        return 1
     fi
+}
 
-    run_cli_registry npm_install_one npm
+# The single npm-channel installer: every registry entry is (bin, pkg, flag),
+# and npm_install_global carries all the npm-version quirks (dropping
+# --allow-scripts on old npm, --min-release-age on npm >= 11.10). Flags are
+# documented per entry in the registry below; an empty flag is a plain install.
+npm_install_one() {
+    if [[ -z "$3" ]]; then
+        npm_install_global "$2"
+    else
+        npm_install_global "$3" "$2"
+    fi
+}
+
+# The upgrade path reuses the single npm installer with <pkg>@latest: same
+# prefix, same --allow-scripts/--min-release-age quirks, one code path.
+npm_update_one() {
+    npm_install_one "$1" "$2@latest" "$3"
+}
+
+# The npm-channel uninstaller: npm owns its global tree, so removal goes
+# through npm — nothing is rm'ed behind npm's back. A manually placed bin
+# survives: npm just reports nothing to remove (exit 0), it does not error.
+npm_uninstall_one() {
+    fnm_exec npm uninstall -g --prefix "$LOCAL_PREFIX" "$2"
+}
+
+# One batch query for the whole prefix. npm outdated exits 1 when anything is
+# outdated and prints {} when current; any other exit is an error. stdout is
+# the result channel, so warn goes to stderr.
+npm_query_outdated() {
+    local raw rc=0
+    raw="$(fnm_exec npm outdated -g --prefix "$LOCAL_PREFIX" --json 2>/dev/null)" || rc=$?
+    case "$rc" in
+        0|1) ;;
+        *)
+            warn "npm outdated query failed (exit $rc); skipping npm CLI updates" >&2
+            return 1
+            ;;
+    esac
+    [[ -z "$raw" || "$raw" == "{}" ]] && return 0
+
+    # Parse JSON in the runtime this channel guarantees; only
+    # "pkg current latest" lines are emitted.
+    fnm_exec node -e '
+        const data = JSON.parse(process.argv[1]);
+        if (data.error) process.exit(1);
+        for (const [pkg, info] of Object.entries(data)) {
+            // Skip current === latest so an already-latest package is never
+            // "upgraded" to the version it runs.
+            if (info && info.current && info.latest && info.current !== info.latest) {
+                console.log(pkg, info.current, info.latest);
+            }
+        }
+    ' "$raw"
+}
+
+# ── npm CLI registry ─────────────────────────────────────────────
+# Declarations live in _scripts/cli-registry.sh; only npm's rows are kept
+# here. The eco_cli frame (install/update/uninstall) lives in common.sh.
+
+main() {
+    run_cli_channel npm_ensure npm_install_one npm_query_outdated \
+        npm_update_one npm_uninstall_one npm "$(channel_detect npm)" "$@"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
