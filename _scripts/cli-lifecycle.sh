@@ -7,7 +7,8 @@
 #   _scripts/cli-registry.sh  — the declarative eco_cli table (one row per CLI)
 #   _scripts/cli-lifecycle.sh — this file: table validation + the lifecycle
 #   _install/install-by-*.sh  — one channel each: runtime gate + per-action fns
-#   _install/manage-tools.sh  — routes named bins across channels, one confirm
+#   _install/manage-tools.sh  — entrypoint: routing plus the query/dispatch
+#                               shims behind the merged (cross-channel) views
 #
 # Pulls in common.sh itself (msg/confirm/is_installed live there).
 # shellcheck shell=bash
@@ -211,6 +212,28 @@ cli_registry_scope_named() {
     CLI_REGISTRY_IDX=("${keep_idx[@]}")
 }
 
+# lifecycle_scope_named_idx [bin…]
+# Fills SCOPE_IDX with the installed candidates (CLI_REGISTRY_IDX), narrowed
+# to [bin…] when given. Silent on an empty result: the merged views own their
+# own empty-scope wording, unlike cli_registry_scope_named's per-channel text.
+lifecycle_scope_named_idx() {
+    SCOPE_IDX=()
+    (( ${#CLI_REGISTRY_IDX[@]} > 0 )) || return 0
+    if (( $# == 0 )); then
+        SCOPE_IDX=("${CLI_REGISTRY_IDX[@]}")
+        return 0
+    fi
+    local i b
+    for i in "${CLI_REGISTRY_IDX[@]}"; do
+        for b in "$@"; do
+            if [[ "$b" == "${ECO_CLI_BINS[i]}" ]]; then
+                SCOPE_IDX+=("$i")
+                break
+            fi
+        done
+    done
+}
+
 # install_cli_registry <install_fn> [channel] [detect] [bin…]
 # Installs missing rows via <install_fn> <bin> <pkg> <flag>. [bin…] narrows to
 # named rows. detect: "canonical" keys only on $CLI_BIN_DIR/<bin>; "path" also
@@ -322,6 +345,43 @@ update_cli_registry() {
     authorize_and_run update updating updated "$updater" "$channel" "${to_update_idx[@]}"
 }
 
+# lifecycle_authorize <prompt-template> <idx…>
+# The authorization core shared by every verb view: pre-approved bins join the
+# approved set directly, the rest share one batch confirm whose prompt is
+# printf-formatted from <prompt-template> with the pending count as %d.
+# Sets AUTH_IDX (final approved rows), AUTH_PEND and AUTH_DECLINED. Prints
+# nothing — message wording differs between the single-channel and merged
+# views, so callers assemble it from this state.
+lifecycle_authorize() {
+    local template="$1" prompt
+    shift
+    AUTH_IDX=()
+    AUTH_PEND=0
+    AUTH_DECLINED=0
+    local -a pend=()
+    local j
+    for j in "$@"; do
+        if is_pre_approved "${ECO_CLI_BINS[j]}"; then
+            AUTH_IDX+=("$j")
+        else
+            pend+=("$j")
+        fi
+    done
+    AUTH_PEND=${#pend[@]}
+    if (( AUTH_PEND > 0 )); then
+        # The template is our own format string (it carries %d) — intentional.
+        # shellcheck disable=SC2059
+        printf -v prompt "$template" "$AUTH_PEND"
+        if confirm "$prompt" 0; then
+            for j in "${pend[@]}"; do
+                AUTH_IDX+=("$j")
+            done
+        else
+            AUTH_DECLINED=1
+        fi
+    fi
+}
+
 # authorize_and_run <verb> <doing> <done> <action_fn> <channel> <idx…>
 # Authorization + execution tail shared by update and uninstall (engine-side):
 # pre-approved bins run directly, the rest share one batch confirm; a failed
@@ -331,49 +391,33 @@ update_cli_registry() {
 authorize_and_run() {
     local verb="$1" doing="$2" done_w="$3" action_fn="$4" channel="$5"
     shift 5
-    local -a final_idx=() pending_idx=()
-    local j pkg flag declined=0 failed=0
+    local i pkg flag failed=0
     local prompt_verb
     case "$verb" in
         update) prompt_verb="Update" ;;
         *) prompt_verb="Uninstall" ;;
     esac
 
-    for j in "$@"; do
-        if is_pre_approved "${ECO_CLI_BINS[j]}"; then
-            final_idx+=("$j")
-        else
-            pending_idx+=("$j")
-        fi
-    done
-    if (( ${#pending_idx[@]} > 0 )); then
-        if confirm "$prompt_verb ${#pending_idx[@]} via $channel? [y/N]: " 0; then
-            for j in "${pending_idx[@]}"; do
-                final_idx+=("$j")
-            done
-        else
-            declined=1
-        fi
-    fi
+    lifecycle_authorize "$prompt_verb %d via $channel? [y/N]: " "$@"
 
-    if (( ${#final_idx[@]} == 0 )); then
+    if (( ${#AUTH_IDX[@]} == 0 )); then
         warn "no $channel CLIs approved for $verb; skipping"
         return 0
     fi
-    if (( declined )); then
-        info "skipped ${#pending_idx[@]} unapproved $channel CLIs"
+    if (( AUTH_DECLINED )); then
+        info "skipped $AUTH_PEND unapproved $channel CLIs"
     fi
 
-    for j in "${final_idx[@]}"; do
-        pkg="${ECO_CLI_PKGS[j]}"
-        flag="${ECO_CLI_FLAGS[j]}"
-        info "$doing ${ECO_CLI_BINS[j]} ($pkg) via $channel..."
-        if ! "$action_fn" "${ECO_CLI_BINS[j]}" "$pkg" "$flag"; then
-            warn "${ECO_CLI_BINS[j]} $verb failed; retry manually later"
+    for i in "${AUTH_IDX[@]}"; do
+        pkg="${ECO_CLI_PKGS[i]}"
+        flag="${ECO_CLI_FLAGS[i]}"
+        info "$doing ${ECO_CLI_BINS[i]} ($pkg) via $channel..."
+        if ! "$action_fn" "${ECO_CLI_BINS[i]}" "$pkg" "$flag"; then
+            warn "${ECO_CLI_BINS[i]} $verb failed; retry manually later"
             failed=1
             continue
         fi
-        ok "${ECO_CLI_BINS[j]} $done_w"
+        ok "${ECO_CLI_BINS[i]} $done_w"
     done
     return "$failed"
 }
@@ -432,16 +476,42 @@ query_outdated() {
     return 0
 }
 
-# status_cli_registry <outdated_fn> <channel> <detect> [bin…]
-# Read-only: prints every registered row's state (missing / on PATH / up to
-# date / update available / state unknown) and a summary. Never mutates or
-# prompts. A failed/unavailable outdated query (CLI_STATUS_UNKNOWN=1) marks
-# installed rows unknown and still fails the run — never up to date.
+# ── status view (single implementation, two callers) ─────────────
+# Caller-set context, because bash has no closures:
+#   STATUS_CHANNELS    channels whose version state is queried; rendering
+#                      still follows the registry row order
+#   STATUS_QUERY_FN    <channel> → "pkg cur latest" rows; rc != 0 marks the
+#                      channel unknown (the query impl owns the warning)
+#   STATUS_PREFIX      1 = "[ch] " row prefix (unified view); 0 = bare rows
+#   STATUS_LABEL       channel word for the empty-scope message
+#   STATUS_OUTDATED_FN in-process outdated fn for status_query_inproc
+#   CLI_STATUS_UNKNOWN set only by run_cli_channel's failed runtime gate
+#                      (channel --status): skip every query and render all
+#                      installed rows unknown (one warning, from the gate
+#                      itself). The unified entrypoint never sets it — a
+#                      channel subprocess failure travels as the query fn's
+#                      rc instead.
+STATUS_CHANNELS=(npm uv go)
+STATUS_QUERY_FN=""
+STATUS_PREFIX=0
+STATUS_LABEL="CLI"
+STATUS_OUTDATED_FN=""
+status_query_inproc() {
+    query_outdated "$STATUS_OUTDATED_FN" "$1" || return 1
+    if (( ${#OUTDATED_LINES[@]} > 0 )); then
+        printf '%s\n' "${OUTDATED_LINES[@]}"
+    fi
+}
+
+# status_cli_registry [bin…]
+# Read-only: prints every in-scope registry row's state (missing / on PATH /
+# up to date / update available / state unknown) across STATUS_CHANNELS, with
+# one summary and one exit code. Never mutates or prompts. A failed query (or
+# CLI_STATUS_UNKNOWN) marks that channel's installed rows unknown and fails
+# the run — never up to date. Outdated rows arrive as "pkg cur latest" tagged
+# with their channel before '|'; the split is field-safe (bash < 4.4 treats an
+# empty-array expansion under `set -u` as unbound — macOS system bash is 3.2).
 status_cli_registry() {
-    local outdated_fn="$1" channel="$2" detect="$3"
-    shift 3
-    local query_ok=1
-    [[ -n "${CLI_STATUS_UNKNOWN:-}" ]] && query_ok=0
     local -a show_idx=()
     local i b bin pkg want
     for i in "${!ECO_CLI_BINS[@]}"; do
@@ -459,43 +529,61 @@ status_cli_registry() {
         show_idx+=("$i")
     done
     if (( ${#show_idx[@]} == 0 )); then
-        info "no $channel CLIs among the named bins; nothing to show"
+        info "no $STATUS_LABEL CLIs among the named bins; nothing to show"
         return 0
     fi
 
-    # Query only if at least one candidate is installed. A failed query must
-    # not swallow the listing: the installed/missing facts are still knowable,
-    # so the rows render with an unknown version state and the run fails.
-    # When the runtime gate already failed (CLI_STATUS_UNKNOWN), query_ok
-    # stays 0 and the query is skipped — one warning, not three.
-    local need_query=0
-    OUTDATED_LINES=()
-    for i in "${show_idx[@]}"; do
-        if [[ -x "$CLI_BIN_DIR/${ECO_CLI_BINS[i]}" ]]; then
-            need_query=1
-            break
-        fi
-    done
-    if (( need_query && query_ok )); then
-        query_outdated "$outdated_fn" "$channel" || query_ok=0
+    local ch rows line failed="" rc=0 need_query
+    local -a tagged=()
+    if [[ -n "${CLI_STATUS_UNKNOWN:-}" ]]; then
+        rc=1
+        for ch in "${STATUS_CHANNELS[@]}"; do
+            failed+=" $ch "
+        done
+    else
+        for ch in "${STATUS_CHANNELS[@]}"; do
+            # Query only when this channel owns an installed row in scope —
+            # a runtime nobody needs must not fail the run.
+            need_query=0
+            for i in "${show_idx[@]}"; do
+                if [[ "${ECO_CLI_CHANNELS[i]}" == "$ch" \
+                      && -x "$CLI_BIN_DIR/${ECO_CLI_BINS[i]}" ]]; then
+                    need_query=1
+                    break
+                fi
+            done
+            (( need_query )) || continue
+            # A failed query must not swallow the listing: installed/missing
+            # facts are still knowable, so rows render with an unknown version
+            # state and the run fails.
+            rows="$("$STATUS_QUERY_FN" "$ch")" || { failed+=" $ch "; rc=1; continue; }
+            while IFS= read -r line; do
+                [[ -n "$line" ]] && tagged+=("$ch|$line")
+            done <<<"$rows"
+        done
     fi
+
     local installed=0 outdated=0 missing=0 foreign=0 unknown=0
-    local cur latest line _p _c _l
+    local pre cur latest _ch _rest _p _c _l
     for i in "${show_idx[@]}"; do
         bin="${ECO_CLI_BINS[i]}"
         pkg="${ECO_CLI_PKGS[i]}"
+        ch="${ECO_CLI_CHANNELS[i]}"
+        pre=""
+        (( STATUS_PREFIX )) && pre="[$ch] "
         if [[ -x "$CLI_BIN_DIR/$bin" ]]; then
             installed=$(( installed + 1 ))
-            if (( ! query_ok )); then
+            if [[ "$failed" == *" $ch "* ]]; then
                 unknown=$(( unknown + 1 ))
-                info "$bin ($pkg) state unknown"
+                info "${pre}$bin ($pkg) state unknown"
                 continue
             fi
             cur=""; latest=""
-            if (( ${#OUTDATED_LINES[@]} > 0 )); then
-                for line in "${OUTDATED_LINES[@]}"; do
-                    read -r _p _c _l <<<"$line"
-                    if [[ "$_p" == "$pkg" ]]; then
+            if (( ${#tagged[@]} > 0 )); then
+                for line in "${tagged[@]}"; do
+                    _ch="${line%%|*}"; _rest="${line#*|}"
+                    read -r _p _c _l <<<"$_rest"
+                    if [[ "$_ch" == "$ch" && "$_p" == "$pkg" ]]; then
                         cur="$_c"; latest="$_l"
                         break
                     fi
@@ -503,23 +591,23 @@ status_cli_registry() {
             fi
             if [[ -n "$latest" ]]; then
                 outdated=$(( outdated + 1 ))
-                info "update available: $bin ($pkg) $cur → $latest"
+                info "${pre}update available: $bin ($pkg) $cur → $latest"
             else
-                ok "$bin ($pkg) up to date"
+                ok "${pre}$bin ($pkg) up to date"
             fi
-        elif [[ "$detect" == "path" ]] && is_installed "$bin"; then
+        elif [[ "$(channel_detect "$ch")" == "path" ]] && is_installed "$bin"; then
             foreign=$(( foreign + 1 ))
-            warn "$bin ($pkg) present on PATH — not managed here"
+            warn "${pre}$bin ($pkg) present on PATH — not managed here"
         else
             missing=$(( missing + 1 ))
-            info "$bin ($pkg) missing"
+            info "${pre}$bin ($pkg) missing"
         fi
     done
 
     local summary="summary: $installed installed, $outdated outdated, $missing missing, $foreign on PATH"
     (( unknown > 0 )) && summary+=", $unknown unknown"
     info "$summary"
-    (( query_ok ))
+    return "$rc"
 }
 
 # outdated_cli_registry <outdated_fn> <channel> [bin…]
@@ -555,6 +643,159 @@ outdated_cli_registry() {
         [[ -n "$latest" ]] || continue
         printf '%s %s %s %s\n' "${ECO_CLI_BINS[i]}" "$pkg" "$cur" "$latest"
     done
+}
+
+# ── merged (cross-channel) verbs ─────────────────────────────────
+# The unified entrypoint's views: one query pass over the owning channels,
+# one merged confirm, then each channel executes in its own runtime-gated
+# process through <dispatch_fn> <verb> <channel> [bin…] (the approved bins
+# travel on DOTFILES_APPROVED_TOOLS — never DOTFILES_ACCEPT_TOOLS). The
+# shims own the I/O; every count, match, prompt and message lives here.
+
+# update_cli_registry_merged <query_fn> <dispatch_fn> [bin…]
+# Collects installed-and-outdated rows across npm/uv/go via <query_fn>
+# <channel> (silent on failure — the query implementation warns), confirms
+# the pending set once for all channels together, then dispatches the
+# approved bins per channel. A channel whose query fails is skipped — its
+# rows stay unknown, never "up to date" — and fails the run; healthy
+# channels proceed. Channels owning no in-scope row are never woken.
+update_cli_registry_merged() {
+    local query_fn="$1" dispatch_fn="$2"
+    shift 2
+    local ch i j rows line pkg cur latest bins
+    local -a scope_idx=() ch_idx=() row_idx=() rowlist=()
+    local total=0 rc=0 named_scope=0
+    local failed=""
+
+    (( $# > 0 )) && named_scope=1
+    cli_registry_candidates
+    lifecycle_scope_named_idx "$@"
+    if (( ${#SCOPE_IDX[@]} > 0 )); then
+        scope_idx=("${SCOPE_IDX[@]}")
+    fi
+
+    for ch in npm uv go; do
+        ch_idx=()
+        if (( ${#scope_idx[@]} > 0 )); then
+            for i in "${scope_idx[@]}"; do
+                [[ "${ECO_CLI_CHANNELS[i]}" == "$ch" ]] && ch_idx+=("$i")
+            done
+        fi
+        (( ${#ch_idx[@]} > 0 )) || continue
+        rows="$($query_fn "$ch")" || { failed+=" $ch"; rc=1; continue; }
+        rowlist=()
+        while IFS= read -r line; do
+            [[ -n "$line" ]] && rowlist+=("$line")
+        done <<<"$rows"
+        if (( ${#rowlist[@]} > 0 )); then
+            for line in "${rowlist[@]}"; do
+                read -r pkg cur latest <<<"$line"
+                # Registry-driven match: a row outside the scope (foreign
+                # global, not installed here) is never counted or acted on.
+                for j in "${ch_idx[@]}"; do
+                    [[ "${ECO_CLI_PKGS[j]}" == "$pkg" ]] || continue
+                    info "[$ch] update available: ${ECO_CLI_BINS[j]} ($pkg) $cur → $latest"
+                    total=$(( total + 1 ))
+                    row_idx+=("$j")
+                    break
+                done
+            done
+        fi
+    done
+
+    if (( total == 0 )); then
+        if [[ -n "$failed" ]]; then
+            # Some channel could not be queried; never claim everything is
+            # current when part of the picture is missing.
+            warn "cannot confirm every CLI is up to date: state unknown for${failed}"
+            return 1
+        fi
+        if (( named_scope )); then
+            ok "no named CLIs need updating"
+        else
+            ok "all installed CLIs are up to date"
+        fi
+        return 0
+    fi
+
+    lifecycle_authorize "Update %d more via npm/uv/go? [y/N]: " "${row_idx[@]}"
+    if (( AUTH_DECLINED )); then
+        info "skipped $AUTH_PEND unapproved CLIs"
+    fi
+    for ch in npm uv go; do
+        bins=""
+        if (( ${#AUTH_IDX[@]} > 0 )); then
+            for i in "${AUTH_IDX[@]}"; do
+                [[ "${ECO_CLI_CHANNELS[i]}" == "$ch" ]] || continue
+                bins+=" ${ECO_CLI_BINS[i]}"
+            done
+        fi
+        bins="${bins# }"
+        [[ -n "$bins" ]] || continue
+        # shellcheck disable=SC2086  # bins are registry names, split on purpose
+        $dispatch_fn update "$ch" $bins \
+            || { warn "$ch update had failures"; rc=1; }
+    done
+    return "$rc"
+}
+
+# uninstall_cli_registry_merged <dispatch_fn> [bin…]
+# Enumerates installed in-scope rows across channels, confirms the pending
+# set once, and dispatches per channel. No query is involved, so there is no
+# unknown state here — only the merged empty-scope messages and one prompt.
+uninstall_cli_registry_merged() {
+    local dispatch_fn="$1"
+    shift
+    local ch i bins
+    local -a scope_idx=() row_idx=()
+    local total=0 rc=0 named_scope=0
+
+    (( $# > 0 )) && named_scope=1
+    cli_registry_candidates
+    lifecycle_scope_named_idx "$@"
+    if (( ${#SCOPE_IDX[@]} > 0 )); then
+        scope_idx=("${SCOPE_IDX[@]}")
+    fi
+
+    for ch in npm uv go; do
+        if (( ${#scope_idx[@]} > 0 )); then
+            for i in "${scope_idx[@]}"; do
+                [[ "${ECO_CLI_CHANNELS[i]}" == "$ch" ]] || continue
+                info "[$ch] ${ECO_CLI_BINS[i]} (${ECO_CLI_PKGS[i]})"
+                total=$(( total + 1 ))
+                row_idx+=("$i")
+            done
+        fi
+    done
+
+    if (( total == 0 )); then
+        if (( named_scope )); then
+            info "no named CLIs to uninstall"
+        else
+            info "no installed CLIs to uninstall"
+        fi
+        return 0
+    fi
+
+    lifecycle_authorize "Uninstall %d more via npm/uv/go? [y/N]: " "${row_idx[@]}"
+    if (( AUTH_DECLINED )); then
+        info "skipped $AUTH_PEND unapproved CLIs"
+    fi
+    for ch in npm uv go; do
+        bins=""
+        if (( ${#AUTH_IDX[@]} > 0 )); then
+            for i in "${AUTH_IDX[@]}"; do
+                [[ "${ECO_CLI_CHANNELS[i]}" == "$ch" ]] || continue
+                bins+=" ${ECO_CLI_BINS[i]}"
+            done
+        fi
+        bins="${bins# }"
+        [[ -n "$bins" ]] || continue
+        # shellcheck disable=SC2086  # bins are registry names, split on purpose
+        $dispatch_fn uninstall "$ch" $bins \
+            || { warn "$ch uninstall had failures"; rc=1; }
+    done
+    return "$rc"
 }
 
 # run_cli_channel <ensure_fn> <install_fn> <outdated_fn> <update_fn> <uninstall_fn> <channel> <detect> [args…]
@@ -633,7 +874,12 @@ run_cli_channel() {
             ;;
         --status)
             shift
-            status_cli_registry "$outdated" "$channel" "$detect" "$@"
+            STATUS_CHANNELS=("$channel")
+            STATUS_QUERY_FN=status_query_inproc
+            STATUS_PREFIX=0
+            STATUS_LABEL="$channel"
+            STATUS_OUTDATED_FN="$outdated"
+            status_cli_registry "$@"
             ;;
         --outdated)
             shift
