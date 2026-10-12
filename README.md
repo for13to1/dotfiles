@@ -59,7 +59,7 @@ cd ~/dotfiles && bash bootstrap.sh
 
 1. **环境检测**：识别操作系统并准备核心依赖——macOS 校验 Xcode CLT（缺失时触发安装引导，需在系统对话框确认后重跑）并自动安装 Homebrew；Linux 确保 zsh、stow、make 可用。
 2. **软件安装**：按默认组安装系统软件（brew/apt/pacman），macOS 应用系统设置；apt 缺失的 fnm/rustup/uv 由官方安装器补齐。
-3. **生态工具**：通过 npm/uv/go 统一安装 CLI，交互询问与自动安装的清单见各渠道源码（`_install/install-by-*.sh`）的 `eco_cli` 声明，三平台一致。
+3. **生态工具**：通过 npm/uv/go 统一管理 CLI 的安装、升级与卸载，交互询问与自动安装的清单见集中式注册表（`_scripts/cli-registry.sh`）的 `eco_cli` 声明，三平台一致。
 4. **SSH 设施**：交互式生成/检测 SSH 密钥，加固目录权限。
 5. **Git 配置**：交互式创建本地身份配置，启用 pre-push 钩子。
 6. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
@@ -171,6 +171,15 @@ make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 
 软件按平台分组安装，`_install/<platform>/<group>.group` 是组文件，`_install/install` 是统一安装入口
 （预览合并安装、多选组安装、途径边界与 `.group` 文件编辑方式见 [`_docs/install.md`](_docs/install.md)）。
+
+生态 CLI 的管理走统一入口（详见 [`_docs/install.md`](_docs/install.md)）：
+
+```bash
+make status-tools                 # 只读：列出已装 + 过期状态
+make install-tools                # 补装缺失
+make update-tools                 # 升级全部已装（BIN="a b" 限定范围）
+make uninstall-tools              # 卸载（交互确认）
+```
 
 ### 镜像管理
 
