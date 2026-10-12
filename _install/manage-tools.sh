@@ -3,7 +3,7 @@
 #
 # Thin by design: it routes named bins to their owning channel, supplies the
 # two process shims (query, dispatch), and delegates all collection,
-# authorization and wording to the merged views in _scripts/cli-lifecycle.sh.
+# authorization and wording to the engine in _scripts/cli-lifecycle.sh.
 #
 #   manage-tools.sh <status|install|update|uninstall> [bin…]
 
@@ -120,16 +120,14 @@ main() {
         route_bins "$@" || return 1
     fi
 
+    # STATUS_* in the status branch are read by status_cli_registry in the
+    # sourced engine; shellcheck cannot see across files.
+    # shellcheck disable=SC2034
     case "$verb" in
         status)
-            # Consumed by status_cli_registry in the sourced engine.
-            # shellcheck disable=SC2034
             STATUS_CHANNELS=(npm uv go)
-            # shellcheck disable=SC2034
             STATUS_QUERY_FN=collect_outdated
-            # shellcheck disable=SC2034
             STATUS_PREFIX=1
-            # shellcheck disable=SC2034
             STATUS_LABEL="CLI"
             status_cli_registry "$@"
             ;;

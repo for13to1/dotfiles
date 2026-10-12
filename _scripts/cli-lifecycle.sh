@@ -477,7 +477,8 @@ query_outdated() {
 }
 
 # ── status view (single implementation, two callers) ─────────────
-# Caller-set context, because bash has no closures:
+# Caller-set context, set at process top level only (the views never nest);
+# bash has no closures:
 #   STATUS_CHANNELS    channels whose version state is queried; rendering
 #                      still follows the registry row order
 #   STATUS_QUERY_FN    <channel> → "pkg cur latest" rows; rc != 0 marks the
@@ -509,8 +510,9 @@ status_query_inproc() {
 # one summary and one exit code. Never mutates or prompts. A failed query (or
 # CLI_STATUS_UNKNOWN) marks that channel's installed rows unknown and fails
 # the run — never up to date. Outdated rows arrive as "pkg cur latest" tagged
-# with their channel before '|'; the split is field-safe (bash < 4.4 treats an
-# empty-array expansion under `set -u` as unbound — macOS system bash is 3.2).
+# with their channel before '|'. The count guard on the tagged array is
+# required: bash < 4.4 treats an empty-array expansion under `set -u` as
+# unbound — macOS system bash is 3.2.
 status_cli_registry() {
     local -a show_idx=()
     local i b bin pkg want
@@ -650,7 +652,8 @@ outdated_cli_registry() {
 # one merged confirm, then each channel executes in its own runtime-gated
 # process through <dispatch_fn> <verb> <channel> [bin…] (the approved bins
 # travel on DOTFILES_APPROVED_TOOLS — never DOTFILES_ACCEPT_TOOLS). The
-# shims own the I/O; every count, match, prompt and message lives here.
+# manager's shims contribute only I/O; every count, match, prompt and message
+# below is decided here in the engine.
 
 # update_cli_registry_merged <query_fn> <dispatch_fn> [bin…]
 # Collects installed-and-outdated rows across npm/uv/go via <query_fn>
