@@ -113,7 +113,7 @@ check_bundled_skills() {
         local sname
         sname="$(basename "$d")"
         if git -C "$DOTFILES_DIR" check-ignore -q "agents/.agents/skills/$sname"; then
-            doctor_warn "bundled skill '$sname' is gitignored (check agents/.agents/skills/.gitignore whitelist)"
+            doctor_warn "bundled skill '$sname' is gitignored (check agents/.agents/.gitignore whitelist)"
         fi
     done
 }

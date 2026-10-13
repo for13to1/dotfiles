@@ -27,7 +27,7 @@ dotfiles/
 ### 新增随仓技能规范
 
 - 技能目录位于 `agents/.agents/skills/<skill-name>/`。
-- 新增技能需同步在 [`agents/.agents/skills/.gitignore`](../agents/.agents/skills/.gitignore) 中添加取反白名单规则（如 `!/<skill-name>/`），以解除顶级 `/*` 对外部 Vendor 软链接的通用忽略阻断。
+- 新增技能需在 [`agents/.agents/.gitignore`](../agents/.agents/.gitignore) 中添加取反白名单规则（如 `!skills/<skill-name>/`）。
 
 ## 外部技能管理 (Vendor)
 

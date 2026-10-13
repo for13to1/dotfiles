@@ -1,6 +1,0 @@
-# Ignore externally attached vendor symlinks; keep only bundled skills
-/*
-!/commit-summarizer/
-!/pdf2md-polish/
-!/script-analyzer/
-!/.gitignore

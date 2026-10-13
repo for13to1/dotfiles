@@ -1,0 +1,10 @@
+# Git-only ignore for agents/.agents/skills/, which mixes tracked bundled skill
+# directories with runtime vendor symlinks. Git can't ignore only symlinks, so we
+# allowlist: ignore skills/*, then un-ignore each bundled skill by name.
+#
+# Must stay outside skills/: skill discovery reads ignore files inside its scan
+# root, where this whitelist would hide every bundled skill. Add new skills below.
+skills/*
+!skills/commit-summarizer/
+!skills/pdf2md-polish/
+!skills/script-analyzer/
