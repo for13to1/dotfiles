@@ -2,17 +2,16 @@
 # _install/install-by-go.sh — Go CLI lifecycle (install/upgrade/uninstall) via `go install`
 #
 # Toolchain comes from the package manager; this channel pins GOBIN and
-# GOMODCACHE in GOENV and installs the Go editor tools (gopls, gofumpt) into the
-# shared ~/.local/bin CLI prefix.
+# GOMODCACHE in GOENV and installs the Go editor tools (gopls, gofumpt) into
+# the shared ~/.local/bin CLI prefix.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/../_scripts/cli-registry.sh"
-cli_registry_filter_channel go
+eco_conf_load
+eco_conf_filter_channel go
 
 # Go layout declared by this repo: GOBIN is the shared ~/.local/bin prefix
 # (CLI_BIN_DIR from common.sh), and GOMODCACHE lives under ~/.cache instead of
@@ -86,31 +85,45 @@ go_uninstall_one() {
     rm -f "$CLI_BIN_DIR/$1"
 }
 
-# Go has no registry-wide "outdated": read each binary's embedded module
-# metadata for its current version, then ask the proxy once for all of them.
-# The first mod line is the main module (works for cmd/ subpath tools); the
-# emitted key stays the registry pkg, the module path is only the lookup key.
-# Rows without embedded metadata are skipped; a failed lookup fails the query.
+# ── domain-wide prefix scan ─────────────────────────────────────
+# Scan every executable in CLI_BIN_DIR for embedded Go module metadata.
+# Emits "pkg_path mod_path current" rows. pkg_path is the binary's package
+# path (from the `path` line — what `go install` was given); mod_path is the
+# owning module (from the first `mod` line — the main module). Non-Go
+# binaries have no metadata and are skipped silently.
+go_scan_prefix() {
+    local go_bin f meta path_line mod_line mod_path cur pkg_path
+    go_bin="$(find_go_bin)" || return 1
+    for f in "$CLI_BIN_DIR"/*; do
+        [[ -x "$f" && ! -d "$f" ]] || continue
+        meta="$("$go_bin" version -m "$f" 2>/dev/null)" || continue
+        path_line="$(awk '$1 == "path" { print $2; exit }' <<<"$meta")"
+        mod_line="$(awk '$1 == "mod" { print $2, $3; exit }' <<<"$meta")"
+        read -r mod_path cur <<<"$mod_line"
+        [[ -n "$mod_path" && -n "$cur" ]] || continue
+        pkg_path="${path_line:-$mod_path}"
+        printf '%s %s %s\n' "$pkg_path" "$mod_path" "$cur"
+    done
+}
+
+# One batch outdated query over the whole prefix: current versions from the
+# binaries' embedded metadata, latest from the module proxy. Rows without
+# embedded metadata are skipped; a failed lookup fails the query.
 # stdout is the result channel, so warn goes to stderr.
 go_query_outdated() {
-    local go_bin i bin pkg meta mod_path cur latest listed row
+    local go_bin line pkg_path mod_path cur latest listed row
     local -a targets=() rows=()
     go_bin="$(find_go_bin)" || return 1
 
-    for i in "${!ECO_CLI_BINS[@]}"; do
-        bin="${ECO_CLI_BINS[i]}"
-        pkg="${ECO_CLI_PKGS[i]}"
-        [[ -x "$CLI_BIN_DIR/$bin" ]] || continue
-        meta="$("$go_bin" version -m "$CLI_BIN_DIR/$bin" 2>/dev/null \
-            | awk '$1 == "mod" { print $2, $3; exit }')"
-        read -r mod_path cur <<<"$meta"
-        [[ -n "$mod_path" && -n "$cur" ]] || continue
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        read -r pkg_path mod_path cur <<<"$line"
         case " ${targets[*]:-} " in
             *" $mod_path@latest "*) ;;
             *) targets+=("$mod_path@latest") ;;
         esac
-        rows+=("$pkg $mod_path $cur")
-    done
+        rows+=("$pkg_path $mod_path $cur")
+    done < <(go_scan_prefix)
 
     (( ${#targets[@]} > 0 )) || return 0
     if ! listed="$("$go_bin" list -m -f '{{.Path}} {{.Version}}' "${targets[@]}" 2>/dev/null)"; then
@@ -119,20 +132,106 @@ go_query_outdated() {
     fi
 
     for row in "${rows[@]}"; do
-        read -r pkg mod_path cur <<<"$row"
+        read -r pkg_path mod_path cur <<<"$row"
         latest="$(awk -v p="$mod_path" '$1 == p { print $2; exit }' <<<"$listed")"
         [[ -n "$latest" && "$latest" != "$cur" ]] || continue
-        printf '%s %s %s\n' "$pkg" "$cur" "$latest"
+        printf '%s %s %s\n' "$pkg_path" "$cur" "$latest"
     done
 }
 
-# ── go CLI registry ──────────────────────────────────────────────
-# Declarations live in _scripts/cli-registry.sh; only go's rows are kept here.
+# ── list mode ───────────────────────────────────────────────────
+# Read-only: emit "pkg version latest_or_?" rows for every Go binary in the
+# prefix. A failed module-proxy query degrades latest to "?"; list is lenient.
+go_list_rows() {
+    local go_bin line pkg_path mod_path cur latest listed row query_failed=0
+    local -a targets=() rows=()
+    go_bin="$(find_go_bin)" || return 1
 
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        read -r pkg_path mod_path cur <<<"$line"
+        case " ${targets[*]:-} " in
+            *" $mod_path@latest "*) ;;
+            *) targets+=("$mod_path@latest") ;;
+        esac
+        rows+=("$pkg_path $mod_path $cur")
+    done < <(go_scan_prefix)
+
+    (( ${#targets[@]} > 0 )) || return 0
+    if ! listed="$("$go_bin" list -m -f '{{.Path}} {{.Version}}' "${targets[@]}" 2>/dev/null)"; then
+        query_failed=1
+    fi
+
+    for row in "${rows[@]}"; do
+        read -r pkg_path mod_path cur <<<"$row"
+        if (( query_failed )); then
+            latest="?"
+        else
+            latest="$(awk -v p="$mod_path" '$1 == p { print $2; exit }' <<<"$listed")"
+            [[ -n "$latest" ]] || latest="?"
+        fi
+        printf '%s %s %s\n' "$pkg_path" "$cur" "$latest"
+    done
+    return 0
+}
+
+# ── dispatch ────────────────────────────────────────────────────
 main() {
-    # go_install_one doubles as the upgrader: @latest reinstall is Go's upgrade.
-    run_cli_channel go_ensure go_install_one go_query_outdated \
-        go_install_one go_uninstall_one "go install" "$(channel_detect go)" "$@"
+    local verb="${1:-}"
+    case "$verb" in
+        ""|-h|--help)
+            echo "usage: $0 --list | --outdated | --install-manifest | --install-one <bin> <pkg> [flag] | --update-one <bin> <pkg> [flag] | --uninstall-one <bin> <pkg> [flag] | -h|--help"
+            return 0
+            ;;
+        --list)
+            CLI_READ_ONLY=1
+            # shellcheck disable=SC2034  # read by msg() in common.sh
+            CLI_MACHINE_OUTPUT=1
+            go_ensure || return 0
+            go_list_rows || true
+            return 0
+            ;;
+        --outdated)
+            CLI_READ_ONLY=1
+            # shellcheck disable=SC2034  # read by msg() in common.sh
+            CLI_MACHINE_OUTPUT=1
+            go_ensure || return 1
+            go_query_outdated
+            ;;
+        --install-manifest)
+            go_ensure || return 0
+            eco_manifest_install go_install_one "go install" "$(channel_detect go)"
+            ;;
+        --install-one)
+            shift
+            (($# >= 2)) || { warn "usage: $0 --install-one <bin> <pkg> [flag]"; return 2; }
+            go_ensure || return 0
+            go_install_one "$1" "$2" "${3:-}"
+            ;;
+        --update-one)
+            shift
+            (($# >= 2)) || { warn "usage: $0 --update-one <bin> <pkg> [flag]"; return 2; }
+            go_ensure || return 0
+            # go_install_one doubles as the upgrader: @latest reinstall is Go's upgrade.
+            go_install_one "$1" "$2" "${3:-}"
+            ;;
+        --uninstall-one)
+            shift
+            (($# >= 1)) || { warn "usage: $0 --uninstall-one <bin> <pkg> [flag]"; return 2; }
+            go_ensure || return 0
+            # Only remove binaries in the canonical prefix; a PATH-only
+            # install is not ours to remove (rm -f would silently "succeed").
+            if [[ ! -x "$CLI_BIN_DIR/$1" ]]; then
+                info "$1 not found in $CLI_BIN_DIR; nothing to remove"
+                return 0
+            fi
+            go_uninstall_one "$1" "$2" "${3:-}"
+            ;;
+        *)
+            warn "unknown option '$verb' (supported: --list, --outdated, --install-manifest, --install-one, --update-one, --uninstall-one, -h|--help)"
+            return 1
+            ;;
+    esac
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -26,6 +26,13 @@ main() {
         warn "proj-setup.sh not found; skipping deployment"
     fi
 
+    if [[ -f "$repo_dir/_install/eco.sh" ]]; then
+        ln -sf "$repo_dir/_install/eco.sh" "$HOME/.local/bin/eco"
+        ok "eco deployed to ~/.local/bin/eco"
+    else
+        warn "eco.sh not found; skipping deployment"
+    fi
+
     if is_debian_like; then
         if command -v fdfind &>/dev/null && [[ ! -e "$HOME/.local/bin/fd" ]]; then
             ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"

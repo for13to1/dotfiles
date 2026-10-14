@@ -12,7 +12,7 @@
 | `test-check-links.sh` | `_scripts/check-links.sh` | verify/preflight 语义、`stow_find` 类型过滤与忽略目录 |
 | `test-doctor.sh` | `_scripts/doctor.sh` | 退出码契约：干净 0 / 警告 0 / 阻断非 0 |
 | `test-install.sh` | `_install/install` | 组解析、去重保序、brew 带选项行合并、缺失组报错 |
-| `test-installers.sh` | `common.sh`、`install-by-curl.sh`、`install-by-npm.sh`、`install-by-uv.sh`、`install-by-go.sh` | 安装确认、生态安装调度、默认工具自动安装、失败汇总、curl 参数 |
+| `test-eco.sh` | `_install/eco.sh`、`_scripts/cli-lifecycle.sh`、`_scripts/eco.conf`、`install-by-{npm,uv,go,cargo,curl}.sh` | eco.conf 校验、eco.sh 语法与退出码、四渠道六动词（mock）、清单安装、确认与闸门、curl 参数 |
 | `test-net-proxy.sh` | `zsh/.zsh.d/net_proxy.sh` | on/off/set/scheme、环境变量持久化、地址校验 |
 | `test-proj-setup.sh` | `proj-setup/bin/proj-setup.sh` | 模板占位符定制、vcs、rerun 不覆盖、模板缓存清理 |
 | `test-skills-vendor.sh` | `_scripts/skills-vendor.sh` | 多 Vendor 发现、挂载、随仓技能保护、同名加前缀、卸载 |

@@ -34,12 +34,18 @@ case "$OS" in
         ;;
 esac
 
-# ── 3. Ecosystem tools (platform-independent npm/uv/go) ────────
+# ── 3. Ecosystem tools (platform-independent npm/uv/go/cargo) ────
 # pi/codex/opencode/... and gopls/gofumpt have no system package source;
 # identical on every platform. The curl channel (fnm/rustup/uv runtimes) is
 # platform-specific and lives inside pkg-linux's apt branch.
-if ! install_ecosystem_tools; then
-    warn "Some ecosystem tool installs failed; run the affected _install/install-by-*.sh scripts later to retry."
+# DOTFILES_SKIP_ECOSYSTEM_TOOLS=1 skips everything (tests: no network).
+if [[ -z "${DOTFILES_SKIP_ECOSYSTEM_TOOLS:-}" ]]; then
+    for _eco_ch in node py go rust; do
+        if ! bash "$DOTFILES_DIR/_install/eco.sh" "$_eco_ch" install; then
+            warn "Some $_eco_ch ecosystem tool installs failed; run 'bash _install/eco.sh $_eco_ch install' later to retry."
+        fi
+    done
+    unset _eco_ch
 fi
 
 # ── 4-6. Host base configuration ────────────────────────────────

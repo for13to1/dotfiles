@@ -228,28 +228,3 @@ hint_optional_groups() {
         info "💡 Optional groups: bash _install/install --$platform ${groups[*]}"
     fi
 }
-
-# ── Ecosystem installers ──────────────────────────────────────────
-# Platform-independent tool layer (bootstrap step 3): npm/uv/go channels install
-# into ~/.local and manage the full lifecycle. Each script is idempotent and
-# skips cleanly when its runtime is missing.
-# The curl channel (runtimes fnm/rustup/uv via official installers) is NOT
-# part of this layer: brew/pacman provide them via default groups, only apt
-# lacks them, so pkg-linux runs that single script directly.
-# DOTFILES_SKIP_ECOSYSTEM_TOOLS=1 skips everything (tests: no network).
-install_ecosystem_tools() {
-    if [[ -n "${DOTFILES_SKIP_ECOSYSTEM_TOOLS:-}" ]]; then
-        return 0
-    fi
-
-    local rc=0
-    local installer
-    for installer in install-by-npm.sh install-by-uv.sh install-by-go.sh; do
-        if [[ -f "$DOTFILES_DIR/_install/$installer" ]] \
-           && ! bash "$DOTFILES_DIR/_install/$installer"; then
-            warn "$installer failed; run it manually to retry"
-            rc=1
-        fi
-    done
-    return "$rc"
-}

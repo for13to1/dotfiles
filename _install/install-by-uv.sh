@@ -6,9 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/../_scripts/cli-registry.sh"
-cli_registry_filter_channel uv
+eco_conf_load
+eco_conf_filter_channel py
 
 find_uv_bin() {
     if command -v uv &>/dev/null; then
@@ -92,12 +91,101 @@ uv_query_outdated() {
     return 0
 }
 
-# ── uv CLI registry ──────────────────────────────────────────────
-# Declarations live in _scripts/cli-registry.sh; only uv's rows are kept here.
+# ── list mode ───────────────────────────────────────────────────
+# Read-only: emit "pkg version latest_or_?" rows for the whole tool list.
+# Installed versions come from `uv tool list`; latest from the outdated query.
+# A failed latest query degrades to "?" per tool; list is lenient (exit 0).
+uv_list_installed() {
+    local uv_bin listed
+    uv_bin="$(find_uv_bin)" || return 1
+    listed="$("$uv_bin" tool list 2>/dev/null)" || return 1
+    # Non-dash lines: "name vX.Y.Z" (a dash line is a detail entry).
+    awk '$1 !~ /^-/ && $2 ~ /^v[0-9]/ {
+        name = $1
+        ver = $2
+        sub(/^v/, "", ver)
+        print name, ver
+    }' <<<"$listed"
+}
 
+uv_list_rows() {
+    local installed_rows latest_rows="" outdated_out="" outdated_rc=0 query_failed=0
+    if ! installed_rows="$(uv_list_installed 2>/dev/null)"; then
+        warn "uv tool list failed; cannot list Python CLIs" >&2
+        return 0
+    fi
+    [[ -n "$installed_rows" ]] || return 0
+    outdated_out="$(uv_query_outdated 2>/dev/null)" || outdated_rc=$?
+    (( outdated_rc == 0 )) || query_failed=1
+    if (( ! query_failed )) && [[ -n "$outdated_out" ]]; then
+        # outdated rows are "pkg cur latest"; reduce to "pkg latest".
+        latest_rows="$(awk '{ print $1, $3 }' <<<"$outdated_out")"
+    fi
+    if (( query_failed )); then
+        awk 'NF >= 2 { print $1, $2, "?" }' <<<"$installed_rows"
+    elif [[ -z "$latest_rows" ]]; then
+        awk 'NF >= 2 { print $1, $2, $2 }' <<<"$installed_rows"
+    else
+        awk '
+            NR == FNR { latest[$1] = $2; next }
+            NF >= 2 { print $1, $2, ($1 in latest ? latest[$1] : $2) }
+        ' <(printf '%s\n' "$latest_rows") <(printf '%s\n' "$installed_rows")
+    fi
+    return 0
+}
+
+# ── dispatch ────────────────────────────────────────────────────
 main() {
-    run_cli_channel uv_ensure uv_install_one uv_query_outdated \
-        uv_update_one uv_uninstall_one "uv tool" "$(channel_detect uv)" "$@"
+    local verb="${1:-}"
+    case "$verb" in
+        ""|-h|--help)
+            echo "usage: $0 --list | --outdated | --install-manifest | --install-one <bin> <pkg> [flag] | --update-one <bin> <pkg> [flag] | --uninstall-one <bin> <pkg> [flag] | -h|--help"
+            return 0
+            ;;
+        --list)
+            # shellcheck disable=SC2034  # reserved for read-only distinction
+            CLI_READ_ONLY=1
+            # shellcheck disable=SC2034  # read by msg() in common.sh
+            CLI_MACHINE_OUTPUT=1
+            uv_ensure || return 0
+            uv_list_rows || true
+            return 0
+            ;;
+        --outdated)
+            # shellcheck disable=SC2034  # reserved for read-only distinction
+            CLI_READ_ONLY=1
+            # shellcheck disable=SC2034  # read by msg() in common.sh
+            CLI_MACHINE_OUTPUT=1
+            uv_ensure || return 1
+            uv_query_outdated
+            ;;
+        --install-manifest)
+            uv_ensure || return 0
+            eco_manifest_install uv_install_one "uv tool" "$(channel_detect uv)"
+            ;;
+        --install-one)
+            shift
+            (($# >= 2)) || { warn "usage: $0 --install-one <bin> <pkg> [flag]"; return 2; }
+            uv_ensure || return 0
+            uv_install_one "$1" "$2" "${3:-}"
+            ;;
+        --update-one)
+            shift
+            (($# >= 2)) || { warn "usage: $0 --update-one <bin> <pkg> [flag]"; return 2; }
+            uv_ensure || return 0
+            uv_update_one "$1" "$2" "${3:-}"
+            ;;
+        --uninstall-one)
+            shift
+            (($# >= 1)) || { warn "usage: $0 --uninstall-one <bin> <pkg> [flag]"; return 2; }
+            uv_ensure || return 0
+            uv_uninstall_one "$1" "$2" "${3:-}"
+            ;;
+        *)
+            warn "unknown option '$verb' (supported: --list, --outdated, --install-manifest, --install-one, --update-one, --uninstall-one, -h|--help)"
+            return 1
+            ;;
+    esac
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
