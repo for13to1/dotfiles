@@ -6,9 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
-# shellcheck disable=SC1091
-source "$SCRIPT_DIR/../_scripts/cli-registry.sh"
-cli_registry_filter_channel npm
+eco_conf_load
+eco_conf_filter_channel node
 
 # ── Node environment activation ──────────────────────────────────
 # Reuse the locally fnm-managed Node instead of installing a runtime. All Node/npm
@@ -42,7 +41,7 @@ ensure_fnm_node_env() {
         return 1
     fi
 
-    # Read-only verbs (--status/--outdated) must not prepare anything: probing
+    # Read-only verbs (--list/--outdated) must not prepare anything: probing
     # is enough, and `fnm install --lts` would download a runtime just to list
     # versions. If no LTS is ready, the query cannot run and the caller reports
     # an unknown state rather than blocking on a network install.
@@ -119,8 +118,8 @@ npm_ensure() {
 
 # The single npm-channel installer: every registry entry is (bin, pkg, flag),
 # and npm_install_global carries the npm-version quirk (dropping
-# --allow-scripts on old npm). Flags are
-# documented per entry in the registry below; an empty flag is a plain install.
+# --allow-scripts on old npm). Flags are documented per entry in eco.conf;
+# an empty flag is a plain install.
 npm_install_one() {
     if [[ -z "$3" ]]; then
         npm_install_global "$2"
@@ -172,13 +171,103 @@ npm_query_outdated() {
     ' "$raw"
 }
 
-# ── npm CLI registry ─────────────────────────────────────────────
-# Declarations live in _scripts/cli-registry.sh; only npm's rows are kept
-# here. The eco_cli frame (install/update/uninstall) lives in common.sh.
+# ── list mode ───────────────────────────────────────────────────
+# Read-only: emit "pkg version latest_or_?" rows for the whole prefix.
+# Latest comes from the outdated query; a failed latest query degrades to "?".
+# A failed listing is a warning, never a hard failure — list is lenient.
+npm_list_installed() {
+    local ls_raw ls_rc=0
+    ls_raw="$(fnm_exec npm ls -g --prefix "$LOCAL_PREFIX" --depth=0 --json 2>/dev/null)" || ls_rc=$?
+    (( ls_rc == 0 )) || return 1
+    fnm_exec node -e '
+        const data = JSON.parse(process.argv[1]);
+        const deps = data.dependencies || {};
+        for (const [pkg, info] of Object.entries(deps)) {
+            if (info && info.version) console.log(pkg, info.version);
+        }
+    ' "$ls_raw"
+}
 
+npm_list_rows() {
+    local installed_rows latest_rows="" outdated_out outdated_rc=0 query_failed=0
+    if ! installed_rows="$(npm_list_installed 2>/dev/null)"; then
+        warn "npm ls failed; cannot list npm CLIs" >&2
+        return 0
+    fi
+    [[ -n "$installed_rows" ]] || return 0
+    outdated_out="$(fnm_exec npm outdated -g --prefix "$LOCAL_PREFIX" --json 2>/dev/null)" || outdated_rc=$?
+    case "$outdated_rc" in 0|1) ;; *) query_failed=1 ;; esac
+    if (( ! query_failed )) && [[ -n "$outdated_out" && "$outdated_out" != "{}" ]]; then
+        latest_rows="$(fnm_exec node -e '
+            const data = JSON.parse(process.argv[1]);
+            for (const [pkg, info] of Object.entries(data)) {
+                if (info && info.latest) console.log(pkg, info.latest);
+            }
+        ' "$outdated_out" 2>/dev/null)" || query_failed=1
+    fi
+    if (( query_failed )); then
+        awk 'NF >= 2 { print $1, $2, "?" }' <<<"$installed_rows"
+    elif [[ -z "$latest_rows" ]]; then
+        awk 'NF >= 2 { print $1, $2, $2 }' <<<"$installed_rows"
+    else
+        awk '
+            NR == FNR { latest[$1] = $2; next }
+            NF >= 2 { print $1, $2, ($1 in latest ? latest[$1] : $2) }
+        ' <(printf '%s\n' "$latest_rows") <(printf '%s\n' "$installed_rows")
+    fi
+    return 0
+}
+
+# ── dispatch ────────────────────────────────────────────────────
 main() {
-    run_cli_channel npm_ensure npm_install_one npm_query_outdated \
-        npm_update_one npm_uninstall_one npm "$(channel_detect npm)" "$@"
+    local verb="${1:-}"
+    case "$verb" in
+        ""|-h|--help)
+            echo "usage: $0 --list | --outdated | --install-manifest | --install-one <bin> <pkg> [flag] | --update-one <bin> <pkg> [flag] | --uninstall-one <bin> <pkg> [flag] | -h|--help"
+            return 0
+            ;;
+        --list)
+            CLI_READ_ONLY=1
+            # shellcheck disable=SC2034  # read by msg() in common.sh
+            CLI_MACHINE_OUTPUT=1
+            npm_ensure || return 0
+            npm_list_rows || true
+            return 0
+            ;;
+        --outdated)
+            CLI_READ_ONLY=1
+            # shellcheck disable=SC2034  # read by msg() in common.sh
+            CLI_MACHINE_OUTPUT=1
+            npm_ensure || return 1
+            npm_query_outdated
+            ;;
+        --install-manifest)
+            npm_ensure || return 0
+            eco_manifest_install npm_install_one npm "$(channel_detect npm)"
+            ;;
+        --install-one)
+            shift
+            (($# >= 2)) || { warn "usage: $0 --install-one <bin> <pkg> [flag]"; return 2; }
+            npm_ensure || return 0
+            npm_install_one "$1" "$2" "${3:-}"
+            ;;
+        --update-one)
+            shift
+            (($# >= 2)) || { warn "usage: $0 --update-one <bin> <pkg> [flag]"; return 2; }
+            npm_ensure || return 0
+            npm_update_one "$1" "$2" "${3:-}"
+            ;;
+        --uninstall-one)
+            shift
+            (($# >= 1)) || { warn "usage: $0 --uninstall-one <bin> <pkg> [flag]"; return 2; }
+            npm_ensure || return 0
+            npm_uninstall_one "$1" "$2" "${3:-}"
+            ;;
+        *)
+            warn "unknown option '$verb' (supported: --list, --outdated, --install-manifest, --install-one, --update-one, --uninstall-one, -h|--help)"
+            return 1
+            ;;
+    esac
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

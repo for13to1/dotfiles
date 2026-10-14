@@ -19,7 +19,7 @@ EXTRA_SHELL_SCRIPTS := _scripts/hooks/pre-push _install/install
 # fixture's `git init` resolves to this repo instead of its own.
 unexport GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 
-.PHONY: sync check doctor test lint-shell lint-python test-shell test-skills status-tools install-tools update-tools uninstall-tools skills-attach skills-detach skills-update skills-list help
+.PHONY: sync check doctor test lint-shell lint-python test-shell test-skills skills-attach skills-detach skills-update skills-list help
 
 # Default one-shot sync: restow all modules.
 sync:
@@ -64,22 +64,6 @@ test-skills:
 	@uv run --no-project --offline --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py \
 		|| uv run --no-project --with pytest pytest -q agents/.agents/skills/pdf2md-polish/test_polish.py
 
-# Manage the registry-declared ecosystem CLIs through the unified entrypoint,
-# which routes named bins to their owning channel. BIN="a b" narrows the scope.
-# `set -f` disables globbing so a name like `*` reaches the entrypoint intact;
-# word-splitting (intended) still passes multiple names as separate args.
-status-tools:
-	@set -f; bash _install/manage-tools.sh status $(BIN)
-
-install-tools:
-	@set -f; bash _install/manage-tools.sh install $(BIN)
-
-update-tools:
-	@set -f; bash _install/manage-tools.sh update $(BIN)
-
-uninstall-tools:
-	@set -f; bash _install/manage-tools.sh uninstall $(BIN)
-
 # Manage pluggable external skills (e.g. make skills-attach, make skills-detach, make skills-list)
 skills-attach:
 	@bash _scripts/skills-vendor.sh attach $(VENDOR)
@@ -104,10 +88,6 @@ help:
 	@echo "  make lint-python   - run ruff check + format check"
 	@echo "  make test-shell    - run bash syntax checks and shell behavior tests"
 	@echo "  make test-skills   - run the skill Python tests"
-	@echo "  make status-tools  - list installed ecosystem CLIs and their update state"
-	@echo "  make install-tools - install missing ecosystem CLIs (BIN=\"a b\" narrows the scope)"
-	@echo "  make update-tools  - upgrade installed ecosystem CLIs (BIN=\"a b\" narrows the scope)"
-	@echo "  make uninstall-tools - remove ecosystem CLIs (BIN=\"a b\" narrows the scope)"
 	@echo "  make skills-attach - attach external skills from _vendor/ into ~/.agents/skills/"
 	@echo "  make skills-detach - detach external skills and restore clean bundled state"
 	@echo "  make skills-update - update external submodules to latest upstream"

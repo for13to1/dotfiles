@@ -210,5 +210,8 @@ HOME="$TEST_HOME" bash "$ROOT/_bootstrap/tools.sh" "$ROOT" >/dev/null
 [[ -L "$TEST_HOME/.local/bin/proj-setup" ]] || fail "Tools component must deploy proj-setup as a symlink"
 [[ "$(readlink "$TEST_HOME/.local/bin/proj-setup")" == "$ROOT/proj-setup/bin/proj-setup.sh" ]] \
     || fail "proj-setup symlink must target the repository command"
+[[ -L "$TEST_HOME/.local/bin/eco" ]] || fail "Tools component must deploy eco as a symlink"
+[[ "$(readlink "$TEST_HOME/.local/bin/eco")" == "$ROOT/_install/eco.sh" ]] \
+    || fail "eco symlink must target the repository entrypoint"
 
 echo "PASS bootstrap tests"
