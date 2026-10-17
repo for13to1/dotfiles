@@ -175,10 +175,11 @@ make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 生态 CLI 的管理走统一入口 `eco`（详见 [`_docs/install.md`](_docs/install.md)）：
 
 ```bash
-eco node list               # 只读：列出已装 + 版本
+eco node list               # 只读：列出已装 + 最新版本
 eco node install            # 补装缺失（清单模式，逐项确认）
-eco node update             # 升级全部已装
-eco py update               # 升级 Python 工具
+eco node install -y biome   # 指定安装，不询问
+eco node update             # 升级全部已装，报告真实版本变化
+eco py update -y            # 升级 Python 工具，不询问
 eco go uninstall gopls      # 卸载
 ```
 
