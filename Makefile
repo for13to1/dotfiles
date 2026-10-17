@@ -15,6 +15,10 @@ MODULES := $(shell bash _scripts/list-modules.sh _scripts/modules.conf)
 SHELL_EXCLUDES := -not -path './.git/*' -not -path './agents/*' -not -path './_vendor/*' -not -path './_install/installer/*'
 EXTRA_SHELL_SCRIPTS := _scripts/hooks/pre-push _install/install
 
+# Git exports GIT_DIR to hooks, and `make test` runs from one. Inherited, every
+# fixture's `git init` resolves to this repo instead of its own.
+unexport GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+
 .PHONY: sync check doctor test lint-shell lint-python test-shell test-skills skills-attach skills-detach skills-update skills-list help
 
 # Default one-shot sync: restow all modules.
