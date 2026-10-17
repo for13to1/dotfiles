@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # _install/install-by-uv.sh — Python CLI lifecycle (install/upgrade/uninstall) via uv tool
 
+# The CLI shape (verbs, argument guards, exit codes) is channel_dispatch in
+# _scripts/cli-lifecycle.sh; this file only supplies the uv-specific parts.
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,8 +28,10 @@ uv_ensure() {
     fi
 }
 
-# The single uv-channel installer. uv tool install needs no per-tool flags
-# today, so the flag slot is reserved for future use.
+# The single uv-channel installer. The flag slot is reserved.
+# eco does not pin versions, so the package spec is passed through untouched;
+# uv resolves it. (A user-supplied `pkg@ver` is refused in eco.sh, because uv
+# would read it as a local path.)
 uv_install_one() {
     local uv_bin
     uv_bin="$(find_uv_bin)" || return 1
@@ -35,6 +40,8 @@ uv_install_one() {
 
 # The single uv-channel upgrader: uv owns its tool environments, so upgrades
 # go through its native verb instead of reinstalling. The flag is reserved.
+# An already-pinned tool (installed by hand with `uv tool install pkg==x`) is
+# left alone by `uv tool upgrade`; that is uv's business, not eco's.
 uv_update_one() {
     local uv_bin
     uv_bin="$(find_uv_bin)" || return 1
@@ -47,6 +54,11 @@ uv_uninstall_one() {
     uv_bin="$(find_uv_bin)" || return 1
     "$uv_bin" tool uninstall "$2"
 }
+
+# A version as uv prints it: optional leading v, then a PEP 440 release segment
+# with optional pre/post/dev/local parts (0.18.0rc1, 1.2.3.post1, 0.9.0.dev0).
+# The shape check exists to reject garbage, not to reject legal versions.
+UV_VERSION_RE='^v?[0-9]+([.][0-9]+)+([-.]?((a|b|rc|alpha|beta|pre|preview|post|dev)[.]?[0-9]*))*([+][0-9A-Za-z.-]+)?$'
 
 # One batch query via `uv tool list --outdated` (text form, no --json). The
 # parse depends on that form; if uv changes it, we detect the drift instead of
@@ -72,7 +84,8 @@ uv_query_outdated() {
     local row bad=0
     while IFS= read -r row; do
         [[ -n "$row" ]] || continue
-        if [[ ! "$row" =~ ^[^[:space:]]+\ v?[0-9]+([.][0-9]+)+\ v?[0-9]+([.][0-9]+)+$ ]]; then
+        read -r _name _cur _latest <<<"$row"
+        if [[ ! "$_cur" =~ $UV_VERSION_RE || ! "$_latest" =~ $UV_VERSION_RE ]]; then
             bad=1
         fi
     done <<<"$parsed"
@@ -108,11 +121,30 @@ uv_list_installed() {
     }' <<<"$listed"
 }
 
+# "pkg version" → "bin version" via the manifest (eco's identity).
+uv_installed_by_bin() {
+    local rows pkg ver i bin
+    # Read first, then loop: piping into `while` would make the pipeline status
+    # the loop's (always 0) and turn a failed listing into "nothing installed".
+    rows="$(uv_list_installed)" || return 1
+    while read -r pkg ver; do
+        [[ -n "$pkg" ]] || continue
+        bin="$pkg"
+        for i in "${!ECO_CONF_PKGS[@]}"; do
+            if [[ "${ECO_CONF_PKGS[i]}" == "$pkg" ]]; then
+                bin="${ECO_CONF_BINS[i]}"
+                break
+            fi
+        done
+        printf '%s %s\n' "$bin" "$ver"
+    done <<<"$rows"
+}
+
 uv_list_rows() {
     local installed_rows latest_rows="" outdated_out="" outdated_rc=0 query_failed=0
     if ! installed_rows="$(uv_list_installed 2>/dev/null)"; then
         warn "uv tool list failed; cannot list Python CLIs" >&2
-        return 0
+        return 1
     fi
     [[ -n "$installed_rows" ]] || return 0
     outdated_out="$(uv_query_outdated 2>/dev/null)" || outdated_rc=$?
@@ -136,56 +168,15 @@ uv_list_rows() {
 
 # ── dispatch ────────────────────────────────────────────────────
 main() {
-    local verb="${1:-}"
-    case "$verb" in
-        ""|-h|--help)
-            echo "usage: $0 --list | --outdated | --install-manifest | --install-one <bin> <pkg> [flag] | --update-one <bin> <pkg> [flag] | --uninstall-one <bin> <pkg> [flag] | -h|--help"
-            return 0
-            ;;
-        --list)
-            # shellcheck disable=SC2034  # reserved for read-only distinction
-            CLI_READ_ONLY=1
-            # shellcheck disable=SC2034  # read by msg() in common.sh
-            CLI_MACHINE_OUTPUT=1
-            uv_ensure || return 0
-            uv_list_rows || true
-            return 0
-            ;;
-        --outdated)
-            # shellcheck disable=SC2034  # reserved for read-only distinction
-            CLI_READ_ONLY=1
-            # shellcheck disable=SC2034  # read by msg() in common.sh
-            CLI_MACHINE_OUTPUT=1
-            uv_ensure || return 1
-            uv_query_outdated
-            ;;
-        --install-manifest)
-            uv_ensure || return 0
-            eco_manifest_install uv_install_one "uv tool" "$(channel_detect uv)"
-            ;;
-        --install-one)
-            shift
-            (($# >= 2)) || { warn "usage: $0 --install-one <bin> <pkg> [flag]"; return 2; }
-            uv_ensure || return 0
-            uv_install_one "$1" "$2" "${3:-}"
-            ;;
-        --update-one)
-            shift
-            (($# >= 2)) || { warn "usage: $0 --update-one <bin> <pkg> [flag]"; return 2; }
-            uv_ensure || return 0
-            uv_update_one "$1" "$2" "${3:-}"
-            ;;
-        --uninstall-one)
-            shift
-            (($# >= 1)) || { warn "usage: $0 --uninstall-one <bin> <pkg> [flag]"; return 2; }
-            uv_ensure || return 0
-            uv_uninstall_one "$1" "$2" "${3:-}"
-            ;;
-        *)
-            warn "unknown option '$verb' (supported: --list, --outdated, --install-manifest, --install-one, --update-one, --uninstall-one, -h|--help)"
-            return 1
-            ;;
-    esac
+    channel_dispatch \
+        uv_ensure uv_install_one uv_update_one uv_uninstall_one \
+        uv_list_rows uv_installed_by_bin uv_query_outdated uv_manifest_install \
+        "$@"
+}
+
+# install every selected eco.conf row for this channel.
+uv_manifest_install() {
+    eco_manifest_install uv_install_one "uv tool" "$(channel_detect uv)"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

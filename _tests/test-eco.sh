@@ -134,16 +134,28 @@ elif [[ "$*" == *'npm outdated'* ]]; then
     fi
     exit "${MOCK_OUTDATED_EXIT:-0}"
 elif [[ "$*" == *'npm ls'* ]]; then
-    if [[ -n "${MOCK_LS_JSON:-}" ]]; then
+    # A real install changes what `npm ls` reports. The mock writes the post
+    # install state to MOCK_LS_FILE so update can observe a real transition.
+    if [[ -n "${MOCK_LS_FILE:-}" && -f "$MOCK_LS_FILE" ]]; then
+        printf '%s' "$(cat "$MOCK_LS_FILE")"
+    elif [[ -n "${MOCK_LS_JSON:-}" ]]; then
         printf '%s' "$MOCK_LS_JSON"
     else
         printf '{}'
     fi
+elif [[ "$*" == *'npm install -g'* || "$*" == *'npm uninstall -g'* ]]; then
+    # A real mutation changes what `npm ls` reports afterwards.
+    if [[ -n "${MOCK_LS_FILE:-}" && -n "${MOCK_LS_AFTER:-}" ]]; then
+        printf '%s' "$MOCK_LS_AFTER" > "$MOCK_LS_FILE"
+    fi
+    exit 0
 elif [[ "$*" == *'node -e'* ]]; then
     if [[ -n "${MOCK_HOST_NODE:-}" ]]; then
         # fnm exec: --using lts-latest -- node -e <script> <args...>
-        # argv: $6=script $7=arg1 $8=arg2 $9=arg3
-        "$MOCK_HOST_NODE" "$6" "$7" "$8" "$9" 2>/dev/null || "$MOCK_HOST_NODE" "$6" "$7" "$8" 2>/dev/null || true
+        # argv: $6=script $7=arg1 $8=arg2 $9=arg3. The exit status must
+        # survive: a script that rejects its input is how npm's error payload
+        # is detected, and swallowing it hides a broken latest query.
+        "$MOCK_HOST_NODE" "$6" "$7" "$8" "$9"
     else
         printf '%s' "${MOCK_OUTDATED_LINES:-}"
     fi
@@ -166,16 +178,17 @@ HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
 [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 0 ]] \
     || fail "non-interactive manifest must not install n-rows"
 
-# Pre-approved n-row installs even in non-interactive mode.
+# -y overrides the manifest's y/n column: every missing row installs.
 : > "$FNM_LOG"
-HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=codex \
+HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
     PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-npm.sh" --install-manifest >/dev/null 2>&1 \
-    || fail "a pre-approved manifest install must not fail"
-[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
-    || fail "a pre-approved n-row must install in non-interactive mode"
+    || fail "a -y manifest install must not fail"
 grep -q '@openai/codex' "$FNM_LOG" \
-    || fail "the pre-approved row must install its own package"
+    || fail "-y must install n-rows too, not only the y-rows"
+# Every n-row is a distinct package, so the count is the n-row count.
+[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 8 ]] \
+    || fail "-y must install all eight n-rows, got $(grep -c 'npm install -g ' "$FNM_LOG" || true)"
 
 # Seat all conf bins to prevent manifest installs from triggering in later tests.
 # shellcheck disable=SC1091
@@ -193,10 +206,13 @@ HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
 grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=esbuild,workerd wrangler$' "$FNM_LOG" \
     || fail "--install-one must carry the flag"
 
-# --install-one with a missing runtime skips cleanly (exit 0).
+# --install-one with a missing runtime skips with the dedicated "nothing done"
+# code (3), so the caller can tell a skip from a completed install.
+rc=0
 FNM_PREFIX="" HOME="$NPM_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ROOT/_install/install-by-npm.sh" --install-one foo foo-pkg >/dev/null 2>&1 \
-    || fail "a missing runtime must skip --install-one cleanly"
+    bash "$ROOT/_install/install-by-npm.sh" --install-one foo foo-pkg >/dev/null 2>&1 || rc=$?
+[[ "$rc" == 3 ]] \
+    || fail "a missing runtime must signal 'nothing done' (exit 3), got $rc"
 
 # --update-one: upgrades with @latest.
 : > "$FNM_LOG"
@@ -420,15 +436,23 @@ elif [[ "$1" == env && "$2" == -w ]]; then
 elif [[ "$1" == env && "$2" == GOENV ]]; then
     printf '%s\n' "${GO_ENV_FILE:-}"
 elif [[ "$1" == version && "$2" == -m ]]; then
-    name="$(basename "$3")"
-    eval "pkg=\${MOCK_GO_PKG_$name:-}; cur=\${MOCK_GO_CUR_$name:-}"
-    if [[ -n "$pkg" ]]; then
-        eval "path=\${MOCK_GO_PATH_$name:-\$pkg}"
-        printf 'path\t%s\n' "$path"
-        printf 'mod\t%s\t%s\n' "$pkg" "$cur"
-    else
-        exit 1
-    fi
+    # Real `go version -m` accepts several files and prefixes each section
+    # with "<path>: go1.x". eco passes the whole prefix in one call, so the
+    # mock must support the multi-file form too.
+    rc=0
+    for f in "${@:3}"; do
+        name="$(basename "$f")"
+        eval "pkg=\${MOCK_GO_PKG_$name:-}; cur=\${MOCK_GO_CUR_$name:-}"
+        if [[ -n "$pkg" ]]; then
+            eval "path=\${MOCK_GO_PATH_$name:-\$pkg}"
+            printf '%s: go1.27.1\n' "$f"
+            printf '\tpath\t%s\n' "$path"
+            printf '\tmod\t%s\t%s\n' "$pkg" "$cur"
+        else
+            rc=1
+        fi
+    done
+    exit "$rc"
 elif [[ "$1" == list && "$2" == -m ]]; then
     if [[ -n "${MOCK_GO_LIST_FAIL:-}" ]]; then
         printf '%s\n' 'proxy unreachable' >&2
@@ -537,6 +561,55 @@ grep -q 'golang.org/x/tools/gopls v0.18.0 v0.19.0' "$TMP/go-outdated.out" \
 ! grep -q 'gofumpt' "$TMP/go-outdated.out" \
     || fail "an up-to-date go tool must not appear in --outdated"
 
+# A failed `go env -w` is best effort, not fatal: the tools must still install
+# into ~/.local/bin. A fresh HOME: earlier cases seat gopls/gofumpt, and manifest install is
+# idempotent, so a shared HOME would skip the installs under test.
+GOLAYOUT_HOME="$TMP/go-layout-home"
+mkdir -p "$GOLAYOUT_HOME"
+BAD_GO_BIN="$TMP/bad-go-bin"
+mkdir -p "$BAD_GO_BIN"
+cat > "$BAD_GO_BIN/go" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == env && "$2" == -w ]]; then
+    printf '%s\n' 'go env is disabled' >&2
+    exit 1
+fi
+if [[ "$1" == install ]]; then
+    printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
+fi
+if [[ "$1" == env && "$2" == GOENV ]]; then
+    printf '%s\n' "${GO_ENV_FILE:-}"
+fi
+EOF
+chmod +x "$BAD_GO_BIN/go"
+: > "$GO_LOG"
+HOME="$GOLAYOUT_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$BAD_GO_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" --install-manifest >"$TMP/go-bad.out" 2>&1 \
+    || fail "a failed go env -w must not fail the Go channel"
+grep -q 'go env -w failed' "$TMP/go-bad.out" \
+    || fail "a failed go env -w must be reported"
+[[ "$(grep -c 'tool=' "$GO_LOG" || true)" == 2 ]] \
+    || fail "tools must still install after a failed go env -w"
+
+# An exported Go value is reported as winning over GOENV.
+rm -rf "$GOLAYOUT_HOME/.local"
+: > "$GO_LOG"
+HOME="$GOLAYOUT_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$MOCK_GO:/usr/bin:/bin" \
+    GOMODCACHE="$TMP/exported-mod" \
+    bash "$ROOT/_install/install-by-go.sh" --install-manifest >"$TMP/go-export.out" 2>&1 \
+    || fail "an exported Go value must not fail the channel"
+grep -q "GOMODCACHE=$TMP/exported-mod is exported in this shell" "$TMP/go-export.out" \
+    || fail "an exported Go value must be reported as winning over GOENV"
+
+# Go's built-in defaults must never be reported as user config.
+rm -rf "$GOLAYOUT_HOME/.local"
+: > "$GO_LOG"
+HOME="$GOLAYOUT_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" --install-manifest >"$TMP/go-defaults.out" 2>&1 \
+    || fail "a clean Go environment must not fail"
+! grep -qE 'replacing it with|is exported in this shell' "$TMP/go-defaults.out" \
+    || fail "Go's built-in defaults must not be reported as user config"
+
 # A failed module-proxy query is an error.
 : > "$GO_LOG"
 if HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
@@ -547,11 +620,14 @@ if HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
     fail "a failed go list -m must propagate as failure"
 fi
 
-# --uninstall-one: removes the binary via rm.
+# --uninstall-one: removes the binary via rm. The fixture must carry Go module
+# metadata: the removal path refuses to delete a file that is not a Go binary
+# (CLI_BIN_DIR is shared with npm/uv, so a blind rm would delete their tool).
 mkdir -p "$GO_HOME/.local/bin"
 touch "$GO_HOME/.local/bin/gopls" "$GO_HOME/.local/bin/gofumpt"
 chmod +x "$GO_HOME/.local/bin/gopls" "$GO_HOME/.local/bin/gofumpt"
 HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_GO_PKG_gopls=golang.org/x/tools/gopls MOCK_GO_CUR_gopls=v0.18.0 \
     PATH="$MOCK_GO:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-go.sh" --uninstall-one gopls golang.org/x/tools/gopls "" \
     >/dev/null 2>&1 || fail "--uninstall-one must not fail"
@@ -560,15 +636,20 @@ HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
 [[ -x "$GO_HOME/.local/bin/gofumpt" ]] \
     || fail "an unnamed go tool must stay"
 
-# P0 regression: a PATH-only go binary is not in the canonical prefix —
-# the guard must skip the rm (which would silently "succeed" and lie).
+# A PATH-only go binary is not in the canonical prefix —
+# the guard must skip the rm (which would silently "succeed" and lie), and it
+# must not report success for work it did not do.
 rm -f "$GO_HOME/.local/bin/gofumpt"
-HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+if HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
     PATH="$TMP/elsewhere:$MOCK_GO:/usr/bin:/bin" \
     bash "$ROOT/_install/install-by-go.sh" --uninstall-one gofumpt mvdan.cc/gofumpt "" \
-    >"$TMP/go-p0.out" 2>&1 || fail "a PATH-only go uninstall must not fail"
-grep -q 'not found in' "$TMP/go-p0.out" \
-    || fail "a PATH-only go binary must be reported as not in the prefix"
+    >"$TMP/go-p0.out" 2>&1; then
+    fail "a PATH-only go uninstall must report that nothing was removed"
+fi
+grep -q 'not managed by eco' "$TMP/go-p0.out" \
+    || fail "a PATH-only go binary must be reported as unmanaged, not merely missing"
+grep -q "$TMP/elsewhere/gofumpt" "$TMP/go-p0.out" \
+    || fail "a PATH-only go uninstall must say where the binary actually lives"
 [[ -x "$TMP/elsewhere/gofumpt" ]] \
     || fail "a PATH-only gofumpt must stay untouched"
 
@@ -683,6 +764,9 @@ grep -q 'ripgrep 14.1.0 14.1.1' "$TMP/cargo-list.out" \
 ECO_OUT="$TMP/eco.out"
 
 # Batch confirm: one 'y' on stdin approves all pending targets.
+# update now runs from the installed snapshot (no network pre-query), so the
+# fixture is "what npm ls reports" — and the mock rewrites that snapshot when
+# an install runs, which is how a real package manager behaves.
 ECO_HOME="$TMP/eco-home"
 mkdir -p "$ECO_HOME/.local/bin"
 for b in biome stylua wrangler; do
@@ -690,68 +774,139 @@ for b in biome stylua wrangler; do
     chmod +x "$ECO_HOME/.local/bin/$b"
 done
 : > "$FNM_LOG"
+UPD_LS="$TMP/upd-ls.json"
+printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$UPD_LS"
 printf 'y\n' | HOME="$ECO_HOME" \
-    MOCK_OUTDATED_JSON='{"wrangler":{"current":"3.0.0","latest":"4.0.0"}}' MOCK_OUTDATED_EXIT=1 \
+    MOCK_LS_FILE="$UPD_LS" \
+    MOCK_LS_AFTER='{"dependencies":{"wrangler":{"version":"4.0.0"}}}' \
     PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ECO" node update >"$ECO_OUT" 2>&1 \
     || fail "an approved eco update must not fail"
-grep -q 'update available: wrangler' "$ECO_OUT" \
-    || fail "eco update must list the outdated row"
 [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
     || fail "an approved eco update must run exactly one upgrade"
 grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=esbuild,workerd wrangler@latest' "$FNM_LOG" \
     || fail "the eco update must carry wrangler's flag"
+# The transition is reported from the reads around the action.
+grep -qE 'wrangler updated \(3\.0\.0 → 4\.0\.0\)' "$ECO_OUT" \
+    || fail "eco update must report the observed version transition"
+! grep -q 'npm outdated' "$FNM_LOG" \
+    || fail "update must not run an outdated pre-query any more"
 
-# Non-interactive without pre-approval: nothing upgrades.
+# Non-interactive without -y: declines, and says so.
 : > "$FNM_LOG"
 HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
-    MOCK_OUTDATED_JSON='{"wrangler":{"current":"3.0.0","latest":"4.0.0"}}' MOCK_OUTDATED_EXIT=1 \
+    MOCK_LS_JSON='{"dependencies":{"wrangler":{"version":"3.0.0"}}}' \
     PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ECO" node update >"$ECO_OUT" 2>&1 \
     || fail "a declined eco update must not fail"
 [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 0 ]] \
-    || fail "without pre-approval a non-interactive eco update must install nothing"
-grep -q 'no npm CLIs approved' "$ECO_OUT" \
-    || fail "a fully declined eco update must say so"
+    || fail "without -y a non-interactive eco update must install nothing"
+grep -q 'nothing was updated' "$ECO_OUT" \
+    || fail "a declined eco update must say nothing was done"
 
-# Pre-approved update skips the question.
+# -y update skips the question and reports the transition.
 : > "$FNM_LOG"
-HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=wrangler \
-    MOCK_OUTDATED_JSON='{"wrangler":{"current":"3.0.0","latest":"4.0.0"}}' MOCK_OUTDATED_EXIT=1 \
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_JSON='{"dependencies":{"wrangler":{"version":"3.0.0"}}}' \
     PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ECO" node update >"$ECO_OUT" 2>&1 \
-    || fail "a pre-approved eco update must not fail"
+    bash "$ECO" node update -y >"$ECO_OUT" 2>&1 \
+    || fail "a -y eco update must not fail"
 [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
-    || fail "a pre-approved eco update must upgrade"
+    || fail "-y must upgrade without asking"
 
 # Named update: direct upgrade, no outdated query.
 : > "$FNM_LOG"
-HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=wrangler \
+UP_LS="$TMP/up-ls.json"
+printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$UP_LS"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$UP_LS" MOCK_LS_AFTER='{"dependencies":{"wrangler":{"version":"4.0.0"}}}' \
     PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ECO" node update wrangler >"$ECO_OUT" 2>&1 \
+    bash "$ECO" node update -y wrangler >"$ECO_OUT" 2>&1 \
     || fail "a named eco update must not fail"
 ! grep -q 'npm outdated' "$FNM_LOG" \
     || fail "a named eco update must skip the outdated query"
 [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
     || fail "a named eco update must run exactly one upgrade"
+# A target the channel does not report is refused rather than "updated".
+: > "$FNM_LOG"
+printf '%s' '{"dependencies":{}}' > "$UP_LS"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$UP_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y wrangler >"$ECO_OUT" 2>&1 \
+    || fail "updating an absent package must not fail the run"
+! grep -q 'npm install -g ' "$FNM_LOG" \
+    || fail "updating an absent package must not run an upgrade"
+grep -q 'is not installed via npm; nothing to update' "$ECO_OUT" \
+    || fail "updating an absent package must say it is not installed"
 
 # Named install with a raw pkg (not in conf).
 : > "$FNM_LOG"
-HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=cowsay \
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
     PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ECO" node install cowsay >"$ECO_OUT" 2>&1 \
+    bash "$ECO" node install -y cowsay >"$ECO_OUT" 2>&1 \
     || fail "a raw-pkg eco install must not fail"
 grep -qE -- 'npm install -g --prefix [^ ]+ cowsay$' "$FNM_LOG" \
     || fail "a raw pkg must install by its own name"
 
-# Uninstall with conf bin resolution.
+# Uninstall with conf bin resolution. Removal asks; this run answers the prompt.
+# The fixture must report the bin as installed: eco decides existence from its
+# own snapshot, never from a package manager's exit code.
+UN_LS="$TMP/un-ls.json"
+printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$UN_LS"
 : > "$FNM_LOG"
-HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=wrangler \
+printf 'y\n' | env -u DOTFILES_NON_INTERACTIVE HOME="$ECO_HOME" \
+    MOCK_LS_FILE="$UN_LS" MOCK_LS_AFTER='{"dependencies":{}}' \
     PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ECO" node uninstall wrangler >"$ECO_OUT" 2>&1 \
-    || fail "an eco uninstall must not fail"
+    || fail "an approved eco uninstall must not fail"
 grep -qE -- 'npm uninstall -g --prefix [^ ]+ wrangler$' "$FNM_LOG" \
     || fail "the eco uninstall must remove the package"
+grep -q 'wrangler uninstalled' "$ECO_OUT" \
+    || fail "a verified removal must be reported as done"
+
+# A removal that the package manager claims but did not perform is a failure:
+# npm exits 0 for a package that is still there.
+printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$UN_LS"
+: > "$FNM_LOG"
+rc=0
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$UN_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y wrangler >"$ECO_OUT" 2>&1 || rc=$?
+[[ "$rc" == 1 ]] || fail "an unverified removal must fail, got $rc"
+grep -q 'was not removed' "$ECO_OUT" \
+    || fail "an unverified removal must say the bin is still installed"
+
+# A target that is not installed is refused before npm is asked: npm would
+# exit 0 and eco would otherwise report a success that never happened.
+: > "$FNM_LOG"
+rc=0
+printf '%s' '{"dependencies":{}}' > "$UN_LS"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$UN_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y ghost-pkg >"$ECO_OUT" 2>&1 || rc=$?
+[[ "$rc" == 0 ]] || fail "removing an absent package must not fail, got $rc"
+# `npm ls` is how the snapshot is read, so the log is not empty; what must be
+# absent is the removal call itself.
+! grep -q 'npm uninstall' "$FNM_LOG" \
+    || fail "an absent package must never reach npm uninstall"
+grep -q 'is not installed via npm' "$ECO_OUT" \
+    || fail "an absent package must be reported as not installed"
+
+# Removal always asks unless -y is given.
+printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$UN_LS"
+: > "$FNM_LOG"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$UN_LS" MOCK_LS_AFTER='{"dependencies":{}}' \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall wrangler >"$ECO_OUT" 2>&1 \
+    || fail "a declined eco uninstall must not fail"
+! grep -q 'npm uninstall' "$FNM_LOG" \
+    || fail "a non-interactive uninstall without -y must not remove anything"
+grep -q 'nothing was uninstalled' "$ECO_OUT" \
+    || fail "a declined uninstall must say nothing was removed"
 
 # eco list: renders a table with conf bin mapping.
 MOCK_LS_ECO='{"dependencies":{"@biomejs/biome":{"version":"1.9.4"},"wrangler":{"version":"3.0.0"}}}'
@@ -778,35 +933,39 @@ grep -q 'DOTFILES_SKIP_ECOSYSTEM_TOOLS' "$ECO_OUT" \
 [[ ! -s "$FNM_LOG" ]] \
     || fail "a skipped manifest install must not run any npm command"
 
-# DOTFILES_SKIP_ECOSYSTEM_TOOLS does not gate a named install.
+# DOTFILES_SKIP_ECOSYSTEM_TOOLS does not gate a named install. The target must
+# not already be seated: a named install is idempotent, so an installed bin is
+# reported and skipped before the gate would even matter.
 : > "$FNM_LOG"
 HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_SKIP_ECOSYSTEM_TOOLS=1 \
-    DOTFILES_ACCEPT_TOOLS=biome \
     PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ECO" node install biome >"$ECO_OUT" 2>&1 \
+    bash "$ECO" node install -y codex >"$ECO_OUT" 2>&1 \
     || fail "a named install must not be skipped by the gate"
 [[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
     || fail "a named install must run despite the skip gate"
 
-# Failed query propagates.
+# A failed outdated query is still an error at the channel level. `list`
+# degrades the latest column to "?" instead of failing (it still has data to
+# show), so the failure is pinned where it is actionable: --outdated.
 if HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_JSON='{"dependencies":{"wrangler":{"version":"3.0.0"}}}' \
     MOCK_OUTDATED_JSON='{"error":{"code":"ENETUNREACH"}}' MOCK_OUTDATED_EXIT=254 \
+    MOCK_HOST_NODE="$(command -v node)" \
     PATH="$NPM_BIN:/usr/bin:/bin" \
-    bash "$ECO" node update >/dev/null 2>&1; then
-    fail "a failed eco outdated query must propagate as failure"
+    bash "$ROOT/_install/install-by-npm.sh" --outdated >/dev/null 2>&1; then
+    fail "a failed outdated query must propagate as failure"
 fi
 
-# Legacy var fallback: DOTFILES_ACCEPT_INSTALLS still pre-approves.
+# The old pre-approval variables are gone: setting them must have no effect.
 : > "$FNM_LOG"
 HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_INSTALLS=wrangler \
+    DOTFILES_ACCEPT_TOOLS=wrangler \
     MOCK_OUTDATED_JSON='{"wrangler":{"current":"3.0.0","latest":"4.0.0"}}' MOCK_OUTDATED_EXIT=1 \
     PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ECO" node update >"$ECO_OUT" 2>&1 \
-    || fail "the legacy accept var must not fail"
-[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
-    || fail "the legacy accept var must pre-approve"
-grep -q 'DOTFILES_ACCEPT_INSTALLS is deprecated' "$ECO_OUT" \
-    || fail "the legacy accept var must warn about deprecation"
+    || fail "a removed accept var must not fail the run"
+[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 0 ]] \
+    || fail "DOTFILES_ACCEPT_TOOLS must no longer pre-approve anything"
 
 # ── curl channel (preserved) ────────────────────────────────────
 MOCK_CURL_BIN="$TMP/mock-curl-bin"
@@ -830,5 +989,531 @@ while IFS= read -r args; do
     [[ "$args" == *"--fail"* && "$args" == *"--show-error"* && "$args" == *"--location"* ]] \
         || fail "curl must use hardened failure and redirect handling"
 done < "$CURL_LOG"
+
+# ── cargo channel honesty ───────────────────────────
+# A broken cargo (install --list fails) must not read as "nothing installed":
+# that used to report "all installed cargo CLIs are up to date" with exit 0.
+BROKEN_CARGO="$TMP/broken-cargo"
+mkdir -p "$BROKEN_CARGO"
+cat > "$BROKEN_CARGO/cargo" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1 $2" == "install --list" ]]; then
+    printf '%s\n' 'error: failed to read the crate registry' >&2
+    exit 1
+fi
+exit 0
+EOF
+chmod +x "$BROKEN_CARGO/cargo"
+
+if HOME="$CARGO_HOME" PATH="$BROKEN_CARGO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-cargo.sh" --list >"$TMP/cargo-broken-list.out" 2>&1; then
+    fail "a failed cargo install --list must not report an empty list as success"
+fi
+grep -q 'cannot list Rust CLIs' "$TMP/cargo-broken-list.out" \
+    || fail "a failed cargo listing must be reported"
+if HOME="$CARGO_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$BROKEN_CARGO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-cargo.sh" --outdated >/dev/null 2>&1; then
+    fail "a failed cargo listing must not pass as 'up to date'"
+fi
+
+# Machine output: --list/--outdated must keep stdout data-only. Without
+# CLI_MACHINE_OUTPUT the channel's own warnings land in the table.
+CARGO_NOPATH="$TMP/nocargo-path"
+mkdir -p "$CARGO_NOPATH"
+for cmd in env dirname bash; do
+    ln -sf "$(command -v "$cmd")" "$CARGO_NOPATH/$cmd"
+done
+HOME="$CARGO_HOME" PATH="$CARGO_NOPATH:/nonexistent" \
+    bash "$ROOT/_install/install-by-cargo.sh" --list >"$TMP/cargo-stdout.out" 2>"$TMP/cargo-stderr.out" || true
+[[ ! -s "$TMP/cargo-stdout.out" ]] \
+    || fail "a cargo --list warning must not pollute stdout"
+grep -q 'skipping Rust CLI lifecycle' "$TMP/cargo-stderr.out" \
+    || fail "the cargo warning must still reach stderr"
+HOME="$CARGO_HOME" PATH="$CARGO_NOPATH:/nonexistent" \
+    bash "$ROOT/_install/install-by-cargo.sh" --outdated >"$TMP/cargo-stdout2.out" 2>/dev/null || true
+[[ ! -s "$TMP/cargo-stdout2.out" ]] \
+    || fail "a cargo --outdated warning must not pollute stdout"
+
+# A pre-release latest is a legal version, not a parse failure.
+HOME="$CARGO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' \
+    MOCK_CARGO_LAT_ripgrep=14.1.1-rc.1 \
+    PATH="$MOCK_CARGO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-cargo.sh" --outdated >"$TMP/cargo-pre.out" 2>/dev/null \
+    || fail "a pre-release cargo version must not fail the outdated query"
+grep -q 'ripgrep 14.1.0 14.1.1-rc.1' "$TMP/cargo-pre.out" \
+    || fail "a pre-release cargo latest must be reported"
+
+# A channel with no manifest rows is not invoked at all (no stray runtime warning).
+HOME="$CARGO_HOME" PATH="$CARGO_NOPATH:/nonexistent" \
+    bash "$ECO" rust install >"$TMP/rust-empty.out" 2>&1 \
+    || fail "a channel with no rows must install nothing, cleanly"
+grep -q 'nothing to install' "$TMP/rust-empty.out" \
+    || fail "an empty channel must say there is nothing to install"
+! grep -q 'cargo not found' "$TMP/rust-empty.out" \
+    || fail "an empty channel must not warn about a runtime it never needed"
+
+# install is manifest-driven; update is not. A channel with no conf rows must
+# still upgrade what its package manager reports — the row count says nothing
+# about what is installed.
+: > "$CARGO_LOG"
+HOME="$CARGO_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' MOCK_CARGO_LAT_ripgrep=14.1.1 \
+    PATH="$MOCK_CARGO:/usr/bin:/bin" \
+    bash "$ECO" rust update -y >"$TMP/rust-update.out" 2>&1 \
+    || fail "eco rust update must upgrade installed crates"
+grep -q 'install --force --root' "$CARGO_LOG" \
+    || fail "a rowless channel must still run the upgrade"
+! grep -q 'nothing to update' "$TMP/rust-update.out" \
+    || fail "update must not be gated on the manifest row count"
+
+# ── uv version shapes ───────────────────────────────
+# Pre-release / post / dev latest versions are legal and must not abort the
+# whole update path (they used to fail the version shape check). The fixture
+# mirrors real uv output: the [latest: …] marker sits on the tool's own line.
+for ver in 0.18.0rc1 v0.18.0rc1 1.2.3.post1 0.9.0.dev0 0.17.1; do
+    HOME="$UV_HOME" DOTFILES_NON_INTERACTIVE=1 \
+        MOCK_UV_OUTDATED="ruff v0.17.0 [latest: $ver]
+- ruff" \
+        PATH="$MOCK_UV:/usr/bin:/bin" \
+        bash "$ROOT/_install/install-by-uv.sh" --outdated >"$TMP/uv-ver.out" 2>/dev/null \
+        || fail "uv latest '$ver' must be accepted"
+    grep -q "ruff 0.17.0 $ver" "$TMP/uv-ver.out" \
+        || fail "uv latest '$ver' must be reported"
+done
+
+# A garbage latest is still rejected.
+if HOME="$UV_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_UV_OUTDATED='ruff v0.17.0 [latest: not-a-version]
+- ruff' \
+    PATH="$MOCK_UV:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-uv.sh" --outdated >/dev/null 2>&1; then
+    fail "a non-version uv latest must still fail the shape check"
+fi
+
+# ── one-shot verb arg guards ────────────────────────
+# --uninstall-one needs both <bin> and <pkg>; a one-arg call used to die on
+# an unbound $2 instead of printing usage.
+for ch_script in install-by-npm.sh install-by-uv.sh install-by-go.sh install-by-cargo.sh; do
+    HOME="$TMP/guard-home" PATH="$NPM_BIN:$MOCK_UV:$MOCK_GO:$MOCK_CARGO:/usr/bin:/bin" \
+        bash "$ROOT/_install/$ch_script" --uninstall-one only-bin \
+        >"$TMP/guard.out" 2>&1 && fail "$ch_script --uninstall-one with one arg must fail"
+    grep -q 'usage:.*--uninstall-one <bin> <pkg>' "$TMP/guard.out" \
+        || fail "$ch_script must print the --uninstall-one usage on a missing arg"
+    ! grep -q 'unbound variable' "$TMP/guard.out" \
+        || fail "$ch_script must not die on an unbound variable"
+
+    # An unknown verb is a plain failure (1) for every channel. go has a
+    # channel-private verb hook, and a bare call there would trip `set -e`
+    # before the status could be read — the hook must report "not mine"
+    # (127) internally without leaking it to the caller.
+    rc=0
+    HOME="$TMP/guard-home" PATH="$NPM_BIN:$MOCK_UV:$MOCK_GO:$MOCK_CARGO:/usr/bin:/bin" \
+        bash "$ROOT/_install/$ch_script" --no-such-verb >"$TMP/guard.out" 2>&1 || rc=$?
+    [[ "$rc" == 1 ]] || fail "$ch_script --no-such-verb must exit 1, got $rc"
+    grep -q 'unknown option' "$TMP/guard.out" \
+        || fail "$ch_script must report an unknown verb"
+done
+
+# ── version selectors are refused ───────────────────
+# eco does not pin versions: the package managers disagree on what `pkg@ver`
+# means, so it is rejected once instead of being reinterpreted per channel.
+for spec in 'wrangler@3' '@biomejs/biome@2.0.0' 'gopls@v0.18.0'; do
+    : > "$FNM_LOG"
+    : > "$GO_LOG"
+    rc=0
+    HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+        PATH="$NPM_BIN:$MOCK_GO:/usr/bin:/bin" \
+        bash "$ECO" node install -y "$spec" >"$ECO_OUT" 2>&1 || rc=$?
+    [[ "$rc" == 1 ]] || fail "'$spec' must be refused with exit 1, got $rc"
+    grep -q 'version selectors are not supported' "$ECO_OUT" \
+        || fail "'$spec' must be refused with an explanation"
+    [[ ! -s "$FNM_LOG" ]] \
+        || fail "'$spec' must never reach npm"
+done
+
+# A scoped name is not a version selector: @scope/name must still work.
+# A fresh HOME: ECO_HOME already has biome seated, and a named install of an
+# installed bin is skipped before npm is ever called.
+mkdir -p "$TMP/scoped-home"
+: > "$FNM_LOG"
+HOME="$TMP/scoped-home" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -y '@biomejs/biome' >"$ECO_OUT" 2>&1 \
+    || fail "a scoped package name must still be installable"
+grep -q '@biomejs/biome' "$FNM_LOG" \
+    || fail "a scoped package must reach npm untouched"
+
+# ── update reports the real transition ──────────────
+# No network pre-query: eco reads the installed version, runs the update, reads
+# again, and reports what actually happened.
+TR_LS="$TMP/tr-ls.json"
+printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$TR_LS"
+: > "$FNM_LOG"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$TR_LS" MOCK_LS_AFTER='{"dependencies":{"wrangler":{"version":"4.0.0"}}}' \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y wrangler >"$ECO_OUT" 2>&1 \
+    || fail "a named update must not fail"
+grep -q 'wrangler updated (3.0.0 → 4.0.0)' "$ECO_OUT" \
+    || fail "a named update must report from-version → to-version"
+! grep -q 'npm outdated' "$FNM_LOG" \
+    || fail "update must not need an outdated pre-query"
+
+# Nothing changed: say so instead of claiming an update.
+printf '%s' '{"dependencies":{"wrangler":{"version":"4.0.0"}}}' > "$TR_LS"
+: > "$FNM_LOG"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$TR_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y wrangler >"$ECO_OUT" 2>&1 \
+    || fail "an up-to-date update must not fail"
+grep -q 'already up to date (4.0.0)' "$ECO_OUT" \
+    || fail "an unchanged version must be reported as up to date"
+! grep -q 'wrangler updated' "$ECO_OUT" \
+    || fail "an unchanged version must not be reported as updated"
+
+# ── -y belongs to the verb ──────────────────────────
+# `list` never prompts, so -y there is a usage error rather than a no-op.
+rc=0
+bash "$ECO" node list -y >/dev/null 2>&1 || rc=$?
+[[ "$rc" == 2 ]] || fail "-y on list must be a usage error, got $rc"
+# Anything after the channel that looks like an option is a usage error, and
+# must never be silently ignored with exit 0.
+for bad in '-y' '--yes'; do
+    rc=0
+    bash "$ECO" "$bad" node list >/dev/null 2>&1 || rc=$?
+    [[ "$rc" == 2 ]] || fail "'$bad' before the channel must be a usage error, got $rc"
+done
+# -y after the verb is accepted and skipped confirmation.
+: > "$FNM_LOG"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$TR_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y >"$ECO_OUT" 2>&1 \
+    || fail "-y after the verb must be accepted"
+! grep -q 'declined' "$ECO_OUT" \
+    || fail "-y must skip the confirmation"
+
+# ── duplicate targets are collapsed ─────────────────
+: > "$FNM_LOG"
+HOME="$TMP/dup-home" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -y cowsay cowsay >"$ECO_OUT" 2>&1 \
+    || fail "duplicate install targets must not fail"
+[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
+    || fail "a repeated package must install exactly once"
+
+# ── help works without a valid manifest ─────────────
+BAD_MANIFEST="$TMP/help-bad.conf"
+printf 'bogus x y\n' > "$BAD_MANIFEST"
+for args in '--help' 'node --help'; do
+    # shellcheck disable=SC2086  # word splitting is the point
+    ECO_CONF="$BAD_MANIFEST" bash "$ECO" $args >/dev/null 2>&1 \
+        || fail "eco $args must work even when eco.conf is broken"
+done
+if ECO_CONF="$BAD_MANIFEST" bash "$ECO" node list >/dev/null 2>&1; then
+    fail "a broken eco.conf must still fail a real command"
+fi
+
+# ── named install is idempotent ─────────────────────
+mkdir -p "$TMP/idem-home/.local/bin"
+touch "$TMP/idem-home/.local/bin/biome"
+chmod +x "$TMP/idem-home/.local/bin/biome"
+: > "$FNM_LOG"
+HOME="$TMP/idem-home" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=biome \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install biome >"$ECO_OUT" 2>&1 \
+    || fail "a redundant named install must not fail"
+[[ ! -s "$FNM_LOG" ]] \
+    || fail "an already-installed bin must not be reinstalled by name"
+grep -q 'already installed' "$ECO_OUT" \
+    || fail "a redundant named install must say it was skipped"
+
+# ── list failures surface instead of reading as empty ──
+BROKEN_UV="$TMP/broken-uv"
+mkdir -p "$BROKEN_UV"
+cat > "$BROKEN_UV/uv" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$*" == 'tool list' ]]; then
+    printf '%s\n' 'error: cannot read tool state' >&2
+    exit 2
+fi
+exit 0
+EOF
+chmod +x "$BROKEN_UV/uv"
+if HOME="$UV_HOME" PATH="$BROKEN_UV:/usr/bin:/bin" \
+    bash "$ECO" py list >"$TMP/eco-list-fail.out" 2>&1; then
+    fail "a failed channel listing must not read as 'nothing installed'"
+fi
+grep -q 'listing uv CLIs failed' "$TMP/eco-list-fail.out" \
+    || fail "a failed channel listing must be reported"
+
+# ── bin names cannot escape the prefix ──────────────
+SLASH_CONF="$TMP/slash-bin.conf"
+printf 'node y ../../evil example.com/evil\n' > "$SLASH_CONF"
+if ECO_CONF="$SLASH_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null; then
+    fail "a bin containing a path separator must fail validation"
+fi
+
+# ── version-suffix detection ────────────────────────
+# One predicate decides whether a package argument carries a version selector.
+# Everything with a selector is refused; scoped names keep working because a
+# single leading '@' is npm scope syntax, not a selector.
+suffix_case() {
+    local spec="$1" want="$2" got
+    if bash -c 'source "$1"; pkg_has_selector "$2"' \
+        _ "$ROOT/_scripts/cli-lifecycle.sh" "$spec"; then
+        got=reject
+    else
+        got=accept
+    fi
+    [[ "$got" == "$want" ]] || fail "pkg_has_selector '$spec' gave '$got', wanted '$want'"
+}
+suffix_case 'wrangler'                  accept
+suffix_case '@biomejs/biome'            accept
+suffix_case '@scope/name'               accept
+suffix_case 'golang.org/x/tools/gopls'  accept
+suffix_case 'mvdan.cc/gofumpt'          accept
+suffix_case 'wrangler@3'                reject
+suffix_case '@scope/name@1.2.3'         reject
+suffix_case 'gopls@v0.18.0'             reject
+suffix_case 'foo@1.0.0'                 reject
+suffix_case 'cowsay2@npm:cowsay@1.5.0'  reject
+
+# ── a stale placeholder blocks a named install too ───
+# The manifest path clears a non-executable placeholder before installing; the
+# named path must do the same, or one entry point succeeds where the other
+# fails with "executable already exists".
+STALE_UV="$TMP/stale-uv"
+STALE_HOME="$TMP/stale-home"
+mkdir -p "$STALE_UV" "$STALE_HOME/.local/bin"
+cat > "$STALE_UV/uv" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1 $2" == "tool install" ]]; then
+    name="${3%%[=@]*}"
+    if [[ -e "$HOME/.local/bin/$name" ]]; then
+        printf 'error: Executable already exists: %s\n' "$name" >&2
+        exit 1
+    fi
+fi
+exit 0
+EOF
+chmod +x "$STALE_UV/uv"
+: > "$STALE_HOME/.local/bin/ruff"
+HOME="$STALE_HOME" DOTFILES_NON_INTERACTIVE=1 DOTFILES_ACCEPT_TOOLS=ruff \
+    PATH="$STALE_UV:/usr/bin:/bin" \
+    bash "$ECO" py install ruff >"$STALE_HOME/out.txt" 2>&1 \
+    || fail "a named install must clear a stale placeholder first"
+grep -q 'removed stale install entry' "$STALE_HOME/out.txt" \
+    || fail "a cleared placeholder must be reported"
+
+# ── a failed npm latest query is not 'current' ──────
+# npm prints an error object with exit 1 when the query fails; the list must
+# degrade that column to '?', not render the current version as latest.
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_JSON='{"dependencies":{"wrangler":{"version":"3.0.0"}}}' \
+    MOCK_OUTDATED_JSON='{"error":{"code":"EAI_AGAIN","summary":"getaddrinfo"}}' \
+    MOCK_OUTDATED_EXIT=1 \
+    MOCK_HOST_NODE="$(command -v node)" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node list >"$TMP/npm-err-list.out" 2>/dev/null \
+    || fail "eco list must survive a failed npm outdated query"
+grep -qE 'wrangler[[:space:]]+3\.0\.0[[:space:]]+\?' "$TMP/npm-err-list.out" \
+    || fail "a failed npm latest query must degrade to '?', not repeat the current version"
+
+# ── a failed snapshot is reported, not swallowed ─────
+# channel_installed returns rows on stdout, which every caller captures into a
+# variable. Its failure warning therefore has to go to stderr, or the user sees
+# a bare non-zero exit with no reason.
+BROKEN_LS_BIN="$TMP/broken-ls-bin"
+mkdir -p "$BROKEN_LS_BIN"
+cat > "$BROKEN_LS_BIN/fnm" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+    *'node --version'*) printf '%s\n' v24.0.0 ;;
+    *'npm prefix -g'*) printf '%s\n' /tmp/broken-ls-prefix ;;
+    *'npm ls'*) printf '%s\n' 'registry unreachable' >&2; exit 1 ;;
+esac
+exit 0
+EOF
+chmod +x "$BROKEN_LS_BIN/fnm"
+rc=0
+HOME="$TMP/broken-ls-home" PATH="$BROKEN_LS_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y wrangler >"$TMP/snap-fail.out" 2>&1 || rc=$?
+[[ "$rc" == 1 ]] || fail "an unreadable snapshot must fail the uninstall, got $rc"
+grep -q 'cannot read installed npm CLIs' "$TMP/snap-fail.out" \
+    || fail "an unreadable snapshot must say so on stderr"
+
+# ── a fresh machine is empty, not broken ────────────
+# npm exits 254 with an ENOENT error object when its global root does not exist
+# yet. That is "nothing installed", and must read that way — a false alarm on a
+# machine that has simply never installed an npm CLI is the same kind of lie as
+# reporting a success that did not happen.
+FRESH_BIN="$TMP/fresh-bin"
+FRESH_HOME="$TMP/fresh-home"
+mkdir -p "$FRESH_BIN" "$FRESH_HOME/.local"
+cat > "$FRESH_BIN/fnm" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+    *'node --version'*) printf '%s\n' v24.0.0 ;;
+    *'npm prefix -g'*) printf '%s\n' "$FRESH_PREFIX" ;;
+    *'npm ls'*)
+        printf '{"error":{"code":"ENOENT","summary":"ENOENT: no such file or directory, lstat '"'"'%s/lib'"'"'"}}' "$FRESH_PREFIX"
+        exit 254
+        ;;
+esac
+exit 0
+EOF
+chmod +x "$FRESH_BIN/fnm"
+export FRESH_PREFIX="$FRESH_HOME/.local"
+HOME="$FRESH_HOME" PATH="$FRESH_BIN:/usr/bin:/bin" \
+    bash "$ECO" node list >"$TMP/fresh.out" 2>&1 \
+    || fail "an empty npm root must not fail list"
+grep -q 'no npm CLIs found' "$TMP/fresh.out" \
+    || fail "an empty npm root must be reported as no CLIs"
+HOME="$FRESH_HOME" PATH="$FRESH_BIN:/usr/bin:/bin" DOTFILES_NON_INTERACTIVE=1 \
+    bash "$ECO" node update >"$TMP/fresh2.out" 2>&1 \
+    || fail "an empty npm root must not fail update"
+grep -q 'nothing to update' "$TMP/fresh2.out" \
+    || fail "an empty npm root must read as nothing to update"
+! grep -q 'cannot read installed' "$TMP/fresh2.out" \
+    || fail "an empty npm root must not be reported as unreadable"
+unset FRESH_PREFIX
+
+# ── a broken toolchain is not "nothing installed" ────
+# No Go metadata in the shared prefix is normal (npm/uv put scripts there), so a
+# scan that finds nothing must stay a success. A toolchain that cannot answer at
+# all is a different thing, and must not be reported as an empty channel.
+BROKEN_GO_BIN="$TMP/broken-go-bin"
+mkdir -p "$BROKEN_GO_BIN" "$TMP/broken-go-home/.local/bin"
+printf '#!/bin/sh\n' > "$TMP/broken-go-home/.local/bin/foo"
+chmod +x "$TMP/broken-go-home/.local/bin/foo"
+cat > "$BROKEN_GO_BIN/go" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1" == env && "$2" == GOENV ]]; then printf '\n'; exit 0; fi
+if [[ "$1" == version ]]; then exit 2; fi
+exit 0
+EOF
+chmod +x "$BROKEN_GO_BIN/go"
+rc=0
+HOME="$TMP/broken-go-home" PATH="$BROKEN_GO_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" --installed >"$TMP/gone.out" 2>&1 || rc=$?
+[[ "$rc" == 1 ]] || fail "a broken go toolchain must fail --installed, got $rc"
+grep -q 'go is not working' "$TMP/gone.out" \
+    || fail "a broken go toolchain must be reported"
+
+# ── a failed channel install propagates ─────────────
+# bootstrap.sh step 3 loops the four channels and warns per channel; that only
+# works if a failing manifest install returns non-zero (and does not abort the
+# loop). A channel whose runtime is broken must fail, not report success.
+BROKEN_INSTALL_UV="$TMP/broken-install-uv"
+mkdir -p "$BROKEN_INSTALL_UV"
+cat > "$BROKEN_INSTALL_UV/uv" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$1 $2" == 'tool install' ]]; then
+    printf '%s\n' 'error: no network' >&2
+    exit 1
+fi
+exit 0
+EOF
+chmod +x "$BROKEN_INSTALL_UV/uv"
+if HOME="$TMP/broken-install-home" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$BROKEN_INSTALL_UV:/usr/bin:/bin" \
+    bash "$ECO" py install >"$TMP/eco-install-fail.out" 2>&1; then
+    fail "a failed channel install must propagate so bootstrap can warn"
+fi
+grep -q 'install failed' "$TMP/eco-install-fail.out" \
+    || fail "a failed channel install must name the failing tool"
+
+# The loop's failure isolation: one broken channel must not stop the next.
+# A channel whose runtime is present but whose install fails must return
+# non-zero, so bootstrap's per-channel warn is reached.
+BROKEN_NODE_BIN="$TMP/broken-node-bin"
+mkdir -p "$BROKEN_NODE_BIN"
+cat > "$BROKEN_NODE_BIN/fnm" <<'EOF'
+#!/usr/bin/env bash
+# fnm exec --using lts-latest -- <cmd...>
+shift 4
+cmd="$1"; shift
+case "$cmd" in
+  node) if [[ "$1" == '--version' ]]; then printf '%s\n' v24.0.0; else exec "$MOCK_NODE" "$@"; fi ;;
+  npm) case "$*" in
+          'prefix -g') printf '%s\n' /tmp/loop-prefix ;;
+          'install --help') printf '%s\n' '--allow-scripts' ;;
+          'install -g'*) printf '%s\n' 'npm ERR! network' >&2; exit 1 ;;
+       esac
+esac
+EOF
+chmod +x "$BROKEN_NODE_BIN/fnm"
+loop_ran="$TMP/loop-ran.log"
+: > "$loop_ran"
+for _ch in node py; do
+    HOME="$TMP/loop-home" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+        MOCK_NODE="$(command -v node)" \
+        PATH="$BROKEN_NODE_BIN:$MOCK_UV:/usr/bin:/bin" \
+        bash "$ECO" "$_ch" install -y codex ruff >/dev/null 2>&1 \
+        || printf '%s\n' "$_ch" >> "$loop_ran"
+    # Keep the py run independent of whatever the node run left behind.
+    rm -rf "$TMP/loop-home/.local"
+done
+grep -q '^node$' "$loop_ran" \
+    || fail "a broken node channel must report failure"
+! grep -q '^py$' "$loop_ran" \
+    || fail "a broken node channel must not prevent the py channel from succeeding"
+
+# uv is never handed a selector: eco refuses it before the channel runs, so no
+# `ruff@0.14` (which uv would read as a local path) can reach `uv tool`.
+: > "$UV_LOG"
+HOME="$UV_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$MOCK_UV:/usr/bin:/bin" \
+    bash "$ECO" py update -y 'ruff@0.14' >"$TMP/uv-pin.out" 2>&1 \
+    && fail "a versioned uv update must be refused"
+grep -q 'version selectors are not supported' "$TMP/uv-pin.out" \
+    || fail "a versioned uv update must explain why it was refused"
+[[ ! -s "$UV_LOG" ]] \
+    || fail "a versioned spec must never reach uv"
+
+# ── removal takes a name, and only a name ───────────
+# There is no version to strip any more: a versioned uninstall is refused up
+# front instead of being silently rewritten.
+: > "$FNM_LOG"
+rc=0
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y 'wrangler@3' >"$ECO_OUT" 2>&1 || rc=$?
+[[ "$rc" == 1 ]] || fail "a versioned uninstall must be refused, got $rc"
+grep -q 'version selectors are not supported' "$ECO_OUT" \
+    || fail "a versioned uninstall must explain why it was refused"
+[[ ! -s "$FNM_LOG" ]] \
+    || fail "a versioned uninstall must never reach npm"
+
+# A scoped package keeps its scope when removed.
+SCOPED_LS="$TMP/scoped-ls.json"
+printf '%s' '{"dependencies":{"@biomejs/biome":{"version":"2.0.0"}}}' > "$SCOPED_LS"
+: > "$FNM_LOG"
+printf 'y\n' | env -u DOTFILES_NON_INTERACTIVE HOME="$ECO_HOME" \
+    MOCK_LS_FILE="$SCOPED_LS" MOCK_LS_AFTER='{"dependencies":{}}' \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall '@biomejs/biome' >"$ECO_OUT" 2>&1 \
+    || fail "a scoped uninstall must not fail"
+grep -qE -- 'npm uninstall -g --prefix [^ ]+ @biomejs/biome$' "$FNM_LOG" \
+    || fail "a scoped name must keep its scope on removal"
+
+# ── npm error reason is surfaced ────────────────────
+# The latest column degrades to "?", but the reason (e.g. a DNS failure
+# summary from npm's error payload) must be warned, not silently swallowed.
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_JSON='{"dependencies":{"wrangler":{"version":"3.0.0"}}}' \
+    MOCK_OUTDATED_JSON='{"error":{"code":"EAI_AGAIN","summary":"getaddrinfo EAI_AGAIN registry.npmjs.org"}}' \
+    MOCK_OUTDATED_EXIT=1 \
+    MOCK_HOST_NODE="$(command -v node)" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node list >"$TMP/npm-err-reason.out" 2>&1 \
+    || fail "eco list must survive a failed npm outdated query"
+grep -q 'npm outdated query failed: getaddrinfo' "$TMP/npm-err-reason.out" \
+    || fail "the npm error summary must be surfaced as a warning"
 
 echo "PASS eco lifecycle tests"

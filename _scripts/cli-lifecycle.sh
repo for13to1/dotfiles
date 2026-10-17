@@ -4,9 +4,9 @@
 #
 # Sourced (never executed). Layering:
 #   _scripts/common.sh        — generic shell infrastructure (output, prompts…)
-#   _scripts/cli-lifecycle.sh — this file: conf loading/validation, install
-#                               detection, outdated-query plumbing, and the
-#                               shared per-item manifest-install loop
+#   _scripts/cli-lifecycle.sh — this file: manifest loading/validation, install
+#                               detection, the shared manifest-install loop, and
+#                               the channel CLI shape (channel_dispatch)
 #   _scripts/eco.conf         — the declarative manifest (one row per CLI)
 #   _install/install-by-*.sh  — one channel each: runtime gate + per-action fns
 #   _install/eco.sh           — entrypoint: syntax, resolution, confirmation,
@@ -24,22 +24,18 @@ source "$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 # files outside it.
 CLI_BIN_DIR="$HOME/.local/bin"
 
-# ── Pre-approval ────────────────────────────────────────────────
-# DOTFILES_ACCEPT_TOOLS — user intent: auto-approve this bin everywhere
-#                         (space-separated bin names)
-# DOTFILES_ACCEPT_INSTALLS is the pre-rename spelling; it still works but warns
-# once so the name can be retired.
-is_pre_approved() {
-    local bin="$1"
-    if [[ -z "${DOTFILES_ACCEPT_TOOLS:-}" && -n "${DOTFILES_ACCEPT_INSTALLS:-}" \
-          && -z "${_DOTFILES_ACCEPT_INSTALLS_WARNED:-}" ]]; then
-        warn "DOTFILES_ACCEPT_INSTALLS is deprecated; use DOTFILES_ACCEPT_TOOLS"
-        _DOTFILES_ACCEPT_INSTALLS_WARNED=1
-    fi
-    case " ${DOTFILES_ACCEPT_TOOLS:-${DOTFILES_ACCEPT_INSTALLS:-}} " in
-        *" $bin "*) return 0 ;;
-    esac
-    return 1
+# ── Package names ───────────────────────────────────────────────
+# eco stores no versions: a channel's package manager reports them (`list`) or
+# resolves them (`install`/`update`). Any `pkg@selector` is therefore refused
+# rather than interpreted, because the three managers read that syntax
+# differently (npm: dist-tag/range/alias, uv: a local path, cargo:
+# `<crate>@<ver>`) and eco has no business guessing which was meant.
+#
+# A scoped npm name (one leading '@', e.g. @scope/name) is not a selector; any
+# further '@' is.
+pkg_has_selector() {
+    local pkg="$1"
+    [[ "${pkg#@}" == *@* ]]
 }
 
 # ── Install detection ───────────────────────────────────────────
@@ -52,29 +48,11 @@ channel_detect() {
     esac
 }
 
-# ── Outdated-query plumbing ─────────────────────────────────────
-# query_outdated <outdated_fn> <channel>
-# Runs the channel's one batch query into global OUTDATED_LINES
-# ("pkg current latest" rows). A failed query warns (stderr) and returns 1.
-query_outdated() {
-    local outdated_fn="$1" channel="$2" raw line rc=0
-    OUTDATED_LINES=()
-    raw="$("$outdated_fn")" || rc=$?
-    if (( rc != 0 )); then
-        warn "outdated query via $channel failed" >&2
-        return 1
-    fi
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && OUTDATED_LINES+=("$line")
-    done <<<"$raw"
-    return 0
-}
-
 # ── Manifest configuration (eco.conf) ───────────────────────────
 # Format per row: <渠道> <默认y|n> <bin> <pkg> [flag]
 #   渠道: node | py | go | rust (user-facing vocabulary)
 #   默认: y = install pre-selected, n = pre-skipped (confirm can flip)
-#   bin : identity key — detection, prompts, DOTFILES_ACCEPT_TOOLS all use it
+#   bin : identity key — detection, prompts and messages all use it
 #   pkg : install target (npm package / pip package / go module path / crate)
 #   flag: channel-specific flag passed before pkg ("" if none), no spaces
 #
@@ -90,7 +68,8 @@ ECO_CONF_DEFAULTS=()
 
 # eco_conf_load — parse and validate ECO_CONF into the ECO_CONF_* arrays.
 # Loudly fails on: unreadable file, empty manifest, malformed rows, unknown
-# channels, bad defaults, empty/duplicate bins or pkgs, flags with spaces.
+# channels, bad defaults, empty/duplicate bins or pkgs, bins with slashes,
+# flags with spaces.
 eco_conf_load() {
     [[ -f "$ECO_CONF" ]] || { warn "eco.conf not found: $ECO_CONF"; return 1; }
     ECO_CONF_CHANNELS=()
@@ -142,8 +121,10 @@ eco_conf_validate() {
             y|n) ;;
             *) warn "eco.conf entry '$bin': default must be y or n, got '$def'"; return 1 ;;
         esac
-        [[ -n "$bin" && "$bin" != *" "* ]] \
-            || { warn "eco.conf entry '$bin': bin must be non-empty and contain no spaces"; return 1; }
+        # A bin becomes a path under CLI_BIN_DIR and an argument to rm, so a
+        # separator would let a manifest row address files outside the prefix.
+        [[ -n "$bin" && "$bin" != *" "* && "$bin" != */* ]] \
+            || { warn "eco.conf entry '$bin': bin must be non-empty, with no spaces or slashes"; return 1; }
         [[ -n "$pkg" && "$pkg" != *" "* ]] \
             || { warn "eco.conf entry '$bin': pkg must be non-empty and contain no spaces"; return 1; }
         [[ "$flag" != *" "* ]] \
@@ -159,9 +140,8 @@ eco_conf_validate() {
 }
 
 # eco_conf_filter_channel <channel> — narrows the arrays to one channel's rows.
-# Empty-result guards are required throughout: bash < 4.4 treats an empty
-# array expansion under `set -u` as an unbound variable (macOS system bash is
-# 3.2, which CI's macos-latest runner uses).
+# Guards on possibly-empty arrays are not cosmetic: bash < 4.4 reads an empty
+# expansion under `set -u` as an unbound variable, and CI runs macOS bash 3.2.
 eco_conf_filter_channel() {
     local want="$1" i
     local -a c=() b=() p=() f=() d=()
@@ -193,10 +173,10 @@ eco_conf_filter_channel() {
 # Walks the conf rows (already filtered to this channel), confirms each
 # missing tool with a [Y/n]/[y/N] default from ECO_CONF_DEFAULTS, then
 # installs every approved row. Answers are collected first, then executed
-# (batch). Already-installed rows are shown as skipped. Pre-approved bins
-# (DOTFILES_ACCEPT_TOOLS) skip the question. Non-interactive runs apply the
-# conf defaults silently. A failed row warns and continues; the aggregate
-# exit code reports any failure.
+# (batch). Already-installed rows are shown as skipped. With ECO_ASSUME_YES
+# (-y) nothing is asked and every missing row is installed, whatever its conf
+# default; non-interactive runs without -y apply the conf defaults. A failed
+# row warns and continues; the aggregate exit code reports any failure.
 eco_manifest_install() {
     local installer="$1" channel="$2" detect="${3:-canonical}"
     case "$detect" in
@@ -224,7 +204,7 @@ eco_manifest_install() {
         fi
         clean_stale_installs "$path"
         want=0
-        if is_pre_approved "$bin"; then
+        if [[ -n "${ECO_ASSUME_YES:-}" ]]; then
             want=1
         elif [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
             [[ "$def" == "y" ]] && want=1
@@ -257,4 +237,99 @@ eco_manifest_install() {
         ok "${sel_bins[i]} installed"
     done
     return "$rc"
+}
+
+# ── Channel dispatch (the CLI shape every channel shares) ───────
+# The four channel scripts are one program with different per-action
+# functions: same verbs, same argument guards, same exit codes. A channel
+# supplies function names and keeps only what is its own.
+#
+# Exit codes, for every channel script:
+#   0  success (a missing runtime during --install-manifest is a clean skip)
+#   1  failure
+#   2  usage error
+#   3  runtime unavailable, nothing executed (one-shot verbs only, so a caller
+#      can tell "skipped" from "completed")
+#
+#   channel_dispatch <ensure> <install-one> <update-one> <uninstall-one> \
+#                    <list> <installed> <outdated> <manifest> [verb…]
+#
+# Passed positionally because bash 3.2 has no namerefs. A channel may define
+# channel_extra_verb for verbs of its own; it returns 127 when the verb is not
+# one of them.
+CHANNEL_VERBS='--list, --installed, --outdated, --install-manifest, --install-one, --update-one, --uninstall-one'
+
+channel_usage() {
+    printf 'usage: %s %s | -h|--help\n' "${0##*/}" "$CHANNEL_VERBS"
+}
+
+# shellcheck disable=SC2034  # CLI_READ_ONLY / CLI_MACHINE_OUTPUT feed msg() in common.sh
+channel_dispatch() {
+    local ensure="$1" act_install="$2" act_update="$3" act_uninstall="$4"
+    local act_list="$5" act_installed="$6" act_outdated="$7" act_manifest="$8"
+    shift 8
+    local verb="${1:-}"
+
+    case "$verb" in
+        ""|-h|--help)
+            channel_usage
+            return 0
+            ;;
+        # Read-only verbs probe, they never prepare a runtime: `fnm install`
+        # or `go env -w` just to list versions would be a side effect nobody
+        # asked for.
+        --list)
+            CLI_READ_ONLY=1
+            CLI_MACHINE_OUTPUT=1
+            "$ensure" || return 1
+            "$act_list" || return 1
+            return 0
+            ;;
+        --installed)
+            CLI_READ_ONLY=1
+            CLI_MACHINE_OUTPUT=1
+            "$ensure" || return 1
+            "$act_installed" || return 1
+            return 0
+            ;;
+        --outdated)
+            CLI_READ_ONLY=1
+            CLI_MACHINE_OUTPUT=1
+            "$ensure" || return 1
+            "$act_outdated"
+            return $?
+            ;;
+        --install-manifest)
+            # A missing runtime is a clean skip here: bootstrap runs this on
+            # every machine, including ones without a given toolchain.
+            "$ensure" || return 0
+            "$act_manifest"
+            return $?
+            ;;
+        --install-one|--update-one|--uninstall-one)
+            shift
+            (($# >= 2)) || { warn "usage: ${0##*/} $verb <bin> <pkg> [flag]"; return 2; }
+            # 3, not 0: an explicit one-shot request must not be reported as
+            # completed when the runtime was never there.
+            "$ensure" || return 3
+            case "$verb" in
+                --install-one)   "$act_install"   "$1" "$2" "${3:-}" ;;
+                --update-one)    "$act_update"    "$1" "$2" "${3:-}" ;;
+                --uninstall-one) "$act_uninstall" "$1" "$2" "${3:-}" ;;
+            esac
+            return $?
+            ;;
+        *)
+            # 127 is a channel's "not my verb"; anything else is its verdict.
+            # Captured with `|| rc=$?` on purpose: a bare call would trip
+            # `set -e` before the status could be read.
+            if declare -F channel_extra_verb >/dev/null 2>&1; then
+                local extra_rc=0
+                channel_extra_verb "$@" || extra_rc=$?
+                (( extra_rc == 127 )) || return "$extra_rc"
+            fi
+            warn "unknown option '$verb' (supported: $CHANNEL_VERBS, -h|--help)"
+            return 1
+            ;;
+    esac
 }

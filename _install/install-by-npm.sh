@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # _install/install-by-npm.sh — Node.js CLI lifecycle (install/upgrade/uninstall) via npm
 
+# The CLI shape (verbs, argument guards, exit codes) is channel_dispatch in
+# _scripts/cli-lifecycle.sh; this file only supplies the npm-specific parts.
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,11 +18,11 @@ eco_conf_filter_channel node
 # multishell's internal path layout.
 FNM_BIN=""
 
-# Global npm CLIs install into a Node-version-independent prefix. fnm's `default`
+# Global npm CLIs install into a Node-version-independent prefix: fnm's `default`
 # alias follows `lts-latest`, so an LTS patch bump re-points PATH at a fresh Node
-# with an empty global bin — which used to make every CLI look missing.
-# npm's --prefix is the install ROOT; bins land in common.sh's CLI_BIN_DIR, so
-# derive the root from it to keep the two paths from drifting apart.
+# whose global bin is empty, and every CLI would look missing.
+# npm's --prefix is the install ROOT; bins land in CLI_BIN_DIR, so derive the
+# root from it and the two paths cannot drift.
 LOCAL_PREFIX="${CLI_BIN_DIR%/*}"
 
 find_fnm_bin() {
@@ -129,7 +132,8 @@ npm_install_one() {
 }
 
 # The upgrade path reuses the single npm installer with <pkg>@latest: same
-# prefix, same --allow-scripts quirk, one code path.
+# prefix, same --allow-scripts quirk, one code path. eco never pins versions,
+# so @latest is unconditional here — a user-supplied pin is refused earlier.
 npm_update_one() {
     npm_install_one "$1" "$2@latest" "$3"
 }
@@ -174,11 +178,19 @@ npm_query_outdated() {
 # ── list mode ───────────────────────────────────────────────────
 # Read-only: emit "pkg version latest_or_?" rows for the whole prefix.
 # Latest comes from the outdated query; a failed latest query degrades to "?".
-# A failed listing is a warning, never a hard failure — list is lenient.
 npm_list_installed() {
     local ls_raw ls_rc=0
     ls_raw="$(fnm_exec npm ls -g --prefix "$LOCAL_PREFIX" --depth=0 --json 2>/dev/null)" || ls_rc=$?
-    (( ls_rc == 0 )) || return 1
+    if (( ls_rc != 0 )); then
+        # npm reports ENOENT for its own global root when nothing was ever
+        # installed there. That is an empty install set, not a broken registry:
+        # a fresh machine lives here, and saying "cannot read" would be a false
+        # alarm. Match npm's own words for that one case.
+        if grep -q 'ENOENT' <<<"$ls_raw" && grep -qF "$LOCAL_PREFIX/lib" <<<"$ls_raw"; then
+            return 0
+        fi
+        return 1
+    fi
     fnm_exec node -e '
         const data = JSON.parse(process.argv[1]);
         const deps = data.dependencies || {};
@@ -188,24 +200,61 @@ npm_list_installed() {
     ' "$ls_raw"
 }
 
+# "pkg version" (npm's identity) → "bin version" (eco's identity), using the
+# manifest. Unmanaged packages keep their own name. --installed and --list must
+# agree on that identity or eco cannot match a user-supplied bin name to a row.
+npm_installed_by_bin() {
+    local rows pkg ver i bin
+    # Read first, then loop: piping into `while` would make the pipeline status
+    # the loop's (always 0) and turn a failed listing into "nothing installed".
+    rows="$(npm_list_installed)" || return 1
+    while read -r pkg ver; do
+        [[ -n "$pkg" ]] || continue
+        bin="$pkg"
+        for i in "${!ECO_CONF_PKGS[@]}"; do
+            if [[ "${ECO_CONF_PKGS[i]}" == "$pkg" ]]; then
+                bin="${ECO_CONF_BINS[i]}"
+                break
+            fi
+        done
+        printf '%s %s\n' "$bin" "$ver"
+    done <<<"$rows"
+}
+
+# Emit "pkg version latest" rows. A failed listing returns 1 (the caller
+# reports it); a failed latest query only degrades that column to "?".
 npm_list_rows() {
     local installed_rows latest_rows="" outdated_out outdated_rc=0 query_failed=0
     if ! installed_rows="$(npm_list_installed 2>/dev/null)"; then
         warn "npm ls failed; cannot list npm CLIs" >&2
-        return 0
+        return 1
     fi
     [[ -n "$installed_rows" ]] || return 0
+    # npm outdated exits 1 when something is outdated, and prints an error
+    # object (also with exit 1) when the query itself failed. An error payload
+    # is a failed query, not an outdated list — never render it as "current".
     outdated_out="$(fnm_exec npm outdated -g --prefix "$LOCAL_PREFIX" --json 2>/dev/null)" || outdated_rc=$?
     case "$outdated_rc" in 0|1) ;; *) query_failed=1 ;; esac
     if (( ! query_failed )) && [[ -n "$outdated_out" && "$outdated_out" != "{}" ]]; then
         latest_rows="$(fnm_exec node -e '
             const data = JSON.parse(process.argv[1]);
+            if (data.error) process.exit(1);
             for (const [pkg, info] of Object.entries(data)) {
                 if (info && info.latest) console.log(pkg, info.latest);
             }
         ' "$outdated_out" 2>/dev/null)" || query_failed=1
     fi
     if (( query_failed )); then
+        # The column degrades to "?", but the reason must not: without it the
+        # user cannot tell a network blip from a format drift.
+        if [[ -n "$outdated_out" && "$outdated_out" != "{}" ]]; then
+            local reason
+            reason="$(fnm_exec node -e '
+                const data = JSON.parse(process.argv[1]);
+                if (data.error) console.log(data.error.summary || data.error.code || "unknown error");
+            ' "$outdated_out" 2>/dev/null || true)"
+            [[ -n "$reason" ]] && warn "npm outdated query failed: $reason"
+        fi
         awk 'NF >= 2 { print $1, $2, "?" }' <<<"$installed_rows"
     elif [[ -z "$latest_rows" ]]; then
         awk 'NF >= 2 { print $1, $2, $2 }' <<<"$installed_rows"
@@ -220,54 +269,15 @@ npm_list_rows() {
 
 # ── dispatch ────────────────────────────────────────────────────
 main() {
-    local verb="${1:-}"
-    case "$verb" in
-        ""|-h|--help)
-            echo "usage: $0 --list | --outdated | --install-manifest | --install-one <bin> <pkg> [flag] | --update-one <bin> <pkg> [flag] | --uninstall-one <bin> <pkg> [flag] | -h|--help"
-            return 0
-            ;;
-        --list)
-            CLI_READ_ONLY=1
-            # shellcheck disable=SC2034  # read by msg() in common.sh
-            CLI_MACHINE_OUTPUT=1
-            npm_ensure || return 0
-            npm_list_rows || true
-            return 0
-            ;;
-        --outdated)
-            CLI_READ_ONLY=1
-            # shellcheck disable=SC2034  # read by msg() in common.sh
-            CLI_MACHINE_OUTPUT=1
-            npm_ensure || return 1
-            npm_query_outdated
-            ;;
-        --install-manifest)
-            npm_ensure || return 0
-            eco_manifest_install npm_install_one npm "$(channel_detect npm)"
-            ;;
-        --install-one)
-            shift
-            (($# >= 2)) || { warn "usage: $0 --install-one <bin> <pkg> [flag]"; return 2; }
-            npm_ensure || return 0
-            npm_install_one "$1" "$2" "${3:-}"
-            ;;
-        --update-one)
-            shift
-            (($# >= 2)) || { warn "usage: $0 --update-one <bin> <pkg> [flag]"; return 2; }
-            npm_ensure || return 0
-            npm_update_one "$1" "$2" "${3:-}"
-            ;;
-        --uninstall-one)
-            shift
-            (($# >= 1)) || { warn "usage: $0 --uninstall-one <bin> <pkg> [flag]"; return 2; }
-            npm_ensure || return 0
-            npm_uninstall_one "$1" "$2" "${3:-}"
-            ;;
-        *)
-            warn "unknown option '$verb' (supported: --list, --outdated, --install-manifest, --install-one, --update-one, --uninstall-one, -h|--help)"
-            return 1
-            ;;
-    esac
+    channel_dispatch \
+        npm_ensure npm_install_one npm_update_one npm_uninstall_one \
+        npm_list_rows npm_installed_by_bin npm_query_outdated npm_manifest_install \
+        "$@"
+}
+
+# install every selected eco.conf row for this channel.
+npm_manifest_install() {
+    eco_manifest_install npm_install_one npm "$(channel_detect npm)"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
