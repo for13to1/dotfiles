@@ -1804,6 +1804,40 @@ grep -q '^ripgrep 14.1.0 ripgrep rg$' "$TMP/cargo-two.out" \
 grep -q '^solo 1.0.0 solo $' "$TMP/cargo-two.out" \
     || fail "a crate with no bins must emit an empty alias column"
 
+# A translated name obeys the same witness as a key: a crate the manager still
+# lists but whose executable is gone is skipped. update points at install;
+# uninstall has nothing to remove and must not claim otherwise.
+rm -f "$CARGO_ALIAS_HOME/.local/bin/rg"
+: > "$CARGO_LOG"
+rc=0
+HOME="$CARGO_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' \
+    PATH="$ALIAS_MOCK:/usr/bin:/bin" \
+    bash "$ECO" rust uninstall -y rg >"$TMP/cargo-alias-ghost.out" 2>&1 || rc=$?
+[[ "$rc" == 0 ]] || fail "a ghost alias must be skipped, not fail the run"
+grep -q 'none of its executables exist' "$TMP/cargo-alias-ghost.out" \
+    || fail "a ghost alias must be named as a ghost"
+grep -q 'nothing to remove' "$TMP/cargo-alias-ghost.out" \
+    || fail "an uninstall ghost must say there is nothing to remove"
+! grep -q "use 'install'" "$TMP/cargo-alias-ghost.out" \
+    || fail "uninstall must not suggest installing a ghost"
+! grep -q '^uninstall --root' "$CARGO_LOG" \
+    || fail "a ghost alias must not reach cargo uninstall"
+
+: > "$CARGO_LOG"
+rc=0
+HOME="$CARGO_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' \
+    PATH="$ALIAS_MOCK:/usr/bin:/bin" \
+    bash "$ECO" rust update -y rg >"$TMP/cargo-alias-ghost-up.out" 2>&1 || rc=$?
+[[ "$rc" == 0 ]] || fail "a ghost alias must not fail an update run"
+grep -q "use 'install'" "$TMP/cargo-alias-ghost-up.out" \
+    || fail "an update ghost must point at install"
+! grep -qE '^install --force --root' "$CARGO_LOG" \
+    || fail "a ghost alias must not reach cargo update"
+
 # ── install is verified against the crate's own bins ──
 # A crate name is never a file (ripgrep ships rg). The post-install check must
 # consult the snapshot for the executables the crate actually ships, and a

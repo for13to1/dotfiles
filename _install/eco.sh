@@ -347,6 +347,20 @@ dedupe_targets() {
     fi
 }
 
+# warn_ghost <verb> <name> <internal> — the manager still lists the row, but
+# no executable is on disk. The caller skips it: update cannot verify a
+# transition it cannot witness, uninstall has nothing to remove, and install is
+# the repair.
+warn_ghost() {
+    local verb="$1" name="$2" internal="$3"
+    warn "$name: $internal reports it installed, but none of its executables exist in $ECO_BIN_DIR"
+    if [[ "$verb" == "update" ]]; then
+        warn "$name skipped: use 'install' to reinstall it"
+    else
+        warn "$name skipped: nothing to remove"
+    fi
+}
+
 # prune_absent_targets <verb> <channel> <snapshot>
 # Keep only targets the user can actually see: the snapshot lists the package
 # AND one of its executables exists in ECO_BIN_DIR. A snapshot-only ghost is
@@ -359,11 +373,9 @@ prune_absent_targets() {
     for i in "${!TARGET_BINS[@]}"; do
         bin="${TARGET_BINS[i]}"
         if installed_version_of "$snapshot" "$bin" >/dev/null; then
-            # Any executable the row ships is a witness: a crate name is never
-            # a file, and a multi-bin package lives through any one of its bins.
+            # Any executable the row ships is a witness; a ghost is skipped.
             if ! row_on_disk "$snapshot" "$bin"; then
-                warn "$bin: $internal reports it installed, but none of its executables exist in $ECO_BIN_DIR"
-                warn "$bin skipped: use 'install' to reinstall it properly"
+                warn_ghost "$verb" "$bin" "$internal"
                 continue
             fi
             # A raw bin name (ncc) still carries the bin as its pkg. Adopt the
@@ -386,6 +398,11 @@ prune_absent_targets() {
         # an unclaimed name is "not installed".
         elif row="$(installed_row_for "$snapshot" "$bin")"; then
             read -r rbin rpkg <<<"$row"
+            # A translated name obeys the same witness as a key.
+            if ! row_on_disk "$snapshot" "$rbin"; then
+                warn_ghost "$verb" "$bin" "$internal"
+                continue
+            fi
             read -r rpkg rflag <<<"$(resolved_pkg_flag "$ch" "$rbin" "$rpkg")"
             kb+=("$rbin")
             kp+=("$rpkg")
