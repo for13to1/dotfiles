@@ -9,12 +9,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
-eco_conf_load
-eco_conf_filter_channel rust
+# eco_conf_load/filter run inside channel_dispatch, after the help
+# guard: a broken manifest must not take `--help` away.
 
-# cargo installs into a --root prefix; derive it from CLI_BIN_DIR so the two
+# cargo installs into a --root prefix; derive it from ECO_BIN_DIR so the two
 # paths cannot drift apart (same trick as npm's LOCAL_PREFIX).
-CARGO_ROOT="${CLI_BIN_DIR%/*}"
+CARGO_ROOT="${ECO_BIN_DIR%/*}"
 
 find_cargo_bin() {
     command -v cargo
@@ -69,18 +69,31 @@ CARGO_VERSION_RE='^v?[0-9]+([.][0-9]+)+([-+][0-9A-Za-z.-]+)?$'
 #   bat v0.24.0:
 #       bat
 # Non-indented "name vX.Y.Z:" lines are crate headers; indented lines are bins.
+# Emits "crate version crate bins": the crate is its own package (what cargo
+# uninstall/upgrade takes), bins are the executables users type and the disk
+# witnesses. Callers that only want crate/version read two fields.
 cargo_list_installed() {
     local cargo_bin listed rc=0
     cargo_bin="$(find_cargo_bin)" || return 1
     listed="$("$cargo_bin" install --list --root "$CARGO_ROOT" 2>/dev/null)" || rc=$?
     (( rc == 0 )) || return 1
-    awk '$1 !~ /^[[:space:]]/ && $2 ~ /^v[0-9]/ {
-        name = $1
-        ver = $2
-        sub(/^v/, "", ver)
-        sub(/:$/, "", ver)
-        print name, ver
-    }' <<<"$listed"
+    awk '
+        $1 !~ /^[[:space:]]/ && $2 ~ /^v[0-9]/ {
+            if (crate != "") print crate, ver, crate, bins
+            crate = $1
+            ver = $2
+            sub(/^v/, "", ver)
+            sub(/:$/, "", ver)
+            bins = ""
+            next
+        }
+        /^[[:space:]]/ {
+            b = $1
+            sub(/:$/, "", b)
+            bins = (bins == "" ? b : bins " " b)
+        }
+        END { if (crate != "") print crate, ver, crate, bins }
+    ' <<<"$listed"
 }
 
 # Latest version of a crate via `cargo search --limit 1`. The output shape is
@@ -121,7 +134,7 @@ cargo_query_outdated() {
     done <<<"$listed"
     (( ${#installed[@]} > 0 )) || return 0
     for line in "${installed[@]}"; do
-        read -r name cur <<<"$line"
+        read -r name cur _bins <<<"$line"
         if ! latest="$(cargo_search_latest "$name")"; then
             bad=1
             continue
@@ -151,7 +164,7 @@ cargo_list_rows() {
     done <<<"$listed"
     (( ${#installed[@]} > 0 )) || return 0
     for line in "${installed[@]}"; do
-        read -r name cur <<<"$line"
+        read -r name cur _bins <<<"$line"
         latest="$(cargo_search_latest "$name" 2>/dev/null)" || latest="?"
         printf '%s %s %s\n' "$name" "$cur" "$latest"
     done
@@ -159,7 +172,7 @@ cargo_list_rows() {
 
 # ── dispatch ────────────────────────────────────────────────────
 main() {
-    channel_dispatch \
+    channel_dispatch rust \
         cargo_ensure cargo_install_one cargo_update_one cargo_uninstall_one \
         cargo_list_rows cargo_list_installed cargo_query_outdated cargo_manifest_install \
         "$@"

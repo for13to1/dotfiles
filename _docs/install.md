@@ -30,14 +30,14 @@ ${EDITOR:-vi} ~/dotfiles/_install/brew/vcs.group
 - **平台差异层**（`pkg-*`）：仅 apt 缺 fnm/rustup/uv，由 `install-by-curl.sh` 官方安装器补齐（brew/pacman 经 default 组提供，无需此渠道）；
 - **平台无关层**：生态 CLI（npm/uv/go/cargo）由统一入口 `eco` 管理（见下方「生态 CLI 管理」）。
 
-已装工具按各渠道的检测策略幂等跳过（npm 查 `~/.local/bin/<bin>`，uv/go/cargo 先查 PATH 再查该路径），不重复安装；`DOTFILES_SKIP_ECOSYSTEM_TOOLS=1` 跳过生态自动安装（测试/无网络环境），不影响显式的 `eco <ch> update`/`uninstall`。
+生态 CLI 的自动安装同样按各渠道的检测策略幂等跳过；参数是包名时再查一次已装快照（包名未必等于可执行名，如 `typescript` → `tsc`）。`DOTFILES_SKIP_ECOSYSTEM_TOOLS=1` 跳过自动安装（测试/无网络），不影响显式的 `eco <ch> update`/`uninstall`。
 
 ## 生态 CLI 管理
 
 生态 CLI（node/python/go/rust 包管理器可装的工具）由统一入口 `eco` 管理：
 
 ```bash
-eco <node|py|go|rust> <list|install|update|uninstall> [-y] [pkg…]
+eco <node|py|go|rust> <list|install|update|uninstall> [-y] [-q] [-n] [pkg…]
 ```
 
 | 动词 | 行为 |
@@ -45,15 +45,28 @@ eco <node|py|go|rust> <list|install|update|uninstall> [-y] [pkg…]
 | `list` | 只读：列出该渠道已装工具的当前版本与最新版本 |
 | `install [pkg…]` | 补装缺失工具；带包名 = 确认后安装指定工具（已装的幂等跳过）；不带包名 = 清单模式（逐项确认，按 `eco.conf` 的 y/n 默认值预选） |
 | `update [-y] [pkg…]` | 升级已装工具；不带包名 = 升级该渠道全部已装工具。确认前先列出要动的每个工具及其**当前版本**；执行后逐条报告**实际观测到**的变化（`ruff updated (0.16.5 → 0.17.1)`），没有变化则说 `already up to date` |
-| `uninstall [-y] <pkg…>` | 卸载（必须指定包名，一律确认） |
+| `uninstall [-y] <pkg…>` | 卸载（必须指定包名或该包声明的任一 bin，一律确认） |
 
-`-y` / `--yes` 卸载、安装、升级时跳过确认；`list` 不接受它（用法错误）。非交互环境（无 TTY / CI）下不加 `-y` 就什么都不做，避免脚本无意改动机器。
+- `-y` / `--yes`：跳过确认（`list` 不接受）。
+- `-q` / `--quiet`：只静音 eco 自己的进度行（`ℹ️`/`✅`），警告、错误和包管理器输出照常；`list` 的数据不受影响。
+- `-n` / `--dry-run`：只打印计划，不提问、不执行、不准备运行时、不清理 stale 文件。`update`/`uninstall` 仍会只读快照，计划基于真实已装状态；清单模式按 `eco.conf` 默认值算，加 `-y` 则按「全都装」算。`list` 不接受。
 
-**观测，而不是预测。** `update` 不预先查询「最新版本是多少」，而是在动作前后各读一次本地已装状态（`--installed`，纯本地、零网络），把两次读数之差作为结果。确认前的预览只有「当前版本」一列——那是本地已知的事实；右边的新版本等执行后才写得出，所以不猜。
+`DOTFILES_NON_INTERACTIVE=1`（CI/容器）且不加 `-y`：清单模式按 conf 默认值安装，带包名则什么都不做。
 
-代价是确认前看不到「有哪些可升级」。换来的是：报告不会撒谎、省掉一次网络往返、带不带包名走同一条路径。
+```bash
+$ eco node update -n -y
+ℹ️  updating via npm:
+  package   current
+  wrangler  4.130.0
+ℹ️  would update wrangler (wrangler) [--allow-scripts=esbuild,workerd] via npm
+ℹ️  dry run: no action taken
+```
 
-**先确认存在，再动手。** 各包管理器对「目标不存在」态度不一致（npm 退出 0 且什么都不做，uv 退出 2，cargo 退出 101），返回值不足以判断结果。`update` 和 `uninstall` 都用已装快照决定目标是否存在：不存在就说 `not installed` 且不进入动作（`update` 会提示改用 `install`）。删除后再读一次快照核对，仍在就判失败。
+**观测，而不是预测。** `update` 不预查最新版本：动作前后各读一次本地快照（`--installed`，零网络），用两次读数之差作为结果。确认前的预览只有当前版本——本地已知的事实；新版本执行后才写得出。
+
+代价是不预判「是否需要升级」：每个候选都跑一次包管理器升级命令（npm/go/cargo 是重装最新版），装完再比对版本号，所以已是最新的包也会被重装。省下的是那次网络往返，不是升级动作。
+
+**先确认存在，再动手。** 各包管理器对「目标不存在」态度不一（npm 退出 0、uv 退出 2、cargo 退出 101），返回值不足以判断。`update`/`uninstall` 要求两个 witness：快照里有这个包，且 `~/.local/bin` 里有它声明的至少一个可执行文件。快照有、磁盘无 → 警告并跳过（提示用 `install` 重装）；快照无 → `not installed`。动手后再读一次快照核对，仍在即失败；读不出来是「状态未知」，同样失败。
 
 渠道词汇只有 `node` / `py` / `go` / `rust`（对应底层 npm / uv / go / cargo，不暴露内部实现）。包名可以是 `eco.conf` 中的 bin 名（自动解析为安装目标），也可以是任意包名（未经登记的临时工具）。
 
@@ -83,38 +96,39 @@ eco <node|py|go|rust> <list|install|update|uninstall> [-y] [pkg…]
 | `<pkg>` | 安装目标：npm 包 / pip 包 / go module 路径 / cargo crate |
 | `<flag>` | 渠道透传参数（如 `--allow-scripts=...`），无则省略，不得含空格 |
 
-校验规则（加载时响亮失败）：渠道白名单、重复 bin、重复 pkg、bin 含 `/`、flag 含空格。
+校验规则（加载时响亮失败）：渠道白名单、重复 bin、重复 pkg、bin 含空格或 `/`、bin 为 `.`/`..`、flag 含空格。
 
 新增工具 = 在 `eco.conf` 加一行，零函数改动。
 
 ### 检测策略
 
-npm 只查 `~/.local/bin/<bin>`（canonical，避免旧 fnm 前缀里的同名 CLI 被误判为已装）；uv/go/cargo 先查 PATH 再查该路径（尊重组文件之外的既有安装，不重复安装）。
+npm 只查 `~/.local/bin/<bin>`（避开旧 fnm 前缀的同名 CLI）；uv/go/cargo 先查 PATH 再查该路径，尊重既有安装。代价是 PATH 上任何同名可执行文件都会被当成「已装」，不管它从哪来——要避免歧义就保持 PATH 干净，或用 npm 渠道。
+
+`install` 后会校验可执行文件是否真的出现：先看参数名对应的路径；参数是包名时（`typescript`、`ripgrep`、`python-lsp-server`）改查快照，确认这个包声明的任一可执行文件（`tsc`、`rg`、`pylsp`）存在。退出 0 但什么都没装出 → 失败，因为退出码只说明命令跑过。命名安装的幂等判断同样查快照，所以包名不是文件名也不会反复重装。
 
 ### 授权
 
-只有一个开关：`-y` / `--yes`。
-
-- 不带 `-y`：清单模式逐项 `[Y/n]`/`[y/N]`（按 `eco.conf` 默认值预选）；带包名时一次性批量确认（默认 N）。
-- 带 `-y`：清单模式跳过所有提问、每个缺失项都装（不看 y/n 默认值，因为 `-y` 就是"全都同意"）；带包名时直接执行。
-- 非交互模式（`DOTFILES_NON_INTERACTIVE=1` 或无 TTY）且没有 `-y`：清单模式按 `eco.conf` 默认值执行（y 装、n 跳），带包名则什么都不做（exit 0）。
-
-`DOTFILES_ACCEPT_TOOLS` / `DOTFILES_ACCEPT_INSTALLS` 已被删除。它们把「装哪些」和「确认什么」混成同一个开关，并与 `eco.conf` 形成两份平行真相。
+- 不带 `-y`：清单模式逐项 `[Y/n]`/`[y/N]`（按 conf 默认值预选）；带包名时一次性批量确认（默认 N）。
+- 带 `-y`：清单模式全装（不看 y/n），带包名直接执行。
+- `DOTFILES_NON_INTERACTIVE=1` 且无 `-y`：清单模式按 conf 默认值（y 装、n 跳），带包名什么都不做（exit 0）。
+- 其余情况交互；提问读到 EOF（无 TTY）时按该提问的默认值处理，所以清单模式的 y 行会装。要完全不动机器，用 `DOTFILES_NON_INTERACTIVE=1`，不要只依赖空 stdin。
 
 ### 各渠道实现
 
 | 渠道 | 已装快照（本地） | 最新版本（`list` 用） | 升级 | 卸载 |
 | --- | --- | --- | --- | --- |
-| node (npm) | `npm ls -g --prefix ~/.local --json` | `npm outdated -g … --json` | `npm install -g <pkg>@latest` | `npm uninstall -g --prefix ~/.local <bin>` |
-| py (uv) | `uv tool list` | `uv tool list --outdated` | `uv tool upgrade` | `uv tool uninstall` |
+| node (npm) | `npm ls -g --prefix ~/.local --json` | `npm outdated -g … --json` | `npm install -g <pkg>@latest` | `npm uninstall -g --prefix ~/.local <pkg>` |
+| py (uv) | `uv tool list`（含 `- <exec>` 明细） | `uv tool list --outdated` | `uv tool upgrade` | `uv tool uninstall` |
 | go | `go version -m <prefix>/*`（一次批量调用） | 批量 `go list -m` | `go install <pkg>@latest` | 校验是 Go 产物后 `rm ~/.local/bin/<bin>` |
 | rust (cargo) | `cargo install --list --root ~/.local` | 逐 crate `cargo search` | `cargo install --force --root ~/.local` | `cargo uninstall --root ~/.local` |
 
 go 的卸载会先用 `go version -m` 确认目标确实带 Go 模块元数据：`~/.local/bin` 是所有渠道共用的前缀，裸 `rm` 会把 npm/uv 装的工具一起删掉。
 
-卸载也只接受包名：同一工具在各渠道只保留一个版本（npm global prefix、uv tool、cargo `--root`、`GOBIN` 都是覆盖式安装），版本在卸载语义里没有位置。
+go 的 `go install` 收包路径，二进制名取最后一段（`staticcheck` 来自 `honnef.co/go/tools/cmd/staticcheck`）。未登记参数同时拆成 bin 与 pkg：`install` 按 bin 判幂等，`uninstall` 删 bin，`update` 从快照第三列取包路径（`go install <path>@latest`）。
 
-`rust` 渠道当前在 `eco.conf` 里没有登记任何工具，`eco rust list` 会列出 cargo 侧已装的 crate，`eco rust update` 也仍按已装 crate 查询并升级。只有 `eco rust install`（清单模式）会直接说明该渠道无登记项——install 装的是清单，update 升的是已装的东西，两者依据不同。
+卸载接受包名或该包声明过的任一可执行名（`eco node uninstall cf-wrangler`、`eco rust uninstall rg`、`eco py uninstall pylsp`）；快照把后者翻译回包。版本在卸载语义里没有位置：各渠道都是覆盖式安装，同一工具只保留一个版本。
+
+`rust` 渠道在 `eco.conf` 里没有登记项：`eco rust list` / `update` 仍按已装 crate 工作；只有 `eco rust install`（清单模式）会直接说明无登记项。
 
 失败隔离：任一行失败只警告并继续其余，退出码非零聚合；查询失败报错退出，不伪装「全部最新」。`--outdated` 仍保留给 `list` 使用（唯一需要最新版本的动词）。
 
@@ -128,6 +142,8 @@ eco 的每个状态判断都以「用户看到的结论是否属实」为准，�
 | `npm ls` 在全新机器上报 ENOENT | 什么都没装 | 空列表，成功 |
 | `cargo install --list` 失败 | 状态未知 | 报错，不是「全部最新」 |
 | `go version -m` 无输出且工具链坏 | 状态未知 | 报错，不是「没装东西」 |
+| `install` 退出 0 但磁盘上没有该包的任何可执行文件 | 什么都没装成 | 失败 |
+| `update` / `uninstall` 的动手后快照读不出来 | 状态未知 | 失败并提示手工核对 |
 | `update` 前后读到的版本相同 | 没有变化 | `already up to date` |
 
 同一条原则管两个方向：把失败说成成功是失真，把空环境说成故障也是失真。中间那一档（「状态未知」）才是报错的场合。
@@ -170,4 +186,8 @@ brew 与官方安装器管理的运行时（fnm/rustup/uv）不在本框架内�
 
 ## 框架边界
 
-本框架只建模「单一包源 → 单个 bin → `~/.local/bin`」的生态 CLI。一包多 bin（如多二进制 crate）、或经官方安装器安装的运行时（fnm/rustup/uv，走 `install-by-curl.sh`）不在本框架内，各走各的形态。
+**eco 管理的是包，不是 bin。** 包管理器收到的一律是包名（npm 包、uv tool、go 模块路径、cargo crate）；bin 只是磁盘上的影子——检测看它、消息用它、go 卸载删它。用户也可以输入该包声明过的任一 bin（`cf-wrangler`、`rg`、`pylsp`），快照负责翻译；翻译时 pkg 与 flag 以 `eco.conf` 为准。
+
+快照统一为 `<key> <version> <package> [aliases…]`：key 是用户敲的名字，package 是包管理器要的安装目标，aliases 是磁盘上可能出现的可执行文件（npm 看 package.json 的 bin，cargo 看 `install --list`，uv 看 `tool list` 的 `- <exec>`，go 用包路径最后一段）。因此 `eco.conf` 一行只登记一个**代表 bin**，同包其它 bin 无需重复登记。
+
+本框架只建模「单一包源 → `~/.local/bin`」；经官方安装器的运行时（fnm/rustup/uv）不在内。

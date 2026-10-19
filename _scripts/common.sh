@@ -23,11 +23,16 @@ dotfiles_dir() {
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
 # msg <level> <text>: unified printer; level is info|ok|warn|error.
-# With CLI_MACHINE_OUTPUT=1, messages go to stderr (stdout stays data-only).
+# With ECO_MACHINE_OUTPUT=1, messages go to stderr (stdout stays data-only).
+# With ECO_QUIET=1, eco's own progress chatter (info/ok) is dropped; warnings,
+# errors and whatever the package manager prints still reach the user.
 msg() {
     local level="$1" fd=1
     shift
-    [[ -n "${CLI_MACHINE_OUTPUT:-}" ]] && fd=2
+    if [[ -n "${ECO_QUIET:-}" ]]; then
+        case "$level" in info|ok) return 0 ;; esac
+    fi
+    [[ -n "${ECO_MACHINE_OUTPUT:-}" ]] && fd=2
     case "$level" in
         info)  echo -e "${BLUE}ℹ️  $*${NC}" >&$fd ;;
         ok)    echo -e "${GREEN}✅ $*${NC}" >&$fd ;;

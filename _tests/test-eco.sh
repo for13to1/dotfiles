@@ -17,6 +17,14 @@ source "$ROOT/_scripts/cli-lifecycle.sh"
 eco_conf_load || fail "the real eco.conf must load and validate"
 (( ${#ECO_CONF_BINS[@]} >= 14 )) || fail "eco.conf must have at least 14 rows"
 
+# ECO_QUIET silences eco's own progress (info/ok) but never warnings/errors.
+QUIET_OUT="$(ECO_QUIET=1 bash -c 'source "$1"; info hello; ok done; warn careful' \
+    _ "$ROOT/_scripts/common.sh" 2>&1)"
+[[ "$QUIET_OUT" != *hello* && "$QUIET_OUT" != *done* ]] \
+    || fail "-q must silence info/ok"
+[[ "$QUIET_OUT" == *careful* ]] \
+    || fail "-q must not silence warnings"
+
 # A fixture with a bad channel must fail validation.
 BAD_CONF="$TMP/bad-channel.conf"
 cat > "$BAD_CONF" <<'EOF'
@@ -55,6 +63,40 @@ EOF
 if ECO_CONF="$BAD_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null; then
     fail "a flag containing spaces must fail eco.conf validation"
 fi
+
+# eco_conf_filter_channel refuses a channel outside the fixed vocabulary. It
+# would otherwise narrow the arrays to nothing, which is indistinguishable from
+# a channel that legitimately has no rows (rust has none) — a typo would
+# silently disable a whole channel.
+if bash -c '
+    source "$1"
+    eco_conf_load || exit 0
+    eco_conf_filter_channel nmp
+' _ "$ROOT/_scripts/cli-lifecycle.sh" >/dev/null 2>&1; then
+    fail "an unknown channel name must be refused by eco_conf_filter_channel"
+fi
+bash -c '
+    source "$1"
+    eco_conf_load && eco_conf_filter_channel node
+' _ "$ROOT/_scripts/cli-lifecycle.sh" >/dev/null 2>&1 \
+    || fail "a known channel name must filter cleanly"
+
+# Dot-only bin names must be refused at validation. They pass the "no slashes"
+# check but resolve to ECO_BIN_DIR itself ("." ) or its parent (".."); the
+# uninstall path was saved only by a downstream guard, which is one refactor
+# away from not being there.
+DOT_CONF="$TMP/dot-bin.conf"
+printf 'go y . golang.org/x/tools/gopls\n' > "$DOT_CONF"
+if ECO_CONF="$DOT_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null; then
+    fail "a bin named '.' must fail eco.conf validation"
+fi
+printf 'go y .. golang.org/x/tools/gopls\n' > "$DOT_CONF"
+if ECO_CONF="$DOT_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null; then
+    fail "a bin named '..' must fail eco.conf validation"
+fi
+printf 'go y gopls golang.org/x/tools/gopls\n' > "$DOT_CONF"
+ECO_CONF="$DOT_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" >/dev/null 2>&1 \
+    || fail "a normal bin must still pass validation"
 
 # A bad default (not y/n) must fail.
 BAD_CONF="$TMP/bad-default.conf"
@@ -101,8 +143,17 @@ if bash "$ECO" node list biome >/dev/null 2>&1; then
     fail "list with arguments must fail"
 fi
 
-# --help succeeds.
-bash "$ECO" --help >/dev/null || fail "eco --help must succeed"
+# list rejects the plan-only flags: it neither prompts nor mutates.
+for opt in -n --dry-run; do
+    if bash "$ECO" node list "$opt" >/dev/null 2>&1; then
+        fail "list must reject $opt"
+    fi
+done
+
+# --help succeeds and advertises the new flags.
+bash "$ECO" --help >"$TMP/help.out" 2>&1 || fail "eco --help must succeed"
+grep -q -- '--dry-run' "$TMP/help.out" || fail "--help must document --dry-run"
+grep -q -- '--quiet' "$TMP/help.out" || fail "--help must document --quiet"
 bash "$ECO" node --help >/dev/null || fail "eco node --help must succeed"
 
 # ── npm channel (mock fnm) ──────────────────────────────────────
@@ -112,6 +163,10 @@ FNM_PREFIX="$TMP/fnm-prefix"
 mkdir -p "$NPM_HOME/.local/bin" "$NPM_BIN" "$FNM_PREFIX/bin"
 export FNM_LOG="$TMP/fnm.log"
 export FNM_PREFIX
+# The mock reads the manifest to map a package spec to the bin it ships —
+# real npm reads the package.json; the manifest is the closest stand-in and
+# must be visible before the first install runs.
+export ECO_CONF_PATH="$ROOT/_scripts/eco.conf"
 
 cat > "$NPM_BIN/fnm" <<'EOF'
 #!/usr/bin/env bash
@@ -143,19 +198,81 @@ elif [[ "$*" == *'npm ls'* ]]; then
     else
         printf '{}'
     fi
-elif [[ "$*" == *'npm install -g'* || "$*" == *'npm uninstall -g'* ]]; then
+elif [[ "$*" == *'npm install -g'* ]]; then
     # A real mutation changes what `npm ls` reports afterwards.
     if [[ -n "${MOCK_LS_FILE:-}" && -n "${MOCK_LS_AFTER:-}" ]]; then
         printf '%s' "$MOCK_LS_AFTER" > "$MOCK_LS_FILE"
     fi
+    # Real npm links every executable the package declares into <prefix>/bin
+    # (which is $HOME/.local/bin: the npm prefix IS the CLI prefix). The
+    # package.json "bin" field is the authority, not the package name —
+    # A multi-bin package links several executables (the fixture's typescript:
+    # tsc + tsserver); @vercel/ncc ships ncc. Reading it here is
+    # what makes install verification testable for a package whose bins differ
+    # from its name.
+    # MOCK_NOBIN_PKG makes a package ship nothing (the registry's "ruff"), so
+    # install verification can be tested against a real no-bin outcome.
+    spec=""; bins=""
+    if [[ -n "${MOCK_NOBIN_PKG:-}" && "${*: -1}" == "$MOCK_NOBIN_PKG" ]]; then
+        :  # a package that ships no bin leaves nothing behind
+    else
+        spec="${*: -1}"
+        pkg="$spec"
+        [[ "$pkg" == *@latest ]] && pkg="${pkg%@latest}"
+        pj="$HOME/.local/lib/node_modules/$pkg/package.json"
+        if [[ -f "$pj" && -n "${MOCK_HOST_NODE:-}" ]]; then
+            bins="$("$MOCK_HOST_NODE" -e '
+                const p = require(process.argv[1]);
+                const b = p.bin;
+                if (typeof b === "string") console.log((p.name || "").split("/").pop());
+                else if (b && typeof b === "object") console.log(Object.keys(b).join(" "));
+            ' "$pj" 2>/dev/null || true)"
+        fi
+        if [[ -z "$bins" ]]; then
+            bin=""
+            if [[ -n "${ECO_CONF_PATH:-}" && -f "${ECO_CONF_PATH:-}" ]]; then
+                bin="$(awk -v p="$spec" '$1 == "node" && $4 == p { print $3; exit }' "$ECO_CONF_PATH")"
+            fi
+            [[ -n "$bin" ]] || { bin="${spec##*/}"; bin="${bin%%@*}"; }
+            bins="$bin"
+        fi
+        mkdir -p "$HOME/.local/bin"
+        for b in $bins; do
+            : > "$HOME/.local/bin/$b" && chmod +x "$HOME/.local/bin/$b"
+        done
+    fi
+    exit 0
+elif [[ "$*" == *'npm uninstall -g'* ]]; then
+    # A real mutation changes what `npm ls` reports afterwards.
+    if [[ -n "${MOCK_LS_FILE:-}" && -n "${MOCK_LS_AFTER:-}" ]]; then
+        printf '%s' "$MOCK_LS_AFTER" > "$MOCK_LS_FILE"
+    fi
+    spec="${*: -1}"
+    bins=""
+    pj="$HOME/.local/lib/node_modules/$spec/package.json"
+    if [[ -f "$pj" && -n "${MOCK_HOST_NODE:-}" ]]; then
+        bins="$("$MOCK_HOST_NODE" -e '
+            const p = require(process.argv[1]);
+            const b = p.bin;
+            if (typeof b === "string") console.log((p.name || "").split("/").pop());
+            else if (b && typeof b === "object") console.log(Object.keys(b).join(" "));
+        ' "$pj" 2>/dev/null || true)"
+    fi
+    if [[ -z "$bins" ]]; then
+        bin="${spec##*/}"
+        bin="${bin%%@*}"
+        bins="$bin"
+    fi
+    for b in $bins; do rm -f "$HOME/.local/bin/$b"; done
     exit 0
 elif [[ "$*" == *'node -e'* ]]; then
     if [[ -n "${MOCK_HOST_NODE:-}" ]]; then
         # fnm exec: --using lts-latest -- node -e <script> <args...>
-        # argv: $6=script $7=arg1 $8=arg2 $9=arg3. The exit status must
-        # survive: a script that rejects its input is how npm's error payload
-        # is detected, and swallowing it hides a broken latest query.
-        "$MOCK_HOST_NODE" "$6" "$7" "$8" "$9"
+        # argv: $6=-e, $7=script, then the script's own args. Forward all of
+        # them (snapshot listings pass every installed package), and let the
+        # exit status survive: a script that rejects its input is how npm's
+        # error payload is detected, and swallowing it hides a broken query.
+        "$MOCK_HOST_NODE" "${@:6}"
     else
         printf '%s' "${MOCK_OUTDATED_LINES:-}"
     fi
@@ -191,8 +308,17 @@ grep -q '@openai/codex' "$FNM_LOG" \
     || fail "-y must install all eight n-rows, got $(grep -c 'npm install -g ' "$FNM_LOG" || true)"
 
 # Seat all conf bins to prevent manifest installs from triggering in later tests.
+# eco_conf_load no longer runs at source time (it moved into channel_dispatch so
+# a broken manifest cannot take --help away), so it must be called here — and
+# the loop must assert it has something to seat, or an empty array turns this
+# whole block into a silent no-op and every later "manifest install must not
+# trigger" assertion passes vacuously.
 # shellcheck disable=SC1091
 source "$ROOT/_install/install-by-npm.sh"
+eco_conf_load || fail "the npm channel must load the real eco.conf"
+eco_conf_filter_channel node
+(( ${#ECO_CONF_BINS[@]} > 0 )) \
+    || fail "the npm channel's conf rows must be loaded before seating them"
 for bin in "${ECO_CONF_BINS[@]}"; do
     touch "$NPM_HOME/.local/bin/$bin" 2>/dev/null || true
     chmod +x "$NPM_HOME/.local/bin/$bin" 2>/dev/null || true
@@ -315,8 +441,26 @@ if [[ "$1 $2" == "tool list" && "$*" == *--outdated* ]]; then
     fi
     exit "${MOCK_UV_OUTDATED_EXIT:-0}"
 elif [[ "$1 $2" == "tool list" ]]; then
-    if [[ -n "${MOCK_UV_LIST:-}" ]]; then
+    # A mutation changes what `tool list` reports; MOCK_UV_LIST_MARK mirrors
+    # that so a post-action read can observe the transition.
+    if [[ -n "${MOCK_UV_LIST_MARK:-}" && -f "${MOCK_UV_LIST_MARK}" ]]; then
+        cat "$MOCK_UV_LIST_MARK"
+    elif [[ -n "${MOCK_UV_LIST:-}" ]]; then
         printf '%s\n' "$MOCK_UV_LIST"
+    fi
+elif [[ "$1 $2" == "tool install" || "$1 $2" == "tool upgrade" || "$1 $2" == "tool uninstall" ]]; then
+    if [[ -n "${MOCK_UV_LIST_MARK:-}" ]]; then
+        printf '%s\n' "${MOCK_UV_LIST_AFTER:-}" > "$MOCK_UV_LIST_MARK"
+    fi
+    if [[ "$1 $2" == "tool install" ]]; then
+        # Real uv symlinks the tool's executables into ~/.local/bin (creating
+        # the directory). MOCK_UV_BINS stands in for the tool's entry points; a
+        # manifest row's tool and bin names coincide (ruff, yt-dlp), but an
+        # unmanaged tool's may not (python-lsp-server → pylsp).
+        mkdir -p "$HOME/.local/bin"
+        for b in ${MOCK_UV_BINS:-${*: -1}}; do
+            : > "$HOME/.local/bin/$b" && chmod +x "$HOME/.local/bin/$b"
+        done
     fi
 fi
 EOF
@@ -392,6 +536,67 @@ grep -q '^tool uninstall yt-dlp$' "$UV_LOG" \
 touch "$UV_HOME/.local/bin/yt-dlp"
 chmod +x "$UV_HOME/.local/bin/yt-dlp"
 
+# ── uv: the tool name is not always the executable ──
+# python-lsp-server links pylsp. uv prints the executable on an indented
+# "- pylsp" line; the snapshot must carry it, or the disk witness looks for a
+# file named after the tool and skips a perfectly installed tool.
+UV_ALIAS_HOME="$TMP/uv-alias-home"
+UV_ALIAS_LIST="$TMP/uv-alias-list"
+UV_ALIAS_MARK="$TMP/uv-alias-mark"
+mkdir -p "$UV_ALIAS_HOME/.local/bin"
+: > "$UV_ALIAS_HOME/.local/bin/pylsp" && chmod +x "$UV_ALIAS_HOME/.local/bin/pylsp"
+printf 'python-lsp-server v1.12.0\n- pylsp\n' > "$UV_ALIAS_LIST"
+rm -f "$UV_ALIAS_MARK"
+
+HOME="$UV_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_UV_LIST="$(cat "$UV_ALIAS_LIST")" \
+    PATH="$MOCK_UV:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-uv.sh" --installed >"$TMP/uv-alias-inst.out" 2>&1 \
+    || fail "uv --installed must not fail on a renamed executable"
+grep -q '^python-lsp-server 1.12.0 python-lsp-server pylsp$' "$TMP/uv-alias-inst.out" \
+    || fail "uv --installed must publish the tool, its version and its executables"
+
+# update-all accepts the executable as the install witness.
+: > "$UV_LOG"
+HOME="$UV_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_UV_LIST="$(cat "$UV_ALIAS_LIST")" \
+    PATH="$MOCK_UV:/usr/bin:/bin" \
+    bash "$ECO" py update -y >"$TMP/uv-alias-up.out" 2>&1 \
+    || fail "updating a uv tool by its executable must not fail"
+grep -q '^tool upgrade python-lsp-server$' "$UV_LOG" \
+    || fail "update must upgrade the tool, not its executable"
+! grep -q 'none of its executables exist' "$TMP/uv-alias-up.out" \
+    || fail "a renamed executable must satisfy the disk witness"
+
+# Uninstall by executable name resolves to the tool, and the removal is
+# verified against the post-action snapshot.
+: > "$UV_LOG"
+HOME="$UV_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_UV_LIST="$(cat "$UV_ALIAS_LIST")" MOCK_UV_LIST_AFTER='' \
+    MOCK_UV_LIST_MARK="$UV_ALIAS_MARK" \
+    PATH="$MOCK_UV:/usr/bin:/bin" \
+    bash "$ECO" py uninstall -y pylsp >"$TMP/uv-alias-un.out" 2>&1 \
+    || { cat "$TMP/uv-alias-un.out" >&2; fail "uninstalling a uv tool by its executable must not fail"; }
+grep -q '^tool uninstall python-lsp-server$' "$UV_LOG" \
+    || fail "an executable name must resolve to its tool for uninstall"
+grep -q 'python-lsp-server uninstalled' "$TMP/uv-alias-un.out" \
+    || fail "the removal must be reported under the tool it removed"
+
+# Install verifies the tool's own executables rather than a file named after
+# the tool.
+UV_ALIAS_INSTALL_HOME="$TMP/uv-alias-install-home"
+rm -f "$UV_ALIAS_MARK"
+: > "$UV_LOG"
+HOME="$UV_ALIAS_INSTALL_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_UV_LIST_AFTER="$(cat "$UV_ALIAS_LIST")" MOCK_UV_LIST_MARK="$UV_ALIAS_MARK" \
+    MOCK_UV_BINS=pylsp \
+    PATH="$MOCK_UV:/usr/bin:/bin" \
+    bash "$ECO" py install -y python-lsp-server >"$TMP/uv-alias-install.out" 2>&1 \
+    || { cat "$TMP/uv-alias-install.out" >&2; fail "installing a uv tool whose bin differs from its name must not fail"; }
+! grep -q 'was not installed' "$TMP/uv-alias-install.out" \
+    || fail "a tool that linked its executable must not be reported as not installed"
+rm -f "$UV_ALIAS_MARK"
+
 # Drift guard: unparseable outdated format → failure.
 if HOME="$UV_HOME" DOTFILES_NON_INTERACTIVE=1 \
     MOCK_UV_OUTDATED='ruff v0.16.5 [latest: 0.17.0' MOCK_UV_OUTDATED_EXIT=0 \
@@ -430,6 +635,11 @@ cat > "$MOCK_GO/go" <<'EOF'
 #!/usr/bin/env bash
 if [[ "$1" == install ]]; then
     printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
+    # Real `go install` writes the binary named after the package path's last
+    # segment into GOBIN (the @latest suffix selects, not names); install
+    # verification keys on that file.
+    mkdir -p "${GOBIN:?}"
+    : > "${GOBIN:?}/$(basename "${2%@latest}")" && chmod +x "${GOBIN:?}/$(basename "${2%@latest}")"
 elif [[ "$1" == env && "$2" == -w ]]; then
     shift 2
     printf '%s\n' "$@" >> "$GO_WRITE_LOG"
@@ -576,6 +786,8 @@ if [[ "$1" == env && "$2" == -w ]]; then
 fi
 if [[ "$1" == install ]]; then
     printf 'GOBIN=%s tool=%s\n' "${GOBIN:-<unset>}" "$2" >> "$GO_LOG"
+    mkdir -p "${GOBIN:?}"
+    : > "${GOBIN:?}/$(basename "${2%@latest}")" && chmod +x "${GOBIN:?}/$(basename "${2%@latest}")"
 fi
 if [[ "$1" == env && "$2" == GOENV ]]; then
     printf '%s\n' "${GO_ENV_FILE:-}"
@@ -620,9 +832,96 @@ if HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
     fail "a failed go list -m must propagate as failure"
 fi
 
+# ── go: a binary's name is not the package it came from ──
+# `go install` is given a package path and writes a bin named after its last
+# segment, so a cmd/ tool's two identities differ (staticcheck ships from
+# honnef.co/go/tools/cmd/staticcheck). The snapshot publishes both, and every
+# verb that keys on the bin still works when the user names the package path.
+mkdir -p "$GO_HOME/.local/bin"
+: > "$GO_HOME/.local/bin/staticcheck"
+chmod +x "$GO_HOME/.local/bin/staticcheck"
+GO_PKG_ENV=(
+    MOCK_GO_PKG_staticcheck=honnef.co/go/tools
+    MOCK_GO_CUR_staticcheck=v0.8.2
+    MOCK_GO_PATH_staticcheck=honnef.co/go/tools/cmd/staticcheck
+    MOCK_GO_LAT_honnef_co_go_tools=v0.9.0
+)
+
+: > "$GO_LOG"
+env "${GO_PKG_ENV[@]}" HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" --installed >"$TMP/go-installed.out" 2>&1 \
+    || fail "--installed must not fail"
+grep -q '^staticcheck v0.8.2 honnef.co/go/tools/cmd/staticcheck$' "$TMP/go-installed.out" \
+    || fail "--installed must publish the bin, its version and its package path"
+
+: > "$GO_LOG"
+env "${GO_PKG_ENV[@]}" HOME="$GO_HOME" PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-go.sh" --outdated >"$TMP/go-unmanaged.out" 2>/dev/null \
+    || fail "an unmanaged go tool must not break --outdated"
+grep -q 'honnef.co/go/tools/cmd/staticcheck v0.8.2 v0.9.0' "$TMP/go-unmanaged.out" \
+    || fail "--outdated must key the lookup on the package path, not the bin name"
+
+# update (no args) must reinstall the tool from its package path.
+: > "$GO_LOG"
+env "${GO_PKG_ENV[@]}" HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ECO" go update -y >"$TMP/go-unmanaged-up.out" 2>&1 \
+    || fail "updating an unmanaged go tool must not fail"
+grep -q 'tool=honnef.co/go/tools/cmd/staticcheck@latest' "$GO_LOG" \
+    || fail "an unmanaged go tool must be updated by its package path"
+! grep -q 'tool=staticcheck@latest' "$GO_LOG" \
+    || fail "the bin name must never be handed to go install as a package path"
+
+# Naming the package path resolves to the same bin, for update and uninstall, so
+# the arg does not have to be the binary name.
+for named in "update -y" "uninstall -y"; do
+    : > "$GO_LOG"
+    # shellcheck disable=SC2086
+    env "${GO_PKG_ENV[@]}" HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+        PATH="$MOCK_GO:/usr/bin:/bin" \
+        bash "$ECO" go $named honnef.co/go/tools/cmd/staticcheck \
+        >"$TMP/go-named.out" 2>&1 \
+        || fail "naming a go package path must work for '$named'"
+    ! grep -q 'is not installed via go' "$TMP/go-named.out" \
+        || fail "a go package path must resolve to its installed bin ('$named')"
+done
+
+# A bin name is the identity users type, but it is not what `go install`
+# takes. The snapshot's third column carries the package path, so update by
+# bin must reinstall from that path — `go install staticcheck@latest` is a
+# malformed module path.
+mkdir -p "$GO_HOME/.local/bin"
+: > "$GO_HOME/.local/bin/staticcheck"
+chmod +x "$GO_HOME/.local/bin/staticcheck"
+: > "$GO_LOG"
+env "${GO_PKG_ENV[@]}" HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ECO" go update -y staticcheck >"$TMP/go-bin-name.out" 2>&1 \
+    || fail "updating a go tool by its bin name must not fail"
+grep -q 'tool=honnef.co/go/tools/cmd/staticcheck@latest' "$GO_LOG" \
+    || fail "a bin name must resolve to the owning package path for update"
+! grep -q 'tool=staticcheck@latest' "$GO_LOG" \
+    || fail "a bin name must never be handed to go install as a package path"
+
+# ... and install stays idempotent when given the package path. Before the
+# split, detection probed ~/.local/bin/<package path>, which never exists, so
+# every run downloaded the tool again.
+mkdir -p "$GO_HOME/.local/bin"
+: > "$GO_HOME/.local/bin/staticcheck"
+chmod +x "$GO_HOME/.local/bin/staticcheck"
+: > "$GO_LOG"
+env "${GO_PKG_ENV[@]}" HOME="$GO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$MOCK_GO:/usr/bin:/bin" \
+    bash "$ECO" go install -y honnef.co/go/tools/cmd/staticcheck \
+    >"$TMP/go-pkg-idem.out" 2>&1 \
+    || fail "a package-path install of an installed tool must not fail"
+[[ ! -s "$GO_LOG" ]] \
+    || fail "a package-path install of an installed tool must not reinstall it"
+rm -f "$GO_HOME/.local/bin/staticcheck"
+
 # --uninstall-one: removes the binary via rm. The fixture must carry Go module
 # metadata: the removal path refuses to delete a file that is not a Go binary
-# (CLI_BIN_DIR is shared with npm/uv, so a blind rm would delete their tool).
+# (ECO_BIN_DIR is shared with npm/uv, so a blind rm would delete their tool).
 mkdir -p "$GO_HOME/.local/bin"
 touch "$GO_HOME/.local/bin/gopls" "$GO_HOME/.local/bin/gofumpt"
 chmod +x "$GO_HOME/.local/bin/gopls" "$GO_HOME/.local/bin/gofumpt"
@@ -663,7 +962,16 @@ cat > "$MOCK_CARGO/cargo" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CARGO_LOG"
 if [[ "$1 $2" == "install --list" ]]; then
-    if [[ -n "${MOCK_CARGO_LIST:-}" ]]; then
+    # A real uninstall removes the crate from its list; the mock mirrors that
+    # so the post-action snapshot sees the removal.
+    if [[ -f "${MOCK_CARGO_AFTER_MARK:-}" ]]; then
+        # An empty AFTER is a real observation (the crate is gone) and must
+        # exit 0 — a bare `[[ ]] && printf` would exit 1 on the short-circuit
+        # and read as a broken listing.
+        if [[ -n "${MOCK_CARGO_AFTER:-}" ]]; then
+            printf '%s\n' "$MOCK_CARGO_AFTER"
+        fi
+    elif [[ -n "${MOCK_CARGO_LIST:-}" ]]; then
         printf '%s\n' "$MOCK_CARGO_LIST"
     fi
 elif [[ "$1" == search ]]; then
@@ -675,6 +983,15 @@ elif [[ "$1" == search ]]; then
     else
         exit 1
     fi
+elif [[ "$1" == install ]]; then
+    # A real install writes the crate's executables into <root>/bin (the shared
+    # CLI prefix); MOCK_CARGO_BINS stands in for them (ripgrep → rg).
+    mkdir -p "$HOME/.local/bin"
+    for b in ${MOCK_CARGO_BINS:-}; do
+        : > "$HOME/.local/bin/$b" && chmod +x "$HOME/.local/bin/$b"
+    done
+elif [[ "$1" == uninstall ]]; then
+    : > "${MOCK_CARGO_AFTER_MARK:-/dev/null}"
 fi
 EOF
 chmod +x "$MOCK_CARGO/cargo"
@@ -849,6 +1166,378 @@ HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
 grep -qE -- 'npm install -g --prefix [^ ]+ cowsay$' "$FNM_LOG" \
     || fail "a raw pkg must install by its own name"
 
+# ── -q / -n: output volume and plan-only ───────────────────────
+# -q silences eco's own progress lines; the action still runs and warnings
+# still show. Here the target is already installed, so nothing should print.
+: > "$FNM_LOG"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -q -y cowsay >"$ECO_OUT" 2>&1 \
+    || fail "a quiet install must not fail"
+[[ -z "$(tr -d '[:space:]' < "$ECO_OUT")" ]] \
+    || { cat "$ECO_OUT" >&2; fail "-q must silence eco's info/ok output"; }
+
+# -n prints the plan and runs nothing (named install).
+: > "$FNM_LOG"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -n -y tree-cli >"$ECO_OUT" 2>&1 \
+    || fail "a dry-run install must not fail"
+grep -q 'would install tree-cli (tree-cli) via npm' "$ECO_OUT" \
+    || { cat "$ECO_OUT" >&2; fail "a dry-run install must print the plan"; }
+! grep -q 'npm install -g ' "$FNM_LOG" \
+    || fail "a dry-run install must not run npm"
+
+# A plan must not look certain about a state it could not read: with no
+# runtime at all it still plans, but says it assumed availability.
+rc=0
+HOME="$TMP/dry-nofnm-home" PATH="/usr/bin:/bin" \
+    bash "$ECO" node install -n -y cowsay >"$ECO_OUT" 2>&1 || rc=$?
+[[ "$rc" == 0 ]] || fail "a dry-run install without a runtime must still plan, got $rc"
+grep -q 'would install cowsay (cowsay) via npm' "$ECO_OUT" \
+    || fail "a dry run without a runtime must still print the plan"
+grep -q 'plan assumes the runtime is available' "$ECO_OUT" \
+    || fail "a plan based on an unreadable state must say so"
+
+# -n update plans from the local snapshot, shows current versions, runs nothing.
+: > "$FNM_LOG"
+printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$UP_LS"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$UP_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -n -y >"$ECO_OUT" 2>&1 \
+    || fail "a dry-run update must not fail"
+grep -q 'would update wrangler (wrangler)' "$ECO_OUT" \
+    || fail "a dry-run update must print the plan"
+grep -qE 'wrangler +3\.0\.0' "$ECO_OUT" \
+    || fail "a dry-run update must show the current version"
+! grep -q 'npm install -g ' "$FNM_LOG" \
+    || fail "a dry-run update must not run npm"
+
+# -n uninstall likewise, and leaves the binary alone.
+: > "$FNM_LOG"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$UP_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -n -y wrangler >"$ECO_OUT" 2>&1 \
+    || fail "a dry-run uninstall must not fail"
+grep -q 'would uninstall wrangler (wrangler)' "$ECO_OUT" \
+    || fail "a dry-run uninstall must print the plan"
+! grep -q 'would uninstall wrangler (wrangler) \[' "$ECO_OUT" \
+    || fail "a dry-run uninstall must not show an install flag"
+! grep -q 'npm uninstall -g ' "$FNM_LOG" \
+    || fail "a dry-run uninstall must not run npm"
+[[ -x "$ECO_HOME/.local/bin/wrangler" ]] \
+    || fail "a dry-run uninstall must leave the binary in place"
+
+# -n manifest install on a clean home plans every missing row and runs nothing.
+# -y selects every row (the same policy a real -y run uses), and the runtime is
+# not prepared: a dry run has no side effects.
+DRY_HOME="$TMP/npm-dry-home"
+: > "$FNM_LOG"
+HOME="$DRY_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -n -y >"$ECO_OUT" 2>&1 \
+    || fail "a dry-run manifest install must not fail"
+grep -q 'would install biome (@biomejs/biome) via npm' "$ECO_OUT" \
+    || { cat "$ECO_OUT" >&2; fail "a dry-run manifest install must print the plan"; }
+grep -q 'would install pi (@earendil-works/pi-coding-agent) \[--ignore-scripts\] via npm' "$ECO_OUT" \
+    || fail "a dry-run manifest install must include the row's flag"
+! grep -q 'npm install -g ' "$FNM_LOG" \
+    || fail "a dry-run manifest install must not run npm"
+! grep -q 'install --lts' "$FNM_LOG" \
+    || fail "a dry-run manifest install must not prepare the runtime"
+
+# Without -y a dry run cannot ask, so it plans with the conf defaults (n-rows
+# stay out) and says which policy it used.
+: > "$FNM_LOG"
+HOME="$DRY_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -n >"$ECO_OUT" 2>&1 \
+    || fail "a default dry-run manifest install must not fail"
+grep -q 'planned with eco.conf defaults' "$ECO_OUT" \
+    || fail "a dry run that asked nothing must say which policy it planned with"
+! grep -q 'would install pi ' "$ECO_OUT" \
+    || fail "a default dry run must skip n-rows"
+! grep -q 'npm install -g ' "$FNM_LOG" \
+    || fail "a default dry-run manifest install must not run npm"
+
+# A manifest dry run must not probe or prepare the runtime either: with no fnm
+# on PATH it still plans, and must not claim the toolchain is missing.
+: > "$FNM_LOG"
+HOME="$DRY_HOME" PATH="/usr/bin:/bin" \
+    bash "$ECO" node install -n -y >"$ECO_OUT" 2>&1 \
+    || { cat "$ECO_OUT" >&2; fail "a manifest dry run without a runtime must still plan"; }
+grep -q 'would install biome (@biomejs/biome) via npm' "$ECO_OUT" \
+    || fail "a manifest dry run must not require the runtime"
+! grep -q 'fnm not found' "$ECO_OUT" \
+    || fail "a manifest dry run must not probe the runtime"
+
+# ── the bin a user types is not always the package npm must be given ──
+# A scoped package (@vercel/ncc) installs the bin "ncc". Three places must
+# agree on the package identity or npm receives a name that does not exist:
+# the snapshot carries bin+pkg as separate columns, and update/uninstall send
+# the package, never the bin.
+SCOPED_HOME="$TMP/scoped-ncc-home"
+SCOPED_LS="$TMP/scoped-ls.json"
+mkdir -p "$SCOPED_HOME/.local/bin" "$SCOPED_HOME/.local/lib/node_modules/@vercel/ncc"
+printf '%s' '{"dependencies":{"@vercel/ncc":{"version":"0.38.1"}}}' > "$SCOPED_LS"
+printf '{"name":"@vercel/ncc","version":"0.38.1","bin":{"ncc":"dist/ncc/cli.js"}}' \
+    > "$SCOPED_HOME/.local/lib/node_modules/@vercel/ncc/package.json"
+: > "$SCOPED_HOME/.local/bin/ncc" && chmod +x "$SCOPED_HOME/.local/bin/ncc"
+
+# The snapshot publishes the bin (from package.json — the authority npm used
+# for the link) and the package as separate columns.
+HOME="$SCOPED_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$SCOPED_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" --installed >"$TMP/scoped-inst.out" 2>&1 \
+    || fail "npm --installed must not fail on a scoped package"
+grep -q '^ncc 0.38.1 @vercel/ncc ncc$' "$TMP/scoped-inst.out" \
+    || { cat "$TMP/scoped-inst.out" >&2; fail "npm --installed must separate the bin from the package name (aliases last)"; }
+
+# A rowless update must upgrade by the package, not the bin.
+: > "$FNM_LOG"
+HOME="$SCOPED_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$SCOPED_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y >"$ECO_OUT" 2>&1 \
+    || fail "updating a scoped package must not fail"
+grep -qE -- 'npm install -g --prefix [^ ]+ @vercel/ncc@latest$' "$FNM_LOG" \
+    || fail "a scoped package must be updated by its package name"
+! grep -qE -- 'npm install -g --prefix [^ ]+ ncc@latest$' "$FNM_LOG" \
+    || fail "the bin name must never be handed to npm as a package name"
+
+# Uninstall resolves both directions: by package name...
+: > "$FNM_LOG"
+HOME="$SCOPED_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$SCOPED_LS" MOCK_LS_AFTER='{"dependencies":{}}' \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y '@vercel/ncc' >"$ECO_OUT" 2>&1 \
+    || fail "uninstalling a scoped package by package name must not fail"
+grep -qE -- 'npm uninstall -g --prefix [^ ]+ @vercel/ncc$' "$FNM_LOG" \
+    || fail "a package-name uninstall must reach npm with the package"
+# ...and by bin name: prune translates the bin to the row's package. Both
+# witnesses are restored — the bin (the package-name uninstall's mock deleted
+# it) and the ls fixture (that mock's AFTER emptied it).
+: > "$SCOPED_HOME/.local/bin/ncc" && chmod +x "$SCOPED_HOME/.local/bin/ncc"
+printf '%s' '{"dependencies":{"@vercel/ncc":{"version":"0.38.1"}}}' > "$SCOPED_LS"
+: > "$FNM_LOG"
+HOME="$SCOPED_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$SCOPED_LS" MOCK_LS_AFTER='{"dependencies":{}}' \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y ncc >"$ECO_OUT" 2>&1 \
+    || fail "uninstalling a scoped package by bin name must not fail"
+grep -qE -- 'npm uninstall -g --prefix [^ ]+ @vercel/ncc$' "$FNM_LOG" \
+    || fail "a bin-name uninstall must uninstall the owning package"
+
+# ── a package may ship several bins; every one of them is a door to it ──
+# The fixture's typescript links tsc AND tsserver (TS 5.x shipped both). The
+# snapshot keys the row on the primary
+# bin, but the package is the operating entity: updating or uninstalling
+# through ANY of its bins must reach the package, and through its package name
+# must too. A secondary bin that resolves to "not installed" while the user is
+# looking straight at it is the same lie as before, one column over.
+MULTIBIN_HOME="$TMP/multibin-home"
+MULTIBIN_LS="$TMP/multibin-ls.json"
+mkdir -p "$MULTIBIN_HOME/.local/bin" "$MULTIBIN_HOME/.local/lib/node_modules/typescript"
+printf '{"name":"typescript","version":"5.0.0","bin":{"tsc":"bin/tsc","tsserver":"bin/tsserver"}}' \
+    > "$MULTIBIN_HOME/.local/lib/node_modules/typescript/package.json"
+for mb in tsc tsserver; do
+    : > "$MULTIBIN_HOME/.local/bin/$mb" && chmod +x "$MULTIBIN_HOME/.local/bin/$mb"
+done
+printf '%s' '{"dependencies":{"typescript":{"version":"5.0.0"}}}' > "$MULTIBIN_LS"
+
+# The snapshot carries the primary bin, the package, and every bin as aliases.
+HOME="$MULTIBIN_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$MULTIBIN_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-npm.sh" --installed >"$TMP/multibin-inst.out" 2>&1 \
+    || fail "npm --installed must not fail on a multi-bin package"
+grep -q '^tsc 5.0.0 typescript tsc tsserver$' "$TMP/multibin-inst.out" \
+    || fail "npm --installed must list every bin of the package as aliases"
+
+# Update through the secondary bin reaches the package.
+: > "$FNM_LOG"
+HOME="$MULTIBIN_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$MULTIBIN_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y tsserver >"$ECO_OUT" 2>&1 \
+    || fail "updating a multi-bin package via a secondary bin must not fail"
+grep -qE -- 'npm install -g --prefix [^ ]+ typescript@latest$' "$FNM_LOG" \
+    || fail "a secondary bin must update its owning package"
+
+# Uninstall through the secondary bin likewise.
+: > "$FNM_LOG"
+HOME="$MULTIBIN_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$MULTIBIN_LS" MOCK_LS_AFTER='{"dependencies":{}}' \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y tsserver >"$ECO_OUT" 2>&1 \
+    || fail "uninstalling a multi-bin package via a secondary bin must not fail"
+grep -qE -- 'npm uninstall -g --prefix [^ ]+ typescript$' "$FNM_LOG" \
+    || fail "a secondary bin must uninstall its owning package"
+
+# And through the package name itself (restore both witnesses: the mock's
+# uninstall emptied the list and deleted the bins).
+printf '%s' '{"dependencies":{"typescript":{"version":"5.0.0"}}}' > "$MULTIBIN_LS"
+for mb in tsc tsserver; do
+    : > "$MULTIBIN_HOME/.local/bin/$mb" && chmod +x "$MULTIBIN_HOME/.local/bin/$mb"
+done
+: > "$FNM_LOG"
+HOME="$MULTIBIN_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$MULTIBIN_LS" MOCK_LS_AFTER='{"dependencies":{}}' \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y typescript >"$ECO_OUT" 2>&1 \
+    || fail "uninstalling a multi-bin package by package name must not fail"
+grep -qE -- 'npm uninstall -g --prefix [^ ]+ typescript$' "$FNM_LOG" \
+    || fail "a package-name uninstall must reach npm with the package"
+
+# Naming two bins of one package reaches one package, so the action runs once:
+# identity translation happens before dedupe, not after it.
+printf '%s' '{"dependencies":{"typescript":{"version":"5.0.0"}}}' > "$MULTIBIN_LS"
+for mb in tsc tsserver; do
+    : > "$MULTIBIN_HOME/.local/bin/$mb" && chmod +x "$MULTIBIN_HOME/.local/bin/$mb"
+done
+: > "$FNM_LOG"
+HOME="$MULTIBIN_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$MULTIBIN_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y tsc tsserver >"$ECO_OUT" 2>&1 \
+    || fail "updating one package through two of its bins must not fail"
+[[ "$(grep -c 'npm install -g ' "$FNM_LOG" || true)" == 1 ]] \
+    || fail "two bins of one package must produce exactly one update"
+
+# An alias must keep the manifest's flag. cf-wrangler is one of wrangler's
+# bins; updating through it must still pass --allow-scripts, or the upgrade
+# runs unconfigured (the flag is the whole reason the row exists).
+WR_FLAG_HOME="$TMP/wr-flag-home"
+WR_FLAG_LS="$TMP/wr-flag-ls.json"
+mkdir -p "$WR_FLAG_HOME/.local/bin" "$WR_FLAG_HOME/.local/lib/node_modules/wrangler"
+printf '{"name":"wrangler","version":"3.0.0","bin":{"wrangler":"a","wrangler2":"b","cf-wrangler":"c"}}' \
+    > "$WR_FLAG_HOME/.local/lib/node_modules/wrangler/package.json"
+for wb in wrangler wrangler2 cf-wrangler; do
+    : > "$WR_FLAG_HOME/.local/bin/$wb" && chmod +x "$WR_FLAG_HOME/.local/bin/$wb"
+done
+printf '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$WR_FLAG_LS"
+: > "$FNM_LOG"
+HOME="$WR_FLAG_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$WR_FLAG_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y cf-wrangler >"$ECO_OUT" 2>&1 \
+    || { cat "$ECO_OUT" >&2; fail "updating a manifest package through one of its bins must not fail"; }
+grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=esbuild,workerd wrangler@latest$' "$FNM_LOG" \
+    || fail "an alias must keep the manifest's flag for its package"
+
+# ── an alias keeps the manifest's flag ──
+# wrangler needs --allow-scripts. Naming another of its bins (cf-wrangler in
+# real installs) must still upgrade wrangler with that flag, not run it
+# unconfigured. The manifest is keyed by conf bin/pkg, so translation has to
+# ask it after resolving the alias.
+FLAG_ALIAS_HOME="$TMP/flag-alias-home"
+FLAG_ALIAS_LS="$TMP/flag-alias-ls.json"
+mkdir -p "$FLAG_ALIAS_HOME/.local/bin" "$FLAG_ALIAS_HOME/.local/lib/node_modules/wrangler"
+printf '{"name":"wrangler","version":"3.0.0","bin":{"wrangler":"w","wrangler2":"w2"}}' \
+    > "$FLAG_ALIAS_HOME/.local/lib/node_modules/wrangler/package.json"
+: > "$FLAG_ALIAS_HOME/.local/bin/wrangler" && chmod +x "$FLAG_ALIAS_HOME/.local/bin/wrangler"
+printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$FLAG_ALIAS_LS"
+: > "$FNM_LOG"
+HOME="$FLAG_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$FLAG_ALIAS_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y wrangler2 >"$ECO_OUT" 2>&1 \
+    || { cat "$ECO_OUT" >&2; fail "updating a flagged package through an alias must not fail"; }
+grep -qE -- 'npm install -g --prefix [^ ]+ --allow-scripts=esbuild,workerd wrangler@latest$' "$FNM_LOG" \
+    || fail "an alias must keep the manifest flag for its package"
+
+# ── an install is verified against the package's own bins ──────
+# The fixture's typescript links tsc + tsserver, so neither the package name nor a bin of
+# that name exists on disk. Install must succeed when the package's own
+# executables land, and a repeat must be a no-op instead of reinstalling
+# forever (detection keys on those executables).
+TS_INSTALL_HOME="$TMP/ts-install-home"
+TS_INSTALL_LS="$TMP/ts-install-ls.json"
+mkdir -p "$TS_INSTALL_HOME/.local/lib/node_modules/typescript"
+printf '{"name":"typescript","version":"5.0.0","bin":{"tsc":"bin/tsc","tsserver":"bin/tsserver"}}' \
+    > "$TS_INSTALL_HOME/.local/lib/node_modules/typescript/package.json"
+printf '{}' > "$TS_INSTALL_LS"
+: > "$FNM_LOG"
+HOME="$TS_INSTALL_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$TS_INSTALL_LS" \
+    MOCK_LS_AFTER='{"dependencies":{"typescript":{"version":"5.0.0"}}}' \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -y typescript >"$ECO_OUT" 2>&1 \
+    || { cat "$ECO_OUT" >&2; fail "installing a package whose bins differ from its name must not fail"; }
+grep -qE -- 'npm install -g --prefix [^ ]+ typescript$' "$FNM_LOG" \
+    || fail "the package name must reach npm unchanged"
+[[ -x "$TS_INSTALL_HOME/.local/bin/tsc" ]] \
+    || fail "the mock must have linked the package's real bins"
+! grep -q 'was not installed' "$ECO_OUT" \
+    || fail "a package that linked its bins must not be reported as not installed"
+: > "$FNM_LOG"
+HOME="$TS_INSTALL_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$TS_INSTALL_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -y typescript >"$ECO_OUT" 2>&1 \
+    || fail "a repeated package install must not fail"
+! grep -q 'npm install -g ' "$FNM_LOG" \
+    || fail "a package whose executables are already on disk must not reinstall"
+grep -q 'already installed; skipping' "$ECO_OUT" \
+    || fail "an already-installed package must be reported as skipped"
+
+# An install whose bin never appears is a failure, not a success. npm exits 0
+# for a package that ships no bin (the registry's "ruff" is a 2015 generator
+# library), and before this check such an install reported success forever
+# while detection — which keys on the bin — reinstalled it on every run. The
+# mock's ls reports the package as present but ECO_HOME/.local/bin stays empty.
+NOBIN_HOME="$TMP/nobin-home"
+NOBIN_LS="$TMP/nobin-ls.json"
+printf '%s' '{"dependencies":{"ruff":{"version":"1.5.4"}}}' > "$NOBIN_LS"
+: > "$FNM_LOG"
+rc=0
+# MOCK_NOBIN_PKG makes the mock's npm ship no bin, mirroring the real
+# registry's "ruff" (a 2015 generator library with no executables).
+HOME="$NOBIN_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$NOBIN_LS" MOCK_NOBIN_PKG=ruff \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -y ruff >"$ECO_OUT" 2>&1 || rc=$?
+[[ "$rc" == 1 ]] || fail "an install that lands no binary must fail, got $rc"
+grep -q 'was not installed' "$ECO_OUT" \
+    || fail "an install that lands no binary must say so"
+! grep -q '✅ ruff installed' "$ECO_OUT" \
+    || fail "an install that lands no binary must not report success"
+
+# The manifest path has the same hole and the same guard: a y-row whose bin
+# never appears fails the run instead of printing "installed". A one-row
+# fixture keeps unrelated rows out of the picture.
+NOBIN_CONF="$TMP/nobin.conf"
+printf 'node y ruff ruff\n' > "$NOBIN_CONF"
+rc=0
+HOME="$NOBIN_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_CONF="$NOBIN_CONF" \
+    MOCK_LS_FILE="$NOBIN_LS" MOCK_NOBIN_PKG=ruff \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install >"$ECO_OUT" 2>&1 || rc=$?
+[[ "$rc" == 1 ]] || fail "a manifest install that lands no binary must fail, got $rc"
+grep -q 'was not installed' "$ECO_OUT" \
+    || fail "the manifest path must verify the binary landed too"
+unset MOCK_NOBIN_PKG
+
+# A successfully installed 0-bin package (npm's "ruff" is a library) is a
+# ghost for update: the snapshot lists it, the filesystem does not. update
+# skips it rather than claiming "already up to date" about a non-command.
+NOBIN2_HOME="$TMP/nobin2-home"
+NOBIN2_LS="$TMP/nobin2-ls.json"
+printf '%s' '{"dependencies":{"ruff":{"version":"1.5.4"}}}' > "$NOBIN2_LS"
+rc=0
+HOME="$NOBIN2_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_LS_FILE="$NOBIN2_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y ruff >"$ECO_OUT" 2>&1 || rc=$?
+grep -q 'none of its executables exist' "$ECO_OUT" \
+    || fail "a 0-bin ghost must be skipped with the witness mismatch named"
+! grep -q 'already up to date' "$ECO_OUT" \
+    || fail "a 0-bin ghost must never read as up to date"
+
+
 # Uninstall with conf bin resolution. Removal asks; this run answers the prompt.
 # The fixture must report the bin as installed: eco decides existence from its
 # own snapshot, never from a package manager's exit code.
@@ -866,7 +1555,10 @@ grep -q 'wrangler uninstalled' "$ECO_OUT" \
     || fail "a verified removal must be reported as done"
 
 # A removal that the package manager claims but did not perform is a failure:
-# npm exits 0 for a package that is still there.
+# npm exits 0 for a package that is still there. The bin must be seated again:
+# the previous removal's mock deleted it, and prune now (rightly) refuses a
+# target the filesystem does not have.
+: > "$ECO_HOME/.local/bin/wrangler" && chmod +x "$ECO_HOME/.local/bin/wrangler"
 printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$UN_LS"
 : > "$FNM_LOG"
 rc=0
@@ -895,7 +1587,10 @@ HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
 grep -q 'is not installed via npm' "$ECO_OUT" \
     || fail "an absent package must be reported as not installed"
 
-# Removal always asks unless -y is given.
+# Removal always asks unless -y is given. The bin is re-seated: the mock's
+# uninstall in the previous test deleted it, and the filesystem is one of the
+# two witnesses prune consults.
+: > "$ECO_HOME/.local/bin/wrangler" && chmod +x "$ECO_HOME/.local/bin/wrangler"
 printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}' > "$UN_LS"
 : > "$FNM_LOG"
 HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
@@ -1017,7 +1712,7 @@ if HOME="$CARGO_HOME" DOTFILES_NON_INTERACTIVE=1 PATH="$BROKEN_CARGO:/usr/bin:/b
 fi
 
 # Machine output: --list/--outdated must keep stdout data-only. Without
-# CLI_MACHINE_OUTPUT the channel's own warnings land in the table.
+# ECO_MACHINE_OUTPUT the channel's own warnings land in the table.
 CARGO_NOPATH="$TMP/nocargo-path"
 mkdir -p "$CARGO_NOPATH"
 for cmd in env dirname bash; do
@@ -1045,6 +1740,107 @@ HOME="$CARGO_HOME" DOTFILES_NON_INTERACTIVE=1 \
 grep -q 'ripgrep 14.1.0 14.1.1-rc.1' "$TMP/cargo-pre.out" \
     || fail "a pre-release cargo latest must be reported"
 
+# ── cargo: the binary a user types is not the crate name ──
+# ripgrep installs "rg": the snapshot keys on the crate, so an alias must
+# translate back for update/uninstall. Own mock and home — earlier cargo
+# tests leave bins and mark files behind.
+ALIAS_MOCK="$TMP/alias-cargo-mock"
+CARGO_ALIAS_HOME="$TMP/cargo-alias-home"
+mkdir -p "$CARGO_ALIAS_HOME/.local/bin" "$ALIAS_MOCK"
+: > "$CARGO_ALIAS_HOME/.local/bin/rg"
+chmod +x "$CARGO_ALIAS_HOME/.local/bin/rg"
+cp "$MOCK_CARGO/cargo" "$ALIAS_MOCK/cargo"
+chmod +x "$ALIAS_MOCK/cargo"
+: > "$CARGO_LOG"
+export MOCK_CARGO_AFTER_MARK="$TMP/cargo-un.mark"
+HOME="$CARGO_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' MOCK_CARGO_AFTER='' \
+    PATH="$ALIAS_MOCK:/usr/bin:/bin" \
+    bash "$ECO" rust uninstall -y rg >"$TMP/cargo-alias.out" 2>&1 \
+    || { cat "$TMP/cargo-alias.out" >&2; fail "uninstalling a cargo bin alias must not fail"; }
+grep -qE -- 'uninstall --root [^ ]+ ripgrep$' "$CARGO_LOG" \
+    || fail "a bin alias must uninstall its owning crate, not the bin name"
+! grep -q 'is not installed via cargo' "$TMP/cargo-alias.out" \
+    || fail "a bin alias must not be reported as not-installed while its crate is"
+grep -q 'uninstalling ripgrep' "$TMP/cargo-alias.out" \
+    || fail "the alias must be shown under its crate name"
+
+# update by alias takes the same path. The mark from the uninstall above must
+# go: it would blank the snapshot and prune rg into "not installed".
+rm -f "${MOCK_CARGO_AFTER_MARK:-/nonexistent}"
+: > "$CARGO_LOG"
+HOME="$CARGO_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' MOCK_CARGO_LAT_ripgrep=14.1.1 \
+    PATH="$ALIAS_MOCK:/usr/bin:/bin" \
+    bash "$ECO" rust update -y rg >"$TMP/cargo-alias-up.out" 2>&1 \
+    || fail "updating a cargo bin alias must not fail"
+grep -qE -- 'install --force --root [^ ]+ ripgrep$' "$CARGO_LOG" \
+    || fail "a bin alias must update its owning crate"
+
+# The snapshot's third column must actually carry the bin names (that is what
+# the alias resolution above reads).
+HOME="$CARGO_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' \
+    PATH="$ALIAS_MOCK:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-cargo.sh" --installed >"$TMP/cargo-inst.out" 2>&1 \
+    || fail "cargo --installed must not fail"
+grep -q '^ripgrep 14.1.0 ripgrep rg$' "$TMP/cargo-inst.out" \
+    || fail "cargo --installed must publish crate, version, package and bins"
+
+# A crate without a third column (never happens with real cargo, but the
+# consumer must not choke) still reads as crate+version.
+HOME="$CARGO_ALIAS_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg
+solo v1.0.0:' \
+    PATH="$ALIAS_MOCK:/usr/bin:/bin" \
+    bash "$ROOT/_install/install-by-cargo.sh" --installed >"$TMP/cargo-two.out" 2>&1 \
+    || fail "--installed must handle two crates"
+grep -q '^ripgrep 14.1.0 ripgrep rg$' "$TMP/cargo-two.out" \
+    || fail "cargo --installed must keep crate/pkg/alias columns distinct"
+grep -q '^solo 1.0.0 solo $' "$TMP/cargo-two.out" \
+    || fail "a crate with no bins must emit an empty alias column"
+
+# ── install is verified against the crate's own bins ──
+# A crate name is never a file (ripgrep ships rg). The post-install check must
+# consult the snapshot for the executables the crate actually ships, and a
+# repeated install must be a no-op rather than reinstalling forever.
+CARGO_RAW_HOME="$TMP/cargo-raw-home"
+mkdir -p "$CARGO_RAW_HOME/.local/bin"
+: > "$CARGO_LOG"
+HOME="$CARGO_RAW_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_CARGO_BINS=rg \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' \
+    PATH="$MOCK_CARGO:/usr/bin:/bin" \
+    bash "$ECO" rust install -y ripgrep >"$TMP/cargo-raw.out" 2>&1 \
+    || { cat "$TMP/cargo-raw.out" >&2; fail "installing a crate whose bin differs from its name must not fail"; }
+grep -qE '^install --root [^ ]+ ripgrep$' "$CARGO_LOG" \
+    || fail "the crate name must reach cargo unchanged"
+[[ -x "$CARGO_RAW_HOME/.local/bin/rg" ]] \
+    || fail "the mock must have installed the crate's real bin"
+! grep -q 'was not installed' "$TMP/cargo-raw.out" \
+    || fail "a crate that installed its bin must not be reported as not installed"
+: > "$CARGO_LOG"
+HOME="$CARGO_RAW_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
+    MOCK_CARGO_BINS=rg \
+    MOCK_CARGO_LIST='ripgrep v14.1.0:
+    rg' \
+    PATH="$MOCK_CARGO:/usr/bin:/bin" \
+    bash "$ECO" rust install -y ripgrep >"$TMP/cargo-raw.out" 2>&1 \
+    || fail "a repeated crate install must not fail"
+! grep -qE '^install --root [^ ]+ ripgrep$' "$CARGO_LOG" \
+    || fail "an installed crate must not be reinstalled because its bin has another name"
+grep -q 'already installed; skipping' "$TMP/cargo-raw.out" \
+    || fail "an already-installed crate must be reported as skipped"
+
+# The transition vars must not leak into later cargo tests: mark file and the
+# AFTER override belong to this block alone.
+unset MOCK_CARGO_AFTER_MARK MOCK_CARGO_AFTER
+
 # A channel with no manifest rows is not invoked at all (no stray runtime warning).
 HOME="$CARGO_HOME" PATH="$CARGO_NOPATH:/nonexistent" \
     bash "$ECO" rust install >"$TMP/rust-empty.out" 2>&1 \
@@ -1058,6 +1854,11 @@ grep -q 'nothing to install' "$TMP/rust-empty.out" \
 # still upgrade what its package manager reports — the row count says nothing
 # about what is installed.
 : > "$CARGO_LOG"
+# The update acts on what is installed from the user's point of view: the
+# snapshot (ripgrep) AND a binary on disk (rg). Both witnesses are required
+# now, so the fixture seats the bin the crate ships.
+mkdir -p "$CARGO_HOME/.local/bin"
+: > "$CARGO_HOME/.local/bin/rg" && chmod +x "$CARGO_HOME/.local/bin/rg"
 HOME="$CARGO_HOME" DOTFILES_NON_INTERACTIVE=1 ECO_ASSUME_YES=1 \
     MOCK_CARGO_LIST='ripgrep v14.1.0:
     rg' MOCK_CARGO_LAT_ripgrep=14.1.1 \
@@ -1115,6 +1916,29 @@ for ch_script in install-by-npm.sh install-by-uv.sh install-by-go.sh install-by-
     [[ "$rc" == 1 ]] || fail "$ch_script --no-such-verb must exit 1, got $rc"
     grep -q 'unknown option' "$TMP/guard.out" \
         || fail "$ch_script must report an unknown verb"
+done
+
+# A broken manifest is exactly when the usage text is worth reading, so --help
+# must not depend on eco.conf parsing. Every other verb still has to fail: a
+# channel that cannot read its manifest cannot answer any of them.
+BAD_CONF_TMP="$TMP/broken-help.conf"
+printf 'bogus y broken pkg\n' >"$BAD_CONF_TMP"
+for ch_script in install-by-npm.sh install-by-uv.sh install-by-go.sh install-by-cargo.sh; do
+    rc=0
+    ECO_CONF="$BAD_CONF_TMP" \
+        HOME="$TMP/guard-home" PATH="$NPM_BIN:$MOCK_UV:$MOCK_GO:$MOCK_CARGO:/usr/bin:/bin" \
+        bash "$ROOT/_install/$ch_script" --help >"$TMP/help.out" 2>&1 || rc=$?
+    [[ "$rc" == 0 ]] || fail "$ch_script --help must survive a broken manifest, got $rc"
+    grep -q 'usage:' "$TMP/help.out" \
+        || fail "$ch_script --help must print the usage even when eco.conf is broken"
+    ! grep -q 'eco.conf' "$TMP/help.out" \
+        || fail "$ch_script --help must not report the manifest error"
+
+    rc=0
+    ECO_CONF="$BAD_CONF_TMP" \
+        HOME="$TMP/guard-home" PATH="$NPM_BIN:$MOCK_UV:$MOCK_GO:$MOCK_CARGO:/usr/bin:/bin" \
+        bash "$ROOT/_install/$ch_script" --list >/dev/null 2>&1 || rc=$?
+    [[ "$rc" == 1 ]] || fail "$ch_script --list must fail on a broken manifest, got $rc"
 done
 
 # ── version selectors are refused ───────────────────
@@ -1346,6 +2170,62 @@ HOME="$TMP/broken-ls-home" PATH="$BROKEN_LS_BIN:/usr/bin:/bin" \
 [[ "$rc" == 1 ]] || fail "an unreadable snapshot must fail the uninstall, got $rc"
 grep -q 'cannot read installed npm CLIs' "$TMP/snap-fail.out" \
     || fail "an unreadable snapshot must say so on stderr"
+
+# The *post*-action read is what decides the reported outcome. If it fails, the
+# transition is unknowable — reporting "uninstalled"/"updated" there is the same
+# lie the pre-action read is guarded against. This mock succeeds on the first
+# `npm ls` (so the target is a legitimate candidate) and fails on the second.
+AFTER_BIN="$TMP/after-ls-bin"
+mkdir -p "$AFTER_BIN"
+cat > "$AFTER_BIN/fnm" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$*" == *'npm ls'* ]]; then
+    if [[ -f "${AFTER_LS_MARK:-}" ]]; then
+        printf '%s\n' 'registry unreachable' >&2
+        exit 254
+    fi
+    : > "${AFTER_LS_MARK:-/dev/null}"
+    printf '%s' '{"dependencies":{"wrangler":{"version":"3.0.0"}}}'
+    exit 0
+fi
+if [[ "$*" == *'node --version'* ]]; then printf '%s\n' v24.0.0; fi
+if [[ "$*" == *'npm prefix -g'* ]]; then printf '%s\n' "$AFTER_LS_PREFIX"; fi
+if [[ "$*" == *'node -e'* ]]; then "$MOCK_HOST_NODE" "${@:6}"; fi
+if [[ "$*" == *'npm uninstall -g'* ]]; then
+    # A real uninstall removes the bin; prune demands the filesystem witness,
+    # so the fixture must mirror that or the target is refused before the
+    # post-action read this mock exists to break.
+    bin="$(awk -v p="${*: -1}" '$1 == "node" && $4 == p { print $3; exit }' "${ECO_CONF_PATH:-/nonexistent}")"
+    [[ -n "$bin" ]] || { bin="${*: -1}"; bin="${bin##*/}"; }
+    rm -f "$AFTER_HOME/.local/bin/$bin"
+fi
+exit 0
+EOF
+chmod +x "$AFTER_BIN/fnm"
+AFTER_HOME="$TMP/after-ls-home"
+mkdir -p "$AFTER_HOME/.local/bin"
+: > "$AFTER_HOME/.local/bin/wrangler" && chmod +x "$AFTER_HOME/.local/bin/wrangler"
+export AFTER_LS_MARK="$TMP/after-ls.mark" AFTER_LS_PREFIX="$AFTER_HOME/.local"
+rm -f "$AFTER_LS_MARK"
+rc=0
+HOME="$AFTER_HOME" PATH="$AFTER_BIN:/usr/bin:/bin" \
+    bash "$ECO" node uninstall -y wrangler >"$TMP/after-un.out" 2>&1 || rc=$?
+[[ "$rc" == 1 ]] || fail "an unverifiable removal must fail, got $rc"
+grep -q 'cannot confirm the removal' "$TMP/after-un.out" \
+    || fail "an unverifiable removal must say the state is unknown"
+! grep -q 'wrangler uninstalled' "$TMP/after-un.out" \
+    || fail "an unverifiable removal must not be reported as done"
+
+rm -f "$AFTER_LS_MARK"
+rc=0
+HOME="$AFTER_HOME" PATH="$AFTER_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -y >"$TMP/after-up.out" 2>&1 || rc=$?
+[[ "$rc" == 1 ]] || fail "an unverifiable update must fail, got $rc"
+grep -q 'state after the update is unknown' "$TMP/after-up.out" \
+    || fail "an unverifiable update must say the state is unknown"
+! grep -q 'wrangler updated' "$TMP/after-up.out" \
+    || fail "an unverifiable update must not be reported as done"
+unset AFTER_LS_MARK AFTER_LS_PREFIX
 
 # ── a fresh machine is empty, not broken ────────────
 # npm exits 254 with an ENOENT error object when its global root does not exist

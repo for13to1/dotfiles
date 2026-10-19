@@ -48,7 +48,7 @@ channel_name() {
 }
 
 usage() {
-    echo "usage: eco <node|py|go|rust> <list|install|update|uninstall> [-y] [pkg…]"
+    echo "usage: eco <node|py|go|rust> <list|install|update|uninstall> [-y] [-q] [-n] [pkg…]"
     echo ""
     echo "  list                  list installed CLIs with current and latest versions"
     echo "  install [-y] [pkg…]   install missing CLIs; without pkg, manifest mode"
@@ -56,8 +56,12 @@ usage() {
     echo "  uninstall [-y] <pkg…> remove installed CLIs (package names required)"
     echo ""
     echo "  -y, --yes             do not ask for confirmation (not valid for list)"
+    echo "  -q, --quiet           drop eco's own progress lines (warnings, errors and"
+    echo "                        the package manager's output still show)"
+    echo "  -n, --dry-run         print what would run, execute nothing (not valid for list)"
     echo ""
     echo "Packages are bin names from eco.conf, or raw package names for unmanaged tools."
+    echo "update and uninstall also accept any executable a package ships (e.g. cf-wrangler)."
     echo "Versions are never pinned here: install and update take whatever the package"
     echo "manager resolves, and 'list' shows what is currently installed."
 }
@@ -96,8 +100,11 @@ conf_channel_row_count() {
 # resolve_args <verb> <channel> [arg…]
 # Fills TARGET_BINS / TARGET_PKGS / TARGET_FLAGS.
 # An arg matching a conf bin (or pkg) yields that row's pkg+flag; otherwise the
-# arg is a raw pkg (flag empty). go uninstall is the exception: a raw pkg's bin
-# is the module path's last segment (the binary name Go installs).
+# arg is a raw pkg (flag empty).
+#
+# go is the one channel where an unregistered arg has two identities: `go
+# install` takes a package path and names the binary after its last segment.
+# Split them for every verb — detection keys on the bin.
 #
 # A bare name is the only accepted form: `pkg@selector` is refused, because eco
 # stores no versions (see pkg_has_selector).
@@ -119,12 +126,12 @@ resolve_args() {
             TARGET_BINS+=("$CONF_BIN")
             TARGET_PKGS+=("$CONF_PKG")
             TARGET_FLAGS+=("$CONF_FLAG")
+        elif [[ "$ch" == "go" ]]; then
+            TARGET_BINS+=("${arg##*/}")
+            TARGET_PKGS+=("$arg")
+            TARGET_FLAGS+=("")
         else
-            if [[ "$verb" == "uninstall" && "$ch" == "go" ]]; then
-                TARGET_BINS+=("${arg##*/}")
-            else
-                TARGET_BINS+=("$arg")
-            fi
+            TARGET_BINS+=("$arg")
             TARGET_PKGS+=("$arg")
             TARGET_FLAGS+=("")
         fi
@@ -137,12 +144,12 @@ resolve_args() {
 # channels also honor a foreign PATH install; npm keys on the canonical prefix
 # only.
 prune_installed_targets() {
-    local ch="$1" internal detect i path
+    local ch="$1" internal detect i path snapshot="" snapshot_ok=0
     internal="$(channel_name "$ch")"
     detect="$(channel_detect "$internal")"
     local -a kb=() kp=() kf=()
     for i in "${!TARGET_BINS[@]}"; do
-        path="$CLI_BIN_DIR/${TARGET_BINS[i]}"
+        path="$ECO_BIN_DIR/${TARGET_BINS[i]}"
         if [[ "$detect" == "path" ]]; then
             if is_installed "${TARGET_BINS[i]}" "$path"; then
                 info "${TARGET_BINS[i]} already installed; skipping"
@@ -152,10 +159,33 @@ prune_installed_targets() {
             info "${TARGET_BINS[i]} already installed; skipping"
             continue
         fi
+        # A package need not land a bin of its own name (typescript → tsc), so
+        # the path check above cannot see it. Ask the snapshot; an unreadable
+        # one is not evidence of absence — install reports its own failure.
+        if (( ! snapshot_ok )); then
+            snapshot_ok=1
+            # Advisory: install prepares the runtime itself, so a read that
+            # cannot run yet must not tell the user to fix it first.
+            if ! snapshot="$(channel_installed "$ch" 2>/dev/null)"; then
+                snapshot=""
+                # A plan must not look certain about a state it could not read.
+                if [[ -n "${ECO_DRY_RUN:-}" ]]; then
+                    warn "cannot read installed $internal CLIs; the plan assumes the runtime is available"
+                fi
+            fi
+        fi
+        if [[ -n "$snapshot" ]] \
+           && installed_target_present "$snapshot" "${TARGET_BINS[i]}" "${TARGET_PKGS[i]}"; then
+            info "${TARGET_BINS[i]} already installed; skipping"
+            continue
+        fi
         # A stale placeholder is not "installed" (is_installed says no) yet
         # still blocks a fresh install (EEXIST / "executable already exists"),
-        # so clear it the same way the manifest path does.
-        clean_stale_installs "$path"
+        # so clear it the same way the manifest path does. A dry run promises
+        # no mutation, so it leaves the placeholder alone.
+        if [[ -z "${ECO_DRY_RUN:-}" ]]; then
+            clean_stale_installs "$path"
+        fi
         kb+=("${TARGET_BINS[i]}")
         kp+=("${TARGET_PKGS[i]}")
         kf+=("${TARGET_FLAGS[i]}")
@@ -173,7 +203,8 @@ prune_installed_targets() {
 }
 
 # ── installed snapshot ─────────────────────────────────────────
-# channel_installed <channel> — local-only "bin version" rows, no network.
+# channel_installed <channel> — local-only rows, no network. Every channel emits
+# the shared shape "key version package [aliases…]" (see installed_row_for).
 # The single source of truth for what is on the machine: update reads it before
 # and after to report a real transition, uninstall uses it to decide whether a
 # target exists at all. Package manager exit codes cannot answer that — npm
@@ -194,10 +225,12 @@ channel_installed() {
     printf '%s\n' "$out"
 }
 
-# installed_version_of <snapshot> <bin> — look up one bin's version.
+# installed_version_of <snapshot> <key> — one row's version. Rows are
+# "key version [package] [aliases…]"; the trailing columns are read and
+# dropped so a two-field read cannot glue a package path onto the version.
 installed_version_of() {
-    local snapshot="$1" want="$2" bin ver
-    while read -r bin ver; do
+    local snapshot="$1" want="$2" bin ver _rest
+    while read -r bin ver _rest; do
         [[ -n "$bin" ]] || continue
         if [[ "$bin" == "$want" ]]; then
             printf '%s\n' "$ver"
@@ -205,6 +238,84 @@ installed_version_of() {
         fi
     done <<<"$snapshot"
     return 1
+}
+
+# snapshot_row <snapshot> <want…> — the first row matching any want by key,
+# package or shipped executable, printed as key<TAB>pkg<TAB>aliases. Rows are
+# "key version pkg [aliases…]"; the two identities differ per channel
+# (cargo: ripgrep/rg, npm: typescript/tsc, uv: python-lsp-server/pylsp,
+# go: staticcheck/honnef.co/…/staticcheck), so every lookup shares this rule.
+snapshot_row() {
+    local snapshot="$1" want key ver pkg aliases
+    shift
+    while read -r key ver pkg aliases; do
+        [[ -n "$key" ]] || continue
+        for want in "$@"; do
+            [[ -n "$want" ]] || continue
+            if [[ "$key" == "$want" || "${pkg:-}" == "$want" \
+                  || " ${aliases:-} " == *" $want "* ]]; then
+                printf '%s\t%s\t%s\n' "$key" "${pkg:-}" "${aliases:-}"
+                return 0
+            fi
+        done
+    done <<<"$snapshot"
+    return 1
+}
+
+# row_has_executable <key> <aliases> — is any executable the row names present
+# under ECO_BIN_DIR? A key need not be a file (cargo keys on the crate), and a
+# multi-bin package stays alive through any one of its executables.
+row_has_executable() {
+    local key="$1" b
+    local -a names=()
+    # read -a, not an unquoted expansion: a bin name is data, not a glob.
+    [[ -n "$2" ]] && read -r -a names <<<"$2"
+    for b in "$key" ${names[@]+"${names[@]}"}; do
+        [[ -x "$ECO_BIN_DIR/$b" ]] && return 0
+    done
+    return 1
+}
+
+# installed_row_for <snapshot> <want> — "key pkg" of the matching row. A row
+# without a package column cannot be translated, so it fails and the caller
+# keeps the identity it already has.
+installed_row_for() {
+    local row key pkg aliases
+    row="$(snapshot_row "$1" "$2")" || return 1
+    IFS=$'\t' read -r key pkg aliases <<<"$row"
+    [[ -n "$pkg" ]] || return 1
+    printf '%s %s\n' "$key" "$pkg"
+}
+
+# row_on_disk <snapshot> <want> — is the matching row present on disk?
+row_on_disk() {
+    local row key pkg aliases
+    row="$(snapshot_row "$1" "$2")" || return 1
+    IFS=$'\t' read -r key pkg aliases <<<"$row"
+    row_has_executable "$key" "$aliases"
+}
+
+# installed_target_present <snapshot> <bin> <pkg> — did the package we acted on
+# land an executable? Both identities of the request are accepted, since the
+# snapshot knows how the package manager names the row.
+installed_target_present() {
+    local row key pkg aliases
+    row="$(snapshot_row "$1" "$2" "$3")" || return 1
+    IFS=$'\t' read -r key pkg aliases <<<"$row"
+    row_has_executable "$key" "$aliases"
+}
+
+# resolved_pkg_flag <channel> <key> <pkg> — "pkg flag" to act on for a
+# translated row. The manifest wins for a package it knows, so updating through
+# an alias keeps its flag (cf-wrangler → wrangler --allow-scripts). Values
+# contain no spaces (validated), so the pair travels as one line.
+resolved_pkg_flag() {
+    local ch="$1" key="$2" pkg="$3"
+    if conf_row_for "$ch" "$key" || conf_row_for "$ch" "$pkg"; then
+        printf '%s %s\n' "$CONF_PKG" "$CONF_FLAG"
+    else
+        printf '%s\n' "$pkg"
+    fi
 }
 
 # dedupe_targets — drop repeated bins, keeping the first occurrence, so
@@ -236,19 +347,49 @@ dedupe_targets() {
     fi
 }
 
-# prune_absent_targets <verb> <internal> <snapshot>
-# Keep only targets the channel reports as installed. update and uninstall both
-# demand that: saying "ghost updated" about a package that was never installed
-# is the same lie as reporting a removal that did not happen.
+# prune_absent_targets <verb> <channel> <snapshot>
+# Keep only targets the user can actually see: the snapshot lists the package
+# AND one of its executables exists in ECO_BIN_DIR. A snapshot-only ghost is
+# warned and skipped; a name no row claims is reported as not installed.
+# The user-facing channel is needed to consult the manifest while translating.
 prune_absent_targets() {
-    local verb="$1" internal="$2" snapshot="$3" i bin
+    local verb="$1" ch="$2" snapshot="$3" internal i bin row rbin rpkg rflag
+    internal="$(channel_name "$ch")"
     local -a kb=() kp=() kf=()
     for i in "${!TARGET_BINS[@]}"; do
         bin="${TARGET_BINS[i]}"
         if installed_version_of "$snapshot" "$bin" >/dev/null; then
-            kb+=("$bin")
-            kp+=("${TARGET_PKGS[i]}")
-            kf+=("${TARGET_FLAGS[i]}")
+            # Any executable the row ships is a witness: a crate name is never
+            # a file, and a multi-bin package lives through any one of its bins.
+            if ! row_on_disk "$snapshot" "$bin"; then
+                warn "$bin: $internal reports it installed, but none of its executables exist in $ECO_BIN_DIR"
+                warn "$bin skipped: use 'install' to reinstall it properly"
+                continue
+            fi
+            # A raw bin name (ncc) still carries the bin as its pkg. Adopt the
+            # snapshot's package when nothing else identifies the target; a
+            # manifest row already has an authoritative pkg and flag.
+            if [[ "${TARGET_PKGS[i]}" == "$bin" && -z "${TARGET_FLAGS[i]}" ]] \
+               && row="$(installed_row_for "$snapshot" "$bin")"; then
+                read -r rbin rpkg <<<"$row"
+                read -r rpkg rflag <<<"$(resolved_pkg_flag "$ch" "$rbin" "$rpkg")"
+                kb+=("$rbin")
+                kp+=("$rpkg")
+                kf+=("$rflag")
+            else
+                kb+=("$bin")
+                kp+=("${TARGET_PKGS[i]}")
+                kf+=("${TARGET_FLAGS[i]}")
+            fi
+        # Not a key the snapshot knows, but it may name a row from the other
+        # side (the user types rg, the row is keyed ripgrep). Translate; only
+        # an unclaimed name is "not installed".
+        elif row="$(installed_row_for "$snapshot" "$bin")"; then
+            read -r rbin rpkg <<<"$row"
+            read -r rpkg rflag <<<"$(resolved_pkg_flag "$ch" "$rbin" "$rpkg")"
+            kb+=("$rbin")
+            kp+=("$rpkg")
+            kf+=("$rflag")
         elif [[ "$verb" == "update" ]]; then
             warn "$bin is not installed via $internal; nothing to update (use 'install')"
         else
@@ -289,6 +430,19 @@ show_current_versions() {
     done
 }
 
+# print_plan <verb> <internal> — the actions a dry run would take, with the
+# package and (for install/update) the flag each channel would receive.
+# Uninstall takes no flag, so showing one there would be a lie.
+print_plan() {
+    local verb="$1" internal="$2" i what
+    for i in "${!TARGET_BINS[@]}"; do
+        what="${TARGET_BINS[i]} (${TARGET_PKGS[i]})"
+        [[ -n "${TARGET_FLAGS[i]}" && "$verb" != "uninstall" ]] \
+            && what="$what [${TARGET_FLAGS[i]}]"
+        info "would $verb $what via $internal"
+    done
+}
+
 # ── batch confirm + dispatch ────────────────────────────────────
 # batch_confirm_and_run <verb> <channel>
 # One batch confirm covers every target (default N). `-y` (ECO_ASSUME_YES)
@@ -313,7 +467,10 @@ batch_confirm_and_run() {
         # A failed read is an error, not an empty machine: pruning against it
         # would silently turn every target into "not installed".
         [[ -n "$before" ]] || before="$(channel_installed "$ch")" || return 1
-        prune_absent_targets "$verb" "$internal" "$before"
+        prune_absent_targets "$verb" "$ch" "$before"
+        # Translation can collapse two inputs onto one package, so dedupe
+        # again after it.
+        dedupe_targets
     fi
 
     local -a auth_bins=() auth_pkgs=() auth_flags=()
@@ -328,7 +485,16 @@ batch_confirm_and_run() {
     esac
 
     # Show what is about to move, before asking, so a confirmation is not blind.
-    [[ "$verb" == "update" ]] && show_current_versions "$internal" "$before"
+    # Quiet mode drops this too: it is progress, not data.
+    [[ "$verb" == "update" && -z "${ECO_QUIET:-}" ]] && show_current_versions "$internal" "$before"
+
+    # A dry run prints the plan and stops before any prompt or action. Local
+    # state was read, so the plan reflects what is installed.
+    if [[ -n "${ECO_DRY_RUN:-}" ]]; then
+        print_plan "$verb" "$internal"
+        info "dry run: no action taken"
+        return 0
+    fi
 
     if [[ -n "${ECO_ASSUME_YES:-}" ]] \
        || confirm "$prompt_verb $count via $internal? [y/N]: " 0; then
@@ -340,7 +506,7 @@ batch_confirm_and_run() {
         return 0
     fi
 
-    local after="" rc=0 one_rc
+    local after="" rc=0 one_rc state_unknown=0
     for i in "${!auth_bins[@]}"; do
         local bin="${auth_bins[i]}" new_ver
         info "$doing $bin (${auth_pkgs[i]}) via $internal..."
@@ -364,9 +530,15 @@ batch_confirm_and_run() {
             update)
                 # Re-read instead of predicting: the right-hand side is what
                 # actually got installed, not a version eco guessed earlier.
+                # A failed read leaves the transition unknowable; reporting
+                # the action as the result would be the same lie.
                 local cur_ver
                 cur_ver="$(installed_version_of "$before" "$bin" || true)"
-                after="$(channel_installed "$ch")" || after=""
+                if ! after="$(channel_installed "$ch")"; then
+                    warn "$bin: state after the update is unknown; verify it manually"
+                    state_unknown=1
+                    continue
+                fi
                 new_ver="$(installed_version_of "$after" "$bin" || true)"
                 if [[ -n "$new_ver" && "$new_ver" == "$cur_ver" ]]; then
                     ok "$bin is already up to date ($new_ver)"
@@ -379,9 +551,14 @@ batch_confirm_and_run() {
                 fi
                 ;;
             uninstall)
-                # Trust the filesystem, not the exit code: npm reports success
-                # for a package that was never there.
-                after="$(channel_installed "$ch")" || after=""
+                # Trust the snapshot, not the exit code (npm reports success
+                # for a package that was never there). Unreadable is unknown,
+                # and unknown is failure.
+                if ! after="$(channel_installed "$ch")"; then
+                    warn "$bin: cannot confirm the removal; verify it manually"
+                    state_unknown=1
+                    continue
+                fi
                 if installed_version_of "$after" "$bin" >/dev/null; then
                     error_msg "$bin was not removed (still installed)"
                     rc=1
@@ -389,11 +566,35 @@ batch_confirm_and_run() {
                     ok "$bin uninstalled"
                 fi
                 ;;
+            install)
+                # An exit code says the command ran, not that a binary
+                # appeared (npm exits 0 for a package that ships no bin).
+                # Every channel lands its bins in ECO_BIN_DIR; when the arg
+                # names a package rather than a bin (typescript → tsc), the
+                # snapshot supplies the executable to look for.
+                if [[ -x "$ECO_BIN_DIR/$bin" ]]; then
+                    ok "$bin $done_w"
+                    continue
+                fi
+                if ! after="$(channel_installed "$ch")"; then
+                    warn "$bin: install could not be verified; check it manually"
+                    state_unknown=1
+                    continue
+                fi
+                if ! installed_target_present "$after" "$bin" "${auth_pkgs[i]}"; then
+                    error_msg "$bin was not $done_w: no executable at $ECO_BIN_DIR/$bin"
+                    info "the package may not ship a '$bin' command; check the package name"
+                    rc=1
+                    continue
+                fi
+                ok "$bin $done_w"
+                ;;
             *)
                 ok "$bin $done_w"
                 ;;
         esac
     done
+    (( state_unknown )) && rc=1
     return "$rc"
 }
 
@@ -468,18 +669,20 @@ do_update_all() {
     TARGET_BINS=()
     TARGET_PKGS=()
     TARGET_FLAGS=()
-    local bin ver
-    while read -r bin ver; do
+    local bin ver pkg
+    # The snapshot's package column is what the manager must be given and is
+    # not always the key (staticcheck lives at honnef.co/.../staticcheck).
+    # A registered bin updates through its manifest package; others through
+    # the snapshot's.
+    while read -r bin ver pkg aliases; do
         [[ -n "$bin" ]] || continue
-        # A bin the manifest knows is updated through its package; an unmanaged
-        # bin is updated by its own name.
         if conf_row_for "$ch" "$bin"; then
             TARGET_BINS+=("$bin")
             TARGET_PKGS+=("$CONF_PKG")
             TARGET_FLAGS+=("$CONF_FLAG")
         else
             TARGET_BINS+=("$bin")
-            TARGET_PKGS+=("$bin")
+            TARGET_PKGS+=("${pkg:-$bin}")
             TARGET_FLAGS+=("")
         fi
     done <<<"$snapshot"
@@ -495,11 +698,12 @@ do_update_all() {
 
 # ── main ────────────────────────────────────────────────────────
 main() {
-    # eco <channel> <verb> [-y|--yes] [pkg…]
+    # eco <channel> <verb> [-y|--yes] [-q|--quiet] [-n|--dry-run] [pkg…]
     # -y belongs to the verb it confirms, so it is accepted after the verb and
-    # anywhere among the packages. `list` never prompts, so -y there is a usage
-    # error rather than a silent no-op.
+    # anywhere among the packages. `list` never prompts, so -y and -n there are
+    # usage errors rather than silent no-ops; -q only changes output volume.
     ECO_ASSUME_YES=""
+    ECO_DRY_RUN=""
 
     case "${1:-}" in
         -h|--help)
@@ -553,6 +757,16 @@ main() {
                 fi
                 ECO_ASSUME_YES=1
                 ;;
+            -q|--quiet)
+                ECO_QUIET=1
+                ;;
+            -n|--dry-run)
+                if [[ "$verb" == "list" ]]; then
+                    error_msg "list takes no options ('$arg')"
+                    return 2
+                fi
+                ECO_DRY_RUN=1
+                ;;
             -*)
                 error_msg "unknown option '$arg'"
                 usage >&2
@@ -566,6 +780,8 @@ main() {
     # Exported so the channel scripts (and the shared manifest loop they call)
     # see the same decision.
     [[ -n "$ECO_ASSUME_YES" ]] && export ECO_ASSUME_YES
+    [[ -n "$ECO_DRY_RUN" ]] && export ECO_DRY_RUN
+    [[ -n "${ECO_QUIET:-}" ]] && export ECO_QUIET
     set -- ${args[@]+"${args[@]}"}
 
     # The manifest is only needed to resolve bin names and for manifest mode,

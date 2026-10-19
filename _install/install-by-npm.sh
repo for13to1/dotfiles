@@ -9,8 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
-eco_conf_load
-eco_conf_filter_channel node
+# eco_conf_load/filter run inside channel_dispatch, after the help
+# guard: a broken manifest must not take `--help` away.
 
 # ── Node environment activation ──────────────────────────────────
 # Reuse the locally fnm-managed Node instead of installing a runtime. All Node/npm
@@ -21,9 +21,9 @@ FNM_BIN=""
 # Global npm CLIs install into a Node-version-independent prefix: fnm's `default`
 # alias follows `lts-latest`, so an LTS patch bump re-points PATH at a fresh Node
 # whose global bin is empty, and every CLI would look missing.
-# npm's --prefix is the install ROOT; bins land in CLI_BIN_DIR, so derive the
+# npm's --prefix is the install ROOT; bins land in ECO_BIN_DIR, so derive the
 # root from it and the two paths cannot drift.
-LOCAL_PREFIX="${CLI_BIN_DIR%/*}"
+LOCAL_PREFIX="${ECO_BIN_DIR%/*}"
 
 find_fnm_bin() {
     if command -v fnm &>/dev/null; then
@@ -48,7 +48,7 @@ ensure_fnm_node_env() {
     # is enough, and `fnm install --lts` would download a runtime just to list
     # versions. If no LTS is ready, the query cannot run and the caller reports
     # an unknown state rather than blocking on a network install.
-    if [[ -n "${CLI_READ_ONLY:-}" ]]; then
+    if [[ -n "${ECO_READ_ONLY:-}" ]]; then
         if fnm_exec node --version &>/dev/null; then
             return 0
         fi
@@ -200,25 +200,78 @@ npm_list_installed() {
     ' "$ls_raw"
 }
 
-# "pkg version" (npm's identity) → "bin version" (eco's identity), using the
-# manifest. Unmanaged packages keep their own name. --installed and --list must
-# agree on that identity or eco cannot match a user-supplied bin name to a row.
+# "pkg version" → "bin version pkg bins". The package (what npm must be given
+# back), the key bin (what detection and messages use) and every executable
+# npm linked can differ; a package is on disk when any of its bins is.
+# Bins come from the installed package.json in one node run for the whole
+# listing. A registered row keys on its manifest bin; an unmanaged one on its
+# first bin, then on the raw name.
 npm_installed_by_bin() {
-    local rows pkg ver i bin
+    local rows pkg ver i primary aliases bins
+    local -a installed=() bin_pkgs=() bin_names=()
     # Read first, then loop: piping into `while` would make the pipeline status
     # the loop's (always 0) and turn a failed listing into "nothing installed".
     rows="$(npm_list_installed)" || return 1
+    [[ -n "$rows" ]] || return 0
+    while read -r pkg ver; do
+        [[ -n "$pkg" ]] && installed+=("$pkg")
+    done <<<"$rows"
+    while read -r pkg bins; do
+        [[ -n "$pkg" ]] || continue
+        bin_pkgs+=("$pkg")
+        bin_names+=("${bins:-}")
+    done <<<"$(npm_pkg_bins_all ${installed[@]+"${installed[@]}"})"
     while read -r pkg ver; do
         [[ -n "$pkg" ]] || continue
-        bin="$pkg"
+        primary=""
+        aliases=""
         for i in "${!ECO_CONF_PKGS[@]}"; do
             if [[ "${ECO_CONF_PKGS[i]}" == "$pkg" ]]; then
-                bin="${ECO_CONF_BINS[i]}"
+                primary="${ECO_CONF_BINS[i]}"
                 break
             fi
         done
-        printf '%s %s\n' "$bin" "$ver"
+        bins=""
+        for i in "${!bin_pkgs[@]}"; do
+            if [[ "${bin_pkgs[i]}" == "$pkg" ]]; then
+                bins="${bin_names[i]}"
+                break
+            fi
+        done
+        [[ -n "$bins" ]] && aliases="$bins"
+        if [[ -z "$primary" ]]; then
+            if [[ -n "$bins" ]]; then
+                primary="${bins%% *}"
+            else
+                primary="${pkg##*/}"
+            fi
+        fi
+        printf '%s %s %s %s\n' "$primary" "$ver" "$pkg" "$aliases"
     done <<<"$rows"
+}
+
+# npm_pkg_bins_all <pkg…> — one node run for the whole listing. Prints
+# "<pkg> <bins>" for packages whose package.json declares a bin (a string or a
+# map; a scoped name keeps its last segment). A package with no manifest or no
+# bin is absent; callers fall back to the raw name.
+npm_pkg_bins_all() {
+    (( $# > 0 )) || return 0
+    fnm_exec node -e '
+        const path = require("path");
+        const root = process.argv[1];
+        for (const pkg of process.argv.slice(2)) {
+            let bins;
+            try {
+                const p = require(path.join(root, pkg, "package.json"));
+                if (typeof p.bin === "string") {
+                    bins = [(p.name || "").split("/").pop()];
+                } else if (p.bin && typeof p.bin === "object") {
+                    bins = Object.keys(p.bin);
+                }
+            } catch (e) { continue; }
+            if (bins && bins.length) console.log(pkg + " " + bins.join(" "));
+        }
+    ' "$LOCAL_PREFIX/lib/node_modules" "$@" 2>/dev/null
 }
 
 # Emit "pkg version latest" rows. A failed listing returns 1 (the caller
@@ -269,7 +322,7 @@ npm_list_rows() {
 
 # ── dispatch ────────────────────────────────────────────────────
 main() {
-    channel_dispatch \
+    channel_dispatch node \
         npm_ensure npm_install_one npm_update_one npm_uninstall_one \
         npm_list_rows npm_installed_by_bin npm_query_outdated npm_manifest_install \
         "$@"

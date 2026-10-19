@@ -13,15 +13,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
-eco_conf_load
-eco_conf_filter_channel go
+# eco_conf_load/filter run inside channel_dispatch, after the help
+# guard: a broken manifest must not take `--help` away.
 
 # Go layout declared by this repo: GOBIN is the shared ~/.local/bin prefix
-# (CLI_BIN_DIR from common.sh), and GOMODCACHE lives under ~/.cache instead of
+# (ECO_BIN_DIR from common.sh), and GOMODCACHE lives under ~/.cache instead of
 # Go's default ~/go/pkg/mod. GOPATH is left alone — GOBIN and GOMODCACHE take
 # over its only remaining roles in module mode.
 GO_LAYOUT=(
-    "GOBIN=$CLI_BIN_DIR"
+    "GOBIN=$ECO_BIN_DIR"
     "GOMODCACHE=$HOME/.cache/go-mod"
 )
 
@@ -33,7 +33,7 @@ find_go_bin() {
 # are the source of truth, so values are written unconditionally; a value the
 # user actually set (persisted in GOENV or exported) is reported when it
 # differs, while Go's built-in defaults are never reported. `go env -w` is
-# idempotent and a failed write only warns — installs target CLI_BIN_DIR anyway.
+# idempotent and a failed write only warns — installs target ECO_BIN_DIR anyway.
 ensure_go_layout() {
     local go_bin env_file pair key want cur
     go_bin="$(find_go_bin)" || return 1
@@ -70,7 +70,7 @@ go_ensure() {
         warn "go not found; skipping Go CLI lifecycle"
         return 1
     fi
-    [[ -n "${CLI_READ_ONLY:-}" ]] && return 0
+    [[ -n "${ECO_READ_ONLY:-}" ]] && return 0
     ensure_go_layout
 }
 
@@ -80,7 +80,7 @@ go_ensure() {
 go_install_one() {
     local go_bin
     go_bin="$(find_go_bin)" || return 1
-    GOBIN="$CLI_BIN_DIR" "$go_bin" install "$2@latest"
+    GOBIN="$ECO_BIN_DIR" "$go_bin" install "$2@latest"
 }
 
 # go has no separate upgrade verb: reinstalling at @latest is the upgrade, and
@@ -92,31 +92,31 @@ go_update_one() {
 # The go-channel uninstaller: `go install` only writes GOBIN binaries, so
 # removal deletes the binary; the shared GOMODCACHE is left alone.
 #
-# CLI_BIN_DIR is shared with every other channel, so the file here might be
+# ECO_BIN_DIR is shared with every other channel, so the file here might be
 # npm's, uv's, or a hand-placed script. Only delete a file that carries Go
 # module metadata, and name where a foreign install actually lives.
 go_uninstall_one() {
-    local bin="$1" target="$CLI_BIN_DIR/$1" go_bin meta found
+    local bin="$1" target="$ECO_BIN_DIR/$1" go_bin meta found
     if [[ ! -x "$target" ]]; then
         found="$(command -v "$bin" 2>/dev/null || true)"
         if [[ -n "$found" ]]; then
-            warn "$bin is not in $CLI_BIN_DIR; it is installed at $found (not managed by eco)"
+            warn "$bin is not in $ECO_BIN_DIR; it is installed at $found (not managed by eco)"
         else
-            warn "$bin not found in $CLI_BIN_DIR; nothing was removed"
+            warn "$bin not found in $ECO_BIN_DIR; nothing was removed"
         fi
         return 1
     fi
     go_bin="$(find_go_bin)" || return 1
     meta="$("$go_bin" version -m "$target" 2>/dev/null)" || meta=""
     if ! grep -qE '^[[:space:]]+mod[[:space:]]' <<<"$meta"; then
-        warn "$bin in $CLI_BIN_DIR is not a Go binary; refusing to remove it"
+        warn "$bin in $ECO_BIN_DIR is not a Go binary; refusing to remove it"
         return 1
     fi
     rm -f "$target"
 }
 
 # ── domain-wide prefix scan ─────────────────────────────────────
-# Scan every executable in CLI_BIN_DIR for embedded Go module metadata.
+# Scan every executable in ECO_BIN_DIR for embedded Go module metadata.
 # Emits "pkg_path mod_path current" rows. pkg_path is the binary's package
 # path (from the `path` line — what `go install` was given); mod_path is the
 # owning module (from the first `mod` line — the main module). Non-Go
@@ -125,7 +125,7 @@ go_scan_prefix() {
     local go_bin f meta mod_path cur pkg_path
     go_bin="$(find_go_bin)" || return 1
     local -a bins=()
-    for f in "$CLI_BIN_DIR"/*; do
+    for f in "$ECO_BIN_DIR"/*; do
         [[ -x "$f" && ! -d "$f" ]] && bins+=("$f")
     done
     (( ${#bins[@]} > 0 )) || return 0
@@ -208,8 +208,11 @@ go_query_outdated() {
 # ── list mode ───────────────────────────────────────────────────
 # Read-only: emit "pkg version latest_or_?" rows for every Go binary in the
 # prefix. A failed module-proxy query degrades latest to "?"; list is lenient.
-# "bin version" for every Go binary in the prefix. The bin name is the file
-# name (what the user types), which is the identity everything else uses.
+#
+# The snapshot emits "bin version pkg_path": the bin is what the user types
+# and detection/removal key on, while pkg_path is what `go install` was given
+# (what update must reinstall from). They differ for cmd/ tools — staticcheck
+# lives at honnef.co/go/tools/cmd/staticcheck — so both are published.
 go_installed_by_bin() {
     local rows pkg_path mod_path cur file
     # Read first, then loop: piping into `while` would make the pipeline status
@@ -217,7 +220,7 @@ go_installed_by_bin() {
     rows="$(go_scan_prefix)" || return 1
     while read -r pkg_path mod_path cur file; do
         [[ -n "$file" ]] || continue
-        printf '%s %s\n' "$(basename "$file")" "$cur"
+        printf '%s %s %s\n' "$(basename "$file")" "$cur" "$pkg_path"
     done <<<"$rows"
 }
 
@@ -255,29 +258,8 @@ go_list_rows() {
 }
 
 # ── dispatch ────────────────────────────────────────────────────
-# Channel-private machine verb. eco asks this before a removal; a plain verb it
-# does not know returns 127 so the shared dispatcher can report it.
-channel_extra_verb() {
-    local verb="${1:-}"
-    case "$verb" in
-        --is-go-binary)
-            # shellcheck disable=SC2034  # read by msg() in common.sh
-            CLI_READ_ONLY=1
-            # shellcheck disable=SC2034  # read by msg() in common.sh
-            CLI_MACHINE_OUTPUT=1
-            local target="${2:-}" go_bin meta
-            [[ -n "$target" ]] || { warn "usage: ${0##*/} --is-go-binary <path>"; return 2; }
-            go_bin="$(find_go_bin)" || return 3
-            meta="$("$go_bin" version -m "$target" 2>/dev/null)" || return 1
-            grep -qE '^[[:space:]]+mod[[:space:]]' <<<"$meta" || return 1
-            return 0
-            ;;
-    esac
-    return 127
-}
-
 main() {
-    channel_dispatch \
+    channel_dispatch go \
         go_ensure go_install_one go_update_one go_uninstall_one \
         go_list_rows go_installed_by_bin go_query_outdated go_manifest_install \
         "$@"

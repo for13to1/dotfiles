@@ -22,7 +22,7 @@ source "$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 # The single mutation scope: every managed bin lands here. Install may honor
 # foreign PATH installs via detect=path, but update/uninstall never touch
 # files outside it.
-CLI_BIN_DIR="$HOME/.local/bin"
+ECO_BIN_DIR="$HOME/.local/bin"
 
 # ── Package names ───────────────────────────────────────────────
 # eco stores no versions: a channel's package manager reports them (`list`) or
@@ -121,10 +121,10 @@ eco_conf_validate() {
             y|n) ;;
             *) warn "eco.conf entry '$bin': default must be y or n, got '$def'"; return 1 ;;
         esac
-        # A bin becomes a path under CLI_BIN_DIR and an argument to rm, so a
-        # separator would let a manifest row address files outside the prefix.
-        [[ -n "$bin" && "$bin" != *" "* && "$bin" != */* ]] \
-            || { warn "eco.conf entry '$bin': bin must be non-empty, with no spaces or slashes"; return 1; }
+        # A bin becomes a path under ECO_BIN_DIR and an argument to rm, so
+        # separators and dot-only names are refused here, at validation.
+        [[ -n "$bin" && "$bin" != *" "* && "$bin" != */* && "$bin" != . && "$bin" != .. ]] \
+            || { warn "eco.conf entry '$bin': bin must be non-empty, with no spaces, slashes or dots-only names"; return 1; }
         [[ -n "$pkg" && "$pkg" != *" "* ]] \
             || { warn "eco.conf entry '$bin': pkg must be non-empty and contain no spaces"; return 1; }
         [[ "$flag" != *" "* ]] \
@@ -142,8 +142,16 @@ eco_conf_validate() {
 # eco_conf_filter_channel <channel> — narrows the arrays to one channel's rows.
 # Guards on possibly-empty arrays are not cosmetic: bash < 4.4 reads an empty
 # expansion under `set -u` as an unbound variable, and CI runs macOS bash 3.2.
+#
+# An unknown channel is refused instead of being filtered to nothing. An empty
+# result is indistinguishable from "this channel has no rows" — rust genuinely
+# has none — so a typo would silently disable a whole channel.
 eco_conf_filter_channel() {
     local want="$1" i
+    case "$want" in
+        node|py|go|rust) ;;
+        *) warn "eco_conf_filter_channel: unknown channel '$want'"; return 1 ;;
+    esac
     local -a c=() b=() p=() f=() d=()
     for i in "${!ECO_CONF_BINS[@]}"; do
         [[ "${ECO_CONF_CHANNELS[i]}" == "$want" ]] || continue
@@ -170,27 +178,25 @@ eco_conf_filter_channel() {
 
 # ── Shared per-item manifest install ────────────────────────────
 # eco_manifest_install <installer_fn> <channel> <detect>
-# Walks the conf rows (already filtered to this channel), confirms each
-# missing tool with a [Y/n]/[y/N] default from ECO_CONF_DEFAULTS, then
-# installs every approved row. Answers are collected first, then executed
-# (batch). Already-installed rows are shown as skipped. With ECO_ASSUME_YES
-# (-y) nothing is asked and every missing row is installed, whatever its conf
-# default; non-interactive runs without -y apply the conf defaults. A failed
-# row warns and continues; the aggregate exit code reports any failure.
+# Walks this channel's conf rows, asks per missing tool (conf default), then
+# installs the approved batch. -y takes every missing row; non-interactive runs
+# apply the conf defaults. A dry run does not ask: it plans with the defaults
+# (or the -y selection) and executes nothing. A failed row warns and continues;
+# the aggregate exit code reports any failure.
 eco_manifest_install() {
     local installer="$1" channel="$2" detect="${3:-canonical}"
     case "$detect" in
         canonical|path) ;;
         *) warn "eco_manifest_install: detect must be 'canonical' or 'path', got '$detect'"; return 1 ;;
     esac
-    local i bin pkg flag def path reply want
+    local i bin pkg flag def path reply want what
     local -a sel_bins=() sel_pkgs=() sel_flags=()
     for i in "${!ECO_CONF_BINS[@]}"; do
         bin="${ECO_CONF_BINS[i]}"
         pkg="${ECO_CONF_PKGS[i]}"
         flag="${ECO_CONF_FLAGS[i]}"
         def="${ECO_CONF_DEFAULTS[i]}"
-        path="$CLI_BIN_DIR/$bin"
+        path="$ECO_BIN_DIR/$bin"
         if [[ "$detect" == "path" ]]; then
             if is_installed "$bin" "$path"; then
                 info "$bin already installed; skipping"
@@ -202,11 +208,16 @@ eco_manifest_install() {
                 continue
             fi
         fi
-        clean_stale_installs "$path"
+        # A dry run promises no mutation; it must not clear stale entries.
+        if [[ -z "${ECO_DRY_RUN:-}" ]]; then
+            clean_stale_installs "$path"
+        fi
         want=0
         if [[ -n "${ECO_ASSUME_YES:-}" ]]; then
             want=1
-        elif [[ -n "${DOTFILES_NON_INTERACTIVE:-}" ]]; then
+        elif [[ -n "${DOTFILES_NON_INTERACTIVE:-}" || -n "${ECO_DRY_RUN:-}" ]]; then
+            # A dry run cannot collect answers; it plans with the conf
+            # defaults, the same policy as a non-interactive run.
             [[ "$def" == "y" ]] && want=1
         else
             if [[ "$def" == "y" ]]; then
@@ -226,11 +237,33 @@ eco_manifest_install() {
         info "no missing $channel CLIs selected; nothing to install"
         return 0
     fi
+    if [[ -n "${ECO_DRY_RUN:-}" ]]; then
+        for i in "${!sel_bins[@]}"; do
+            what="${sel_bins[i]} (${sel_pkgs[i]})"
+            [[ -n "${sel_flags[i]}" ]] && what="$what [${sel_flags[i]}]"
+            info "would install $what via $channel"
+        done
+        if [[ -n "${ECO_ASSUME_YES:-}" ]]; then
+            info "dry run: no action taken"
+        else
+            info "dry run: no action taken (asked nothing; planned with eco.conf defaults)"
+        fi
+        return 0
+    fi
     local rc=0
     for i in "${!sel_bins[@]}"; do
         info "installing ${sel_bins[i]} (${sel_pkgs[i]}) via $channel..."
         if ! "$installer" "${sel_bins[i]}" "${sel_pkgs[i]}" "${sel_flags[i]}"; then
             warn "${sel_bins[i]} install failed; retry manually later"
+            rc=1
+            continue
+        fi
+        # Same rule as eco.sh's named install: an exit code says the command
+        # ran, not that a binary appeared. Every channel lands its bin in
+        # ECO_BIN_DIR, so the filesystem decides.
+        if [[ ! -x "$ECO_BIN_DIR/${sel_bins[i]}" ]]; then
+            error_msg "${sel_bins[i]} was not installed: no executable at $ECO_BIN_DIR/${sel_bins[i]}"
+            info "the package may not ship a '${sel_bins[i]}' command; check the manifest entry"
             rc=1
             continue
         fi
@@ -251,23 +284,27 @@ eco_manifest_install() {
 #   3  runtime unavailable, nothing executed (one-shot verbs only, so a caller
 #      can tell "skipped" from "completed")
 #
-#   channel_dispatch <ensure> <install-one> <update-one> <uninstall-one> \
-#                    <list> <installed> <outdated> <manifest> [verb…]
+#   channel_dispatch <conf_channel> <ensure> <install-one> <update-one> \
+#                    <uninstall-one> <list> <installed> <outdated> <manifest> \
+#                    [verb…]
 #
-# Passed positionally because bash 3.2 has no namerefs. A channel may define
-# channel_extra_verb for verbs of its own; it returns 127 when the verb is not
-# one of them.
+# Passed positionally because bash 3.2 has no namerefs.
+#
+# The manifest is loaded here, after the help guard, rather than at channel
+# source time: a broken eco.conf is exactly when the usage text is worth
+# reading, so --help must not depend on it. Every other verb does.
 CHANNEL_VERBS='--list, --installed, --outdated, --install-manifest, --install-one, --update-one, --uninstall-one'
 
 channel_usage() {
     printf 'usage: %s %s | -h|--help\n' "${0##*/}" "$CHANNEL_VERBS"
 }
 
-# shellcheck disable=SC2034  # CLI_READ_ONLY / CLI_MACHINE_OUTPUT feed msg() in common.sh
+# shellcheck disable=SC2034  # ECO_READ_ONLY / ECO_MACHINE_OUTPUT feed msg() in common.sh
 channel_dispatch() {
-    local ensure="$1" act_install="$2" act_update="$3" act_uninstall="$4"
-    local act_list="$5" act_installed="$6" act_outdated="$7" act_manifest="$8"
-    shift 8
+    local conf_channel="$1"
+    local ensure="$2" act_install="$3" act_update="$4" act_uninstall="$5"
+    local act_list="$6" act_installed="$7" act_outdated="$8" act_manifest="$9"
+    shift 9
     local verb="${1:-}"
 
     case "$verb" in
@@ -275,26 +312,34 @@ channel_dispatch() {
             channel_usage
             return 0
             ;;
+    esac
+
+    # Every other verb reads the manifest (manifest install walks it; the
+    # installed/list snapshot translates pkg→bin through it).
+    eco_conf_load || return 1
+    eco_conf_filter_channel "$conf_channel" || return 1
+
+    case "$verb" in
         # Read-only verbs probe, they never prepare a runtime: `fnm install`
         # or `go env -w` just to list versions would be a side effect nobody
         # asked for.
         --list)
-            CLI_READ_ONLY=1
-            CLI_MACHINE_OUTPUT=1
+            ECO_READ_ONLY=1
+            ECO_MACHINE_OUTPUT=1
             "$ensure" || return 1
             "$act_list" || return 1
             return 0
             ;;
         --installed)
-            CLI_READ_ONLY=1
-            CLI_MACHINE_OUTPUT=1
+            ECO_READ_ONLY=1
+            ECO_MACHINE_OUTPUT=1
             "$ensure" || return 1
             "$act_installed" || return 1
             return 0
             ;;
         --outdated)
-            CLI_READ_ONLY=1
-            CLI_MACHINE_OUTPUT=1
+            ECO_READ_ONLY=1
+            ECO_MACHINE_OUTPUT=1
             "$ensure" || return 1
             "$act_outdated"
             return $?
@@ -302,7 +347,10 @@ channel_dispatch() {
         --install-manifest)
             # A missing runtime is a clean skip here: bootstrap runs this on
             # every machine, including ones without a given toolchain.
-            "$ensure" || return 0
+            # A dry run plans from the manifest and the filesystem only.
+            if [[ -z "${ECO_DRY_RUN:-}" ]]; then
+                "$ensure" || return 0
+            fi
             "$act_manifest"
             return $?
             ;;
@@ -320,14 +368,8 @@ channel_dispatch() {
             return $?
             ;;
         *)
-            # 127 is a channel's "not my verb"; anything else is its verdict.
-            # Captured with `|| rc=$?` on purpose: a bare call would trip
-            # `set -e` before the status could be read.
-            if declare -F channel_extra_verb >/dev/null 2>&1; then
-                local extra_rc=0
-                channel_extra_verb "$@" || extra_rc=$?
-                (( extra_rc == 127 )) || return "$extra_rc"
-            fi
+            # 1, not 2: the verb itself is wrong. 2 stays reserved for "right
+            # verb, unusable arguments" (the one-shot guard above).
             warn "unknown option '$verb' (supported: $CHANNEL_VERBS, -h|--help)"
             return 1
             ;;

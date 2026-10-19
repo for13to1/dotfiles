@@ -9,8 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/../_scripts/cli-lifecycle.sh"
-eco_conf_load
-eco_conf_filter_channel py
+# eco_conf_load/filter run inside channel_dispatch, after the help
+# guard: a broken manifest must not take `--help` away.
 
 find_uv_bin() {
     if command -v uv &>/dev/null; then
@@ -106,28 +106,37 @@ uv_query_outdated() {
 
 # ── list mode ───────────────────────────────────────────────────
 # Read-only: emit "pkg version latest_or_?" rows for the whole tool list.
-# Installed versions come from `uv tool list`; latest from the outdated query.
-# A failed latest query degrades to "?" per tool; list is lenient (exit 0).
+# `uv tool list` prints a header per tool followed by its executables as
+# "- <exe>" lines; those are the on-disk identity and are kept as aliases.
 uv_list_installed() {
     local uv_bin listed
     uv_bin="$(find_uv_bin)" || return 1
     listed="$("$uv_bin" tool list 2>/dev/null)" || return 1
-    # Non-dash lines: "name vX.Y.Z" (a dash line is a detail entry).
-    awk '$1 !~ /^-/ && $2 ~ /^v[0-9]/ {
-        name = $1
-        ver = $2
-        sub(/^v/, "", ver)
-        print name, ver
-    }' <<<"$listed"
+    awk '
+        $1 !~ /^-/ && $2 ~ /^v[0-9]/ {
+            if (name != "") print name, ver, exes
+            name = $1
+            ver = $2
+            sub(/^v/, "", ver)
+            exes = ""
+            next
+        }
+        $1 == "-" && name != "" {
+            exes = (exes == "" ? $2 : exes " " $2)
+        }
+        END { if (name != "") print name, ver, exes }
+    ' <<<"$listed"
 }
 
-# "pkg version" → "bin version" via the manifest (eco's identity).
+# "tool version [executables]" → "bin version tool executables". The key is
+# the manifest bin (or the tool name), the package is the tool, and the
+# executables are the disk witnesses (python-lsp-server → pylsp).
 uv_installed_by_bin() {
-    local rows pkg ver i bin
+    local rows pkg ver exes i bin
     # Read first, then loop: piping into `while` would make the pipeline status
     # the loop's (always 0) and turn a failed listing into "nothing installed".
     rows="$(uv_list_installed)" || return 1
-    while read -r pkg ver; do
+    while read -r pkg ver exes; do
         [[ -n "$pkg" ]] || continue
         bin="$pkg"
         for i in "${!ECO_CONF_PKGS[@]}"; do
@@ -136,7 +145,7 @@ uv_installed_by_bin() {
                 break
             fi
         done
-        printf '%s %s\n' "$bin" "$ver"
+        printf '%s %s %s %s\n' "$bin" "$ver" "$pkg" "${exes:-}"
     done <<<"$rows"
 }
 
@@ -168,7 +177,7 @@ uv_list_rows() {
 
 # ── dispatch ────────────────────────────────────────────────────
 main() {
-    channel_dispatch \
+    channel_dispatch py \
         uv_ensure uv_install_one uv_update_one uv_uninstall_one \
         uv_list_rows uv_installed_by_bin uv_query_outdated uv_manifest_install \
         "$@"
