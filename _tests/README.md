@@ -18,6 +18,7 @@
 | `test-skills-vendor.sh` | `_scripts/skills-vendor.sh` | 多 Vendor 发现、挂载、随仓技能保护、同名加前缀、卸载 |
 | `test-stow-sync.sh` | `_scripts/stow-sync.sh` | stow 参数传递、已有文件备份、忽略目录 |
 | `test-tmux-plugins.sh` | `_scripts/tmux-plugins.sh` | TPM 克隆、set-environment、安装失败/无 server |
+| `test-tmux-resurrect-guard.sh` | `tmux/.config/tmux/resurrect-guard.sh`（`@resurrect-hook-pre-restore-all` 钩子体） | 坏档判定、回退到最新完整存档、无可用存档时抑制 session-0 kill |
 | `test-zsh-benchmark.sh` | `zsh/.zshrc` | 启动正确性无未捕获异常、耗时门禁（可环境变量配置） |
 
 ## 约定
