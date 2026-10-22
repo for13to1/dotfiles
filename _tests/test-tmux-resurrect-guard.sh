@@ -46,61 +46,72 @@ seed() {
 # ── intact last: no-op ────────────────────────────────────────────
 dir="$TMP/intact"
 mkdir -p "$dir"
-seed "$dir" tmux_resurrect_20250101T000000.txt
-ln -s tmux_resurrect_20250101T000000.txt "$dir/last"
+seed "$dir" tmux_resurrect_20261022T090000.txt
+ln -s tmux_resurrect_20261022T090000.txt "$dir/last"
 
 assert_equals "intact: no session-0 suppression" "" "$(run_guard "$dir")"
-assert_equals "intact: last untouched" "tmux_resurrect_20250101T000000.txt" "$(readlink "$dir/last")"
-assert_file "intact: archive kept" "$dir/tmux_resurrect_20250101T000000.txt"
+assert_equals "intact: last untouched" "tmux_resurrect_20261022T090000.txt" "$(readlink "$dir/last")"
+assert_file "intact: archive kept" "$dir/tmux_resurrect_20261022T090000.txt"
 
 # ── 0-byte last: newest intact wins, corrupt archive dropped ───────
 dir="$TMP/empty-last"
 mkdir -p "$dir"
-seed "$dir" tmux_resurrect_20250101T000000.txt
-seed "$dir" tmux_resurrect_20250102T000000.txt
-touch -t 202501010000 "$dir/tmux_resurrect_20250101T000000.txt"
-touch -t 202501020000 "$dir/tmux_resurrect_20250102T000000.txt"
-: >"$dir/tmux_resurrect_20250103T000000.txt"
-ln -s tmux_resurrect_20250103T000000.txt "$dir/last"
+seed "$dir" tmux_resurrect_20261022T090000.txt
+seed "$dir" tmux_resurrect_20261022T100000.txt
+touch -t 202610220900 "$dir/tmux_resurrect_20261022T090000.txt"
+touch -t 202610221000 "$dir/tmux_resurrect_20261022T100000.txt"
+: >"$dir/tmux_resurrect_20261022T110000.txt"
+ln -s tmux_resurrect_20261022T110000.txt "$dir/last"
 
 assert_equals "empty last: no session-0 suppression" "" "$(run_guard "$dir")"
-assert_equals "empty last: relinked to newest intact" "tmux_resurrect_20250102T000000.txt" "$(readlink "$dir/last")"
-assert_missing "empty last: corrupt archive removed" "$dir/tmux_resurrect_20250103T000000.txt"
-assert_file "empty last: candidates kept" "$dir/tmux_resurrect_20250101T000000.txt"
+assert_equals "empty last: relinked to newest intact" "tmux_resurrect_20261022T100000.txt" "$(readlink "$dir/last")"
+assert_missing "empty last: corrupt archive removed" "$dir/tmux_resurrect_20261022T110000.txt"
+assert_file "empty last: candidates kept" "$dir/tmux_resurrect_20261022T090000.txt"
 assert_equals "empty last: idempotent on rerun" "" "$(run_guard "$dir")"
-assert_equals "empty last: link stable on rerun" "tmux_resurrect_20250102T000000.txt" "$(readlink "$dir/last")"
+assert_equals "empty last: link stable on rerun" "tmux_resurrect_20261022T100000.txt" "$(readlink "$dir/last")"
 
 # ── equal mtimes: the names still decide ──────────────────────────
 dir="$TMP/same-mtime"
 mkdir -p "$dir"
-seed "$dir" tmux_resurrect_20250101T000000.txt
-seed "$dir" tmux_resurrect_20250102T000000.txt
-touch -t 202501030000 "$dir"/tmux_resurrect_2025010*.txt
-: >"$dir/tmux_resurrect_20250103T000000.txt"
-ln -s tmux_resurrect_20250103T000000.txt "$dir/last"
+seed "$dir" tmux_resurrect_20261022T090000.txt
+seed "$dir" tmux_resurrect_20261022T100000.txt
+touch -t 202610221100 "$dir"/tmux_resurrect_2026102*.txt
+: >"$dir/tmux_resurrect_20261022T110000.txt"
+ln -s tmux_resurrect_20261022T110000.txt "$dir/last"
 
 assert_equals "same mtime: no session-0 suppression" "" "$(run_guard "$dir")"
-assert_equals "same mtime: newest name wins" "tmux_resurrect_20250102T000000.txt" "$(readlink "$dir/last")"
+assert_equals "same mtime: newest name wins" "tmux_resurrect_20261022T100000.txt" "$(readlink "$dir/last")"
 
 # ── truncated archive (no pane line) ──────────────────────────────
 dir="$TMP/truncated-with-fallback"
 mkdir -p "$dir"
-seed "$dir" tmux_resurrect_20250101T000000.txt
-printf 'window\t0\t1\tbash\t1\t*Z\t\t0\n' >"$dir/tmux_resurrect_20250104T000000.txt"
-ln -s tmux_resurrect_20250104T000000.txt "$dir/last"
+seed "$dir" tmux_resurrect_20261022T090000.txt
+printf 'window\t0\t1\tbash\t1\t*Z\t\t0\n' >"$dir/tmux_resurrect_20261022T120000.txt"
+ln -s tmux_resurrect_20261022T120000.txt "$dir/last"
 
 assert_equals "truncated: no session-0 suppression" "" "$(run_guard "$dir")"
-assert_equals "truncated: falls back to intact" "tmux_resurrect_20250101T000000.txt" "$(readlink "$dir/last")"
-assert_missing "truncated: corrupt archive removed" "$dir/tmux_resurrect_20250104T000000.txt"
+assert_equals "truncated: falls back to intact" "tmux_resurrect_20261022T090000.txt" "$(readlink "$dir/last")"
+assert_missing "truncated: corrupt archive removed" "$dir/tmux_resurrect_20261022T120000.txt"
 
 dir="$TMP/truncated-only"
 mkdir -p "$dir"
-printf 'window\t0\t1\tbash\t1\t*Z\t\t0\n' >"$dir/tmux_resurrect_20250104T000000.txt"
-ln -s tmux_resurrect_20250104T000000.txt "$dir/last"
+printf 'window\t0\t1\tbash\t1\t*Z\t\t0\n' >"$dir/tmux_resurrect_20261022T120000.txt"
+ln -s tmux_resurrect_20261022T120000.txt "$dir/last"
 
 assert_equals "truncated only: session-0 kill suppressed" "1" "$(run_guard "$dir")"
-assert_equals "truncated only: last kept (no dangling link)" "tmux_resurrect_20250104T000000.txt" "$(readlink "$dir/last")"
-assert_file "truncated only: archive kept" "$dir/tmux_resurrect_20250104T000000.txt"
+assert_equals "truncated only: last kept (no dangling link)" "tmux_resurrect_20261022T120000.txt" "$(readlink "$dir/last")"
+assert_file "truncated only: archive kept" "$dir/tmux_resurrect_20261022T120000.txt"
+
+# ── dangling last: treated like any corrupt target ────────────────
+# The form a previous guard run or an interrupted save can leave behind:
+# the fallback must run and the dead link must be replaced, never kept.
+dir="$TMP/dangling-last"
+mkdir -p "$dir"
+seed "$dir" tmux_resurrect_20261022T090000.txt
+ln -s tmux_resurrect_20261022T110000.txt "$dir/last"
+
+assert_equals "dangling last: no session-0 suppression" "" "$(run_guard "$dir")"
+assert_equals "dangling last: relinked to intact" "tmux_resurrect_20261022T090000.txt" "$(readlink "$dir/last")"
 
 # ── no archive at all ─────────────────────────────────────────────
 dir="$TMP/no-archive"

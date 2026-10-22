@@ -7,6 +7,9 @@
 #
 # 坏档 = 无 pane 行：回指最新完整档（文件名即时间序）并清掉坏档；没有完整档时保留 last 并
 # 抑制 session-0 kill —— 删 last 只会让 restore 读悬空路径刷错。
+# 残窗：本钩子扫完到 restore 读 last 之间，continuum 的后台 save 仍可能写入新坏档并重指
+# last —— 那次 restore 仍会恢复出 0 pane（但 kill 已被抑制，会话保住）。窗口缩小了，没有
+# 闭合；彻底闭合需要 resurrect 侧的锁。
 
 _resurrect_pane_ok() { [ -s "$1" ] && grep -q "^pane" "$1"; }
 
