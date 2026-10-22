@@ -52,6 +52,7 @@ usage() {
     echo ""
     echo "  list                  list installed CLIs with current and latest versions"
     echo "  install [-y] [pkg…]   install missing CLIs; without pkg, manifest mode"
+    echo "                        (y rows install unasked, n rows ask [y/N])"
     echo "  update  [-y] [pkg…]   upgrade installed CLIs; without pkg, all of them"
     echo "  uninstall [-y] <pkg…> remove installed CLIs (package names required)"
     echo ""
@@ -97,7 +98,7 @@ conf_channel_row_count() {
     printf '%s\n' "$n"
 }
 
-# resolve_args <verb> <channel> [arg…]
+# resolve_args <channel> [arg…]
 # Fills TARGET_BINS / TARGET_PKGS / TARGET_FLAGS.
 # An arg matching a conf bin (or pkg) yields that row's pkg+flag; otherwise the
 # arg is a raw pkg (flag empty).
@@ -107,10 +108,11 @@ conf_channel_row_count() {
 # Split them for every verb — detection keys on the bin.
 #
 # A bare name is the only accepted form: `pkg@selector` is refused, because eco
-# stores no versions (see pkg_has_selector).
+# stores no versions (see pkg_has_selector). A refused argument is a usage
+# error, so it exits 2 — 1 is reserved for an action that failed.
 resolve_args() {
-    local verb="$1" ch="$2"
-    shift 2
+    local ch="$1"
+    shift
     TARGET_BINS=()
     TARGET_PKGS=()
     TARGET_FLAGS=()
@@ -120,7 +122,7 @@ resolve_args() {
             error_msg "version selectors are not supported: '$arg'"
             info "eco installs and updates whatever the package manager resolves;"
             info "use 'eco <ch> list' to see the installed versions."
-            return 1
+            return 2
         fi
         if conf_row_for "$ch" "$arg"; then
             TARGET_BINS+=("$CONF_BIN")
@@ -450,13 +452,17 @@ show_current_versions() {
 # print_plan <verb> <internal> — the actions a dry run would take, with the
 # package and (for install/update) the flag each channel would receive.
 # Uninstall takes no flag, so showing one there would be a lie.
+#
+# Written to stdout, not through info(): the plan is the dry run's whole
+# deliverable, so -q (which drops progress chatter) must not erase it —
+# the same rule `list` follows for its table.
 print_plan() {
     local verb="$1" internal="$2" i what
     for i in "${!TARGET_BINS[@]}"; do
         what="${TARGET_BINS[i]} (${TARGET_PKGS[i]})"
         [[ -n "${TARGET_FLAGS[i]}" && "$verb" != "uninstall" ]] \
             && what="$what [${TARGET_FLAGS[i]}]"
-        info "would $verb $what via $internal"
+        printf 'would %s %s via %s\n' "$verb" "$what" "$internal"
     done
 }
 
@@ -523,9 +529,15 @@ batch_confirm_and_run() {
         return 0
     fi
 
+    # update and uninstall are judged against the state after the action, and
+    # that state is the same for the whole batch: collect the successes, read
+    # the snapshot once. Install needs no such read in the common case, so it
+    # verifies in place.
     local after="" rc=0 one_rc state_unknown=0
+    local i bin new_ver cur_ver
+    local -a done_bins=()
     for i in "${!auth_bins[@]}"; do
-        local bin="${auth_bins[i]}" new_ver
+        bin="${auth_bins[i]}"
         info "$doing $bin (${auth_pkgs[i]}) via $internal..."
         one_rc=0
         bash "$script" "$verb_one" "$bin" "${auth_pkgs[i]}" "${auth_flags[i]}" || one_rc=$?
@@ -543,19 +555,59 @@ batch_confirm_and_run() {
             continue
         fi
 
-        case "$verb" in
-            update)
-                # Re-read instead of predicting: the right-hand side is what
-                # actually got installed, not a version eco guessed earlier.
-                # A failed read leaves the transition unknowable; reporting
-                # the action as the result would be the same lie.
-                local cur_ver
-                cur_ver="$(installed_version_of "$before" "$bin" || true)"
-                if ! after="$(channel_installed "$ch")"; then
-                    warn "$bin: state after the update is unknown; verify it manually"
-                    state_unknown=1
+        if [[ "$verb" != "install" ]]; then
+            done_bins+=("$bin")
+            continue
+        fi
+
+        # An exit code says the command ran, not that a binary appeared (npm
+        # exits 0 for a package that ships no bin). Every channel lands its
+        # bins in ECO_BIN_DIR; when the arg names a package rather than a bin
+        # (typescript → tsc), the snapshot supplies the executable to look for.
+        # The path check below settles the common case without a listing.
+        if [[ -x "$ECO_BIN_DIR/$bin" ]]; then
+            ok "$bin $done_w"
+            continue
+        fi
+        if ! after="$(channel_installed "$ch")"; then
+            warn "$bin: install could not be verified; check it manually"
+            state_unknown=1
+            continue
+        fi
+        if ! installed_target_present "$after" "$bin" "${auth_pkgs[i]}"; then
+            error_msg "$bin was not $done_w: no executable at $ECO_BIN_DIR/$bin"
+            info "the package may not ship a '$bin' command; check the package name"
+            rc=1
+            continue
+        fi
+        ok "$bin $done_w"
+    done
+
+    if (( ${#done_bins[@]} > 0 )); then
+        # An unreadable snapshot leaves every queued outcome unknowable, which
+        # is a failure, not a success.
+        if ! after="$(channel_installed "$ch")"; then
+            # Name the targets: one unreadable read leaves every one of them
+            # unknown, and "verify manually" is useless without the list.
+            warn "cannot read the installed $internal CLIs after ${verb} (${done_bins[*]}); verify the results manually"
+            state_unknown=1
+        else
+            for i in "${!done_bins[@]}"; do
+                bin="${done_bins[i]}"
+                if [[ "$verb" == "uninstall" ]]; then
+                    # Trust the snapshot, not the exit code (npm reports
+                    # success for a package that was never there).
+                    if installed_version_of "$after" "$bin" >/dev/null; then
+                        error_msg "$bin was not removed (still installed)"
+                        rc=1
+                    else
+                        ok "$bin uninstalled"
+                    fi
                     continue
                 fi
+                # Update: report the transition actually observed, never a
+                # version predicted before the action.
+                cur_ver="$(installed_version_of "$before" "$bin" || true)"
                 new_ver="$(installed_version_of "$after" "$bin" || true)"
                 if [[ -n "$new_ver" && "$new_ver" == "$cur_ver" ]]; then
                     ok "$bin is already up to date ($new_ver)"
@@ -566,51 +618,9 @@ batch_confirm_and_run() {
                 else
                     ok "$bin updated"
                 fi
-                ;;
-            uninstall)
-                # Trust the snapshot, not the exit code (npm reports success
-                # for a package that was never there). Unreadable is unknown,
-                # and unknown is failure.
-                if ! after="$(channel_installed "$ch")"; then
-                    warn "$bin: cannot confirm the removal; verify it manually"
-                    state_unknown=1
-                    continue
-                fi
-                if installed_version_of "$after" "$bin" >/dev/null; then
-                    error_msg "$bin was not removed (still installed)"
-                    rc=1
-                else
-                    ok "$bin uninstalled"
-                fi
-                ;;
-            install)
-                # An exit code says the command ran, not that a binary
-                # appeared (npm exits 0 for a package that ships no bin).
-                # Every channel lands its bins in ECO_BIN_DIR; when the arg
-                # names a package rather than a bin (typescript → tsc), the
-                # snapshot supplies the executable to look for.
-                if [[ -x "$ECO_BIN_DIR/$bin" ]]; then
-                    ok "$bin $done_w"
-                    continue
-                fi
-                if ! after="$(channel_installed "$ch")"; then
-                    warn "$bin: install could not be verified; check it manually"
-                    state_unknown=1
-                    continue
-                fi
-                if ! installed_target_present "$after" "$bin" "${auth_pkgs[i]}"; then
-                    error_msg "$bin was not $done_w: no executable at $ECO_BIN_DIR/$bin"
-                    info "the package may not ship a '$bin' command; check the package name"
-                    rc=1
-                    continue
-                fi
-                ok "$bin $done_w"
-                ;;
-            *)
-                ok "$bin $done_w"
-                ;;
-        esac
-    done
+            done
+        fi
+    fi
     (( state_unknown )) && rc=1
     return "$rc"
 }
@@ -828,7 +838,7 @@ main() {
                 fi
                 do_install_manifest "$ch" || rc=$?
             else
-                resolve_args install "$ch" "$@" || return 1
+                resolve_args "$ch" "$@" || return 2
                 dedupe_targets
                 prune_installed_targets "$ch"
                 if (( ${#TARGET_BINS[@]} == 0 )); then
@@ -842,7 +852,7 @@ main() {
             if (( $# == 0 )); then
                 do_update_all "$ch" || rc=$?
             else
-                resolve_args update "$ch" "$@" || return 1
+                resolve_args "$ch" "$@" || return 2
                 dedupe_targets
                 batch_confirm_and_run update "$ch" || rc=$?
             fi
@@ -853,7 +863,7 @@ main() {
                 usage >&2
                 return 2
             }
-            resolve_args uninstall "$ch" "$@" || return 1
+            resolve_args "$ch" "$@" || return 2
             dedupe_targets
             batch_confirm_and_run uninstall "$ch" || rc=$?
             ;;

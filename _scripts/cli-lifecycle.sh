@@ -129,11 +129,22 @@ eco_conf_validate() {
             || { warn "eco.conf entry '$bin': pkg must be non-empty and contain no spaces"; return 1; }
         [[ "$flag" != *" "* ]] \
             || { warn "eco.conf entry '$bin': flag must not contain spaces"; return 1; }
+        # Only npm and cargo pass a flag through today; uv and go ignore the
+        # slot. Refusing it here keeps the manifest from promising something a
+        # channel does not do — the install is never silently flagless.
+        if [[ -n "$flag" && "$ch" != node && "$ch" != rust ]]; then
+            warn "eco.conf entry '$bin': the $ch channel takes no flag yet ('$flag')"
+            return 1
+        fi
         for (( j = 0; j < i; j++ )); do
+            # A bin is global: every channel lands it in the same prefix, so two
+            # rows claiming one name would fight over the same file.
             [[ "${ECO_CONF_BINS[j]}" == "$bin" ]] \
                 && { warn "eco.conf: duplicate bin '$bin'"; return 1; }
-            [[ "${ECO_CONF_PKGS[j]}" == "$pkg" ]] \
-                && { warn "eco.conf: duplicate pkg '$pkg'"; return 1; }
+            # A package is per-channel: the same name can mean different things
+            # to npm and pip, so only a repeat inside one channel is a defect.
+            [[ "${ECO_CONF_CHANNELS[j]}" == "$ch" && "${ECO_CONF_PKGS[j]}" == "$pkg" ]] \
+                && { warn "eco.conf: duplicate pkg '$pkg' in channel $ch"; return 1; }
         done
     done
     return 0
@@ -178,11 +189,11 @@ eco_conf_filter_channel() {
 
 # ── Shared per-item manifest install ────────────────────────────
 # eco_manifest_install <installer_fn> <channel> <detect>
-# Walks this channel's conf rows, asks per missing tool (conf default), then
-# installs the approved batch. -y takes every missing row; non-interactive runs
-# apply the conf defaults. A dry run does not ask: it plans with the defaults
-# (or the -y selection) and executes nothing. A failed row warns and continues;
-# the aggregate exit code reports any failure.
+# Walks this channel's conf rows and installs the selected ones. A missing
+# y-row is baseline and installs without asking; a missing n-row is optional
+# and asks [y/N] (non-interactive and dry runs take the conf default, skip).
+# -y takes every missing row. A dry run asks nothing and executes nothing. A
+# failed row warns and continues; the aggregate exit code reports any failure.
 eco_manifest_install() {
     local installer="$1" channel="$2" detect="${3:-canonical}"
     case "$detect" in
@@ -215,18 +226,17 @@ eco_manifest_install() {
         want=0
         if [[ -n "${ECO_ASSUME_YES:-}" ]]; then
             want=1
-        elif [[ -n "${DOTFILES_NON_INTERACTIVE:-}" || -n "${ECO_DRY_RUN:-}" ]]; then
-            # A dry run cannot collect answers; it plans with the conf
-            # defaults, the same policy as a non-interactive run.
-            [[ "$def" == "y" ]] && want=1
-        else
-            if [[ "$def" == "y" ]]; then
-                read -rp "$bin not found; install it via $channel? [Y/n]: " reply || reply=""
-                [[ -z "$reply" || "$reply" =~ ^[Yy](es)?$ ]] && want=1
-            else
-                read -rp "$bin not found; install it via $channel? [y/N]: " reply || reply=""
-                [[ "$reply" =~ ^[Yy](es)?$ ]] && want=1
-            fi
+        elif [[ "$def" == "y" ]]; then
+            # y is baseline: install it without asking, which is what keeps
+            # bootstrap's six editor-toolchain rows silent. The install loop
+            # announces them, so nothing is printed here.
+            want=1
+        elif [[ -z "${DOTFILES_NON_INTERACTIVE:-}" && -z "${ECO_DRY_RUN:-}" ]]; then
+            # n is optional, so it is asked — but only where an answer can
+            # arrive. Non-interactive may still own a terminal, and a dry run
+            # must not block, so both keep the conf default (skip).
+            read -rp "$bin not found; install it via $channel? [y/N]: " reply || reply=""
+            [[ "$reply" =~ ^[Yy](es)?$ ]] && want=1
         fi
         (( want )) || continue
         sel_bins+=("$bin")
@@ -238,10 +248,12 @@ eco_manifest_install() {
         return 0
     fi
     if [[ -n "${ECO_DRY_RUN:-}" ]]; then
+        # stdout, not info(): the plan is the dry run's deliverable and must
+        # survive -q (same rule as eco.sh's print_plan).
         for i in "${!sel_bins[@]}"; do
             what="${sel_bins[i]} (${sel_pkgs[i]})"
             [[ -n "${sel_flags[i]}" ]] && what="$what [${sel_flags[i]}]"
-            info "would install $what via $channel"
+            printf 'would install %s via %s\n' "$what" "$channel"
         done
         if [[ -n "${ECO_ASSUME_YES:-}" ]]; then
             info "dry run: no action taken"
@@ -258,9 +270,9 @@ eco_manifest_install() {
             rc=1
             continue
         fi
-        # Same rule as eco.sh's named install: an exit code says the command
-        # ran, not that a binary appeared. Every channel lands its bin in
-        # ECO_BIN_DIR, so the filesystem decides.
+        # Stricter than a named install on purpose: a row's bin is the command
+        # the user types, so a missing file means the row itself is wrong —
+        # there is no package name (typescript → tsc) to fall back to.
         if [[ ! -x "$ECO_BIN_DIR/${sel_bins[i]}" ]]; then
             error_msg "${sel_bins[i]} was not installed: no executable at $ECO_BIN_DIR/${sel_bins[i]}"
             info "the package may not ship a '${sel_bins[i]}' command; check the manifest entry"

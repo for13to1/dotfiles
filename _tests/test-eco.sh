@@ -45,7 +45,7 @@ if ECO_CONF="$BAD_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/c
     fail "a duplicate bin must fail eco.conf validation"
 fi
 
-# A duplicate pkg must fail.
+# A duplicate pkg must fail inside one channel.
 BAD_CONF="$TMP/dup-pkg.conf"
 cat > "$BAD_CONF" <<'EOF'
 node y biome @biomejs/biome
@@ -54,6 +54,40 @@ EOF
 if ECO_CONF="$BAD_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null; then
     fail "a duplicate pkg must fail eco.conf validation"
 fi
+
+# The same pkg in two channels is not a duplicate: npm and pip disagree about
+# what a bare name means, and the two installs land under different bins.
+OK_CONF="$TMP/cross-channel-pkg.conf"
+cat > "$OK_CONF" <<'EOF'
+node y ruffjs ruff
+py y ruff ruff
+EOF
+ECO_CONF="$OK_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null \
+    || fail "the same pkg in two channels must be allowed"
+
+# A flag on a channel that does not pass one is refused, not dropped at install
+# time: two of the four channels reserve the slot, and a silent drop would look
+# like a successful flagged install.
+BAD_CONF="$TMP/py-flag.conf"
+cat > "$BAD_CONF" <<'EOF'
+py y ruff ruff --python-version
+EOF
+if ECO_CONF="$BAD_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null; then
+    fail "a py flag must fail eco.conf validation"
+fi
+BAD_CONF="$TMP/go-flag.conf"
+cat > "$BAD_CONF" <<'EOF'
+go y gopls golang.org/x/tools/gopls --tags=extra
+EOF
+if ECO_CONF="$BAD_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null; then
+    fail "a go flag must fail eco.conf validation"
+fi
+OK_CONF="$TMP/rust-flag.conf"
+cat > "$OK_CONF" <<'EOF'
+rust y ripgrep ripgrep --locked
+EOF
+ECO_CONF="$OK_CONF" bash -c 'source "$1"; eco_conf_load' _ "$ROOT/_scripts/cli-lifecycle.sh" 2>/dev/null \
+    || fail "a rust flag must be allowed"
 
 # A flag with a space must fail.
 BAD_CONF="$TMP/space-flag.conf"
@@ -1273,6 +1307,45 @@ grep -q 'would install biome (@biomejs/biome) via npm' "$ECO_OUT" \
 ! grep -q 'fnm not found' "$ECO_OUT" \
     || fail "a manifest dry run must not probe the runtime"
 
+# -q drops progress, never the plan; both stay on stdout, like list's table.
+: > "$FNM_LOG"
+HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    MOCK_LS_FILE="$UP_LS" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node update -n -q -y >"$ECO_OUT" 2>&1 \
+    || fail "a quiet dry run must not fail"
+grep -q 'would update wrangler (wrangler)' "$ECO_OUT" \
+    || { cat "$ECO_OUT" >&2; fail "-q must not erase a dry run's plan"; }
+! grep -q 'updating via npm' "$ECO_OUT" \
+    || fail "-q must still drop the progress table"
+
+HOME="$DRY_HOME" DOTFILES_NON_INTERACTIVE=1 \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install -n -q -y >"$ECO_OUT" 2>&1 \
+    || fail "a quiet dry-run manifest install must not fail"
+grep -q 'would install biome (@biomejs/biome) via npm' "$ECO_OUT" \
+    || { cat "$ECO_OUT" >&2; fail "-q must not erase a manifest dry-run plan"; }
+
+# ── y installs without asking, n asks ───────────────
+# The first column is a policy, not a default answer: a closed stdin installs
+# the y rows and skips the n rows.
+PROMPT_HOME="$TMP/prompt-home"
+mkdir -p "$PROMPT_HOME/.local/bin"
+: > "$FNM_LOG"
+printf '' | HOME="$PROMPT_HOME" \
+    PATH="$NPM_BIN:/usr/bin:/bin" \
+    bash "$ECO" node install >"$ECO_OUT" 2>&1 \
+    || fail "a manifest install with no answers must not fail"
+# read -p prints its prompt only on a terminal, so the decisions are what a
+# piped run can observe: a y row reaches npm, an n row never does. "does not
+# ask" itself is not observable without a pty, so it is not asserted here.
+! grep -q 'not found; install it via' "$ECO_OUT" \
+    || fail "nothing may print a prompt when nobody can answer it"
+grep -q -- 'npm install -g --prefix [^ ]* @biomejs/biome$' "$FNM_LOG" \
+    || fail "a y row must reach npm without an answer"
+! grep -q '@earendil-works/pi-coding-agent' "$FNM_LOG" \
+    || fail "an unanswered n row must not install"
+
 # ── the bin a user types is not always the package npm must be given ──
 # A scoped package (@vercel/ncc) installs the bin "ncc". Three places must
 # agree on the package identity or npm receives a name that does not exist:
@@ -1985,7 +2058,7 @@ for spec in 'wrangler@3' '@biomejs/biome@2.0.0' 'gopls@v0.18.0'; do
     HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
         PATH="$NPM_BIN:$MOCK_GO:/usr/bin:/bin" \
         bash "$ECO" node install -y "$spec" >"$ECO_OUT" 2>&1 || rc=$?
-    [[ "$rc" == 1 ]] || fail "'$spec' must be refused with exit 1, got $rc"
+    [[ "$rc" == 2 ]] || fail "'$spec' must be refused with exit 2, got $rc"
     grep -q 'version selectors are not supported' "$ECO_OUT" \
         || fail "'$spec' must be refused with an explanation"
     [[ ! -s "$FNM_LOG" ]] \
@@ -2245,7 +2318,7 @@ rc=0
 HOME="$AFTER_HOME" PATH="$AFTER_BIN:/usr/bin:/bin" \
     bash "$ECO" node uninstall -y wrangler >"$TMP/after-un.out" 2>&1 || rc=$?
 [[ "$rc" == 1 ]] || fail "an unverifiable removal must fail, got $rc"
-grep -q 'cannot confirm the removal' "$TMP/after-un.out" \
+grep -q 'cannot read the installed npm CLIs after uninstall' "$TMP/after-un.out" \
     || fail "an unverifiable removal must say the state is unknown"
 ! grep -q 'wrangler uninstalled' "$TMP/after-un.out" \
     || fail "an unverifiable removal must not be reported as done"
@@ -2255,7 +2328,7 @@ rc=0
 HOME="$AFTER_HOME" PATH="$AFTER_BIN:/usr/bin:/bin" \
     bash "$ECO" node update -y >"$TMP/after-up.out" 2>&1 || rc=$?
 [[ "$rc" == 1 ]] || fail "an unverifiable update must fail, got $rc"
-grep -q 'state after the update is unknown' "$TMP/after-up.out" \
+grep -q 'cannot read the installed npm CLIs after update' "$TMP/after-up.out" \
     || fail "an unverifiable update must say the state is unknown"
 ! grep -q 'wrangler updated' "$TMP/after-up.out" \
     || fail "an unverifiable update must not be reported as done"
@@ -2318,6 +2391,19 @@ HOME="$TMP/broken-go-home" PATH="$BROKEN_GO_BIN:/usr/bin:/bin" \
 [[ "$rc" == 1 ]] || fail "a broken go toolchain must fail --installed, got $rc"
 grep -q 'go is not working' "$TMP/gone.out" \
     || fail "a broken go toolchain must be reported"
+
+# --list and --outdated read the same scan, so they must fail the same way. A
+# scan that is swallowed into an empty loop reads as "no Go CLIs found" — the
+# one message that makes a broken toolchain look like a clean machine.
+for verb in --list --outdated; do
+    rc=0
+    out="$TMP/gone-${verb#--}.out"
+    HOME="$TMP/broken-go-home" PATH="$BROKEN_GO_BIN:/usr/bin:/bin" \
+        bash "$ROOT/_install/install-by-go.sh" "$verb" >"$out" 2>&1 || rc=$?
+    [[ "$rc" == 1 ]] || fail "a broken go toolchain must fail $verb, got $rc"
+    grep -q 'go is not working' "$out" \
+        || fail "$verb must report the broken toolchain"
+done
 
 # ── a failed channel install propagates ─────────────
 # bootstrap.sh step 3 loops the four channels and warns per channel; that only
@@ -2398,7 +2484,7 @@ rc=0
 HOME="$ECO_HOME" DOTFILES_NON_INTERACTIVE=1 \
     PATH="$NPM_BIN:/usr/bin:/bin" \
     bash "$ECO" node uninstall -y 'wrangler@3' >"$ECO_OUT" 2>&1 || rc=$?
-[[ "$rc" == 1 ]] || fail "a versioned uninstall must be refused, got $rc"
+[[ "$rc" == 2 ]] || fail "a versioned uninstall must be refused, got $rc"
 grep -q 'version selectors are not supported' "$ECO_OUT" \
     || fail "a versioned uninstall must explain why it was refused"
 [[ ! -s "$FNM_LOG" ]] \

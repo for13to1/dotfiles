@@ -177,10 +177,13 @@ go_scan_prefix() {
 # embedded metadata are skipped; a failed lookup fails the query.
 # stdout is the result channel, so warn goes to stderr.
 go_query_outdated() {
-    local go_bin line pkg_path mod_path cur latest listed row
+    local go_bin line pkg_path mod_path cur latest listed row scan
     local -a targets=() rows=()
     go_bin="$(find_go_bin)" || return 1
 
+    # Read first, then loop: a failed scan inside `< <(...)` would leave the
+    # loop empty and turn "cannot read the prefix" into "nothing outdated".
+    scan="$(go_scan_prefix)" || return 1
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         read -r pkg_path mod_path cur _file <<<"$line"
@@ -189,7 +192,7 @@ go_query_outdated() {
             *) targets+=("$mod_path@latest") ;;
         esac
         rows+=("$pkg_path $mod_path $cur")
-    done < <(go_scan_prefix)
+    done <<<"$scan"
 
     (( ${#targets[@]} > 0 )) || return 0
     if ! listed="$("$go_bin" list -m -f '{{.Path}} {{.Version}}' "${targets[@]}" 2>/dev/null)"; then
@@ -225,10 +228,12 @@ go_installed_by_bin() {
 }
 
 go_list_rows() {
-    local go_bin line pkg_path mod_path cur latest listed row query_failed=0
+    local go_bin line pkg_path mod_path cur latest listed row query_failed=0 scan
     local -a targets=() rows=()
     go_bin="$(find_go_bin)" || return 1
 
+    # Same read-first rule as go_query_outdated, for the same reason.
+    scan="$(go_scan_prefix)" || return 1
     while IFS= read -r line; do
         [[ -n "$line" ]] || continue
         read -r pkg_path mod_path cur _file <<<"$line"
@@ -237,7 +242,7 @@ go_list_rows() {
             *) targets+=("$mod_path@latest") ;;
         esac
         rows+=("$pkg_path $mod_path $cur")
-    done < <(go_scan_prefix)
+    done <<<"$scan"
 
     (( ${#targets[@]} > 0 )) || return 0
     if ! listed="$("$go_bin" list -m -f '{{.Path}} {{.Version}}' "${targets[@]}" 2>/dev/null)"; then

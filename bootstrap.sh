@@ -40,12 +40,12 @@ esac
 # platform-specific and lives inside pkg-linux's apt branch.
 # DOTFILES_SKIP_ECOSYSTEM_TOOLS=1 skips everything (tests: no network).
 if [[ -z "${DOTFILES_SKIP_ECOSYSTEM_TOOLS:-}" ]]; then
-    # No -y here on purpose: eco.conf's y/n column decides which rows install,
-    # and a missing row still asks before installing (non-interactive runs take
-    # the defaults). Passing -y would override the manifest's own selection.
+    # No -y here on purpose: eco.conf's y/n column decides which rows install
+    # (y rows install unasked, n rows ask), and -y would override that
+    # selection by taking every row.
     for _eco_ch in node py go rust; do
         if ! bash "$DOTFILES_DIR/_install/eco.sh" "$_eco_ch" install; then
-            warn "Some $_eco_ch ecosystem tool installs failed; run 'bash _install/eco.sh $_eco_ch install' later to retry."
+            warn "Some $_eco_ch ecosystem tool installs failed; run 'bash \"$DOTFILES_DIR/_install/eco.sh\" $_eco_ch install' later to retry."
         fi
     done
     unset _eco_ch

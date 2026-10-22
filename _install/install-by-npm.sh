@@ -72,8 +72,19 @@ ensure_fnm_node_env() {
 # npm 11.x introduced the install-scripts policy (12.x hard-blocks lifecycle
 # scripts by default); packages not on the allowlist get their postinstall
 # skipped. Older npm does not understand the --allow-scripts flag.
+#
+# Probing costs a subprocess and cannot change mid-process, so it is cached:
+# "" = not asked yet.
+NPM_ALLOW_SCRIPTS_SUPPORT=""
 npm_supports_allow_scripts() {
-    fnm_exec npm install --help 2>/dev/null | grep -q -- '--allow-scripts'
+    if [[ -z "$NPM_ALLOW_SCRIPTS_SUPPORT" ]]; then
+        if fnm_exec npm install --help 2>/dev/null | grep -q -- '--allow-scripts'; then
+            NPM_ALLOW_SCRIPTS_SUPPORT=yes
+        else
+            NPM_ALLOW_SCRIPTS_SUPPORT=no
+        fi
+    fi
+    [[ "$NPM_ALLOW_SCRIPTS_SUPPORT" == yes ]]
 }
 
 # Install npm globals into $LOCAL_PREFIX. Drop --allow-scripts when this npm
@@ -103,7 +114,10 @@ npm_install_global() {
     # no-op — and any gate the user configures in .npmrc must survive us, not
     # be silently relaxed by a CLI flag (CLI source outranks user source).
     # If npm ever ships the gate on by default, we follow it for free.
-    fnm_exec npm install -g --prefix "$LOCAL_PREFIX" "${resolved[@]}"
+    #
+    # `${resolved[@]+...}`: an empty array under `set -u` is an unbound
+    # variable on bash 3.2, and every argument can be filtered out above.
+    fnm_exec npm install -g --prefix "$LOCAL_PREFIX" ${resolved[@]+"${resolved[@]}"}
 }
 
 # Channel runtime gate: fnm-managed Node LTS plus a working npm in front of it.

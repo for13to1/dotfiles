@@ -59,7 +59,7 @@ cd ~/dotfiles && bash bootstrap.sh
 
 1. **环境检测**：识别操作系统并准备核心依赖——macOS 校验 Xcode CLT（缺失时触发安装引导，需在系统对话框确认后重跑）并自动安装 Homebrew；Linux 确保 zsh、stow、make 可用。
 2. **软件安装**：按默认组安装系统软件（brew/apt/pacman），macOS 应用系统设置；apt 缺失的 fnm/rustup/uv 由官方安装器补齐。
-3. **生态工具**：通过统一的 `eco` 命令管理 CLI 的安装、升级与卸载，清单（渠道、默认值、bin、包名、flag）集中在 `_scripts/eco.conf`，一行一工具，三平台一致。
+3. **生态工具**：CLI 的安装、升级、卸载统一走 `eco`，清单在 `_scripts/eco.conf`；缺失的 `y` 行自动装，`n` 行询问。
 4. **SSH 设施**：交互式生成/检测 SSH 密钥，加固目录权限。
 5. **Git 配置**：交互式创建本地身份配置，启用 pre-push 钩子。
 6. **Shell 环境**：部署 Oh My Zsh 及其插件生态；交互模式下自动切换默认 Shell。
@@ -175,11 +175,10 @@ make doctor # 诊断本机核心工具、本地配置与 Stow 同步状态
 生态 CLI 的管理走统一入口 `eco`（详见 [`_docs/install.md`](_docs/install.md)）：
 
 ```bash
-eco node list               # 只读：列出已装 + 最新版本
-eco node install            # 补装缺失（清单模式，逐项确认）
-eco node install -y biome   # 指定安装，不询问
-eco node update             # 升级全部已装，报告真实版本变化
-eco py update -y            # 升级 Python 工具，不询问
+eco node list               # 已装 + 最新版本
+eco node install            # 补装清单里缺的
+eco node install -y biome   # 装指定包，不问
+eco node update             # 升级全部已装
 eco go uninstall gopls      # 卸载
 ```
 

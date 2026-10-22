@@ -27,8 +27,15 @@ main() {
     fi
 
     if [[ -f "$repo_dir/_install/eco.sh" ]]; then
-        ln -sf "$repo_dir/_install/eco.sh" "$HOME/.local/bin/eco"
-        ok "eco deployed to ~/.local/bin/eco"
+        # proj-setup/fd/bat skip whenever the path exists at all. Here an
+        # existing symlink is still ours to repoint; only a real file is
+        # somebody else's.
+        if [[ -e "$HOME/.local/bin/eco" && ! -L "$HOME/.local/bin/eco" ]]; then
+            warn "$HOME/.local/bin/eco exists and is not a symlink; leaving it alone"
+        else
+            ln -sf "$repo_dir/_install/eco.sh" "$HOME/.local/bin/eco"
+            ok "eco deployed to ~/.local/bin/eco"
+        fi
     else
         warn "eco.sh not found; skipping deployment"
     fi
