@@ -26,7 +26,8 @@ assert_equals "conf sources the guard script" \
 # session-0 kill was suppressed.
 run_guard() {
     local dir="$1"
-    # shellcheck disable=SC2329  # the stubs below are called by the sourced guard
+    # stubs are called by the sourced guard; 0.9 reports this as SC2317, 0.11 as SC2329
+    # shellcheck disable=SC2317,SC2329
     (
         flag=""
         resurrect_dir() { printf '%s\n' "$dir"; }
@@ -102,9 +103,10 @@ assert_equals "truncated only: session-0 kill suppressed" "1" "$(run_guard "$dir
 assert_equals "truncated only: last kept (no dangling link)" "tmux_resurrect_20261022T120000.txt" "$(readlink "$dir/last")"
 assert_file "truncated only: archive kept" "$dir/tmux_resurrect_20261022T120000.txt"
 
-# ── dangling last: treated like any corrupt target ────────────────
-# The form a previous guard run or an interrupted save can leave behind:
-# the fallback must run and the dead link must be replaced, never kept.
+# ── dangling last: unreachable in production ──────────────────────
+# restore.sh's `-f` check skips the whole restore while `last` dangles, so the hook
+# never sees this. Pinned only to keep the guard's own contract explicit: relink to
+# a live target when one exists.
 dir="$TMP/dangling-last"
 mkdir -p "$dir"
 seed "$dir" tmux_resurrect_20261022T090000.txt

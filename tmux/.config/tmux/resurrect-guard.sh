@@ -5,11 +5,13 @@
 # 存在，于是恢复出 0 个 pane、再被 handle_session_0 杀掉 session 0（prefix+C-r 直接退 tmux）。
 # 必须 source 进 restore.sh 进程：插件函数在此可见，RESTORED_SESSION_0 也只在同进程内写回有效。
 #
-# 坏档 = 无 pane 行：回指最新完整档（文件名即时间序）并清掉坏档；没有完整档时保留 last 并
-# 抑制 session-0 kill —— 删 last 只会让 restore 读悬空路径刷错。
-# 残窗：本钩子扫完到 restore 读 last 之间，continuum 的后台 save 仍可能写入新坏档并重指
-# last —— 那次 restore 仍会恢复出 0 pane（但 kill 已被抑制，会话保住）。窗口缩小了，没有
-# 闭合；彻底闭合需要 resurrect 侧的锁。
+# 坏档：没有 pane 行的存档。发现坏档时，把 last 回指到最新的完整档（文件名即时间序），
+# 并删掉坏档。一个完整档都没有时，抑制 session-0 kill，last 保持原样 —— 删掉它只会让
+# restore 报 "not found" 并跳过整次恢复。
+#
+# 竞态：本钩子扫完、restore 读 last 之前，continuum 的后台 save 仍可能写入新的坏档并重指
+# last。此时钩子已返回 0，kill 未被抑制，session 0 会被杀掉；只有返回 1（无完整档可回指）
+# 的路径能保住会话。要彻底闭合，需要 resurrect 侧加锁。
 
 _resurrect_pane_ok() { [ -s "$1" ] && grep -q "^pane" "$1"; }
 
